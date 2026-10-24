@@ -40119,7 +40119,7 @@
     "device_writes_this_turn": false,
     "actual_md5": "7ffba2650a25ae900424826b8dc997d6",
     "bytes": 9015573471,
-    "source_path": "/home/whitemmo/Downloads/SAMFW.COM_SM-A376B_XXV_A376BXXS5AZH4_fac.zip",
+    "source_path": "${LOCAL_ABSOLUTE_PATH}",
     "odin_manifest": "logs/20261021-m2-inputs/downloaded-manifest.json",
     "odin_files_md5": "PASS_6_FILES",
     "descriptor": "SM-A376B/XXV/LOCAL",

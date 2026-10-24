@@ -4,7 +4,7 @@
   "fork_url": "https://github.com/Eend15/Unofficial-Un1ca-9810",
   "fork_commit": "2b25ae6fc3098650be249bd1898e21e563cd5df1",
   "active_patches": 94,
-  "device_identifier_replacements": 57,
+  "device_identifier_replacements": 62,
   "binary_firmware_raw_logs_credentials_included": false,
   "device_serials_in_exported_text_are_role_aliases": true,
   "files": {
@@ -13,44 +13,44 @@
       "sha256": "82a88c020fdd03eb231a3550e49a1238a3366caa5b3cf4769169c135a3b0d2c4"
     },
     "AGENTS.md": {
-      "bytes": 7487,
-      "sha256": "4db22bfd900e57f60f1eee4ca42ed7946fec0ada71307008a3303f9ec466b6c6"
+      "bytes": 7839,
+      "sha256": "6eb11a5ceec2421bb2d8fab8f2b510b4f366aba63fa753b78de1623d4f05389a"
     },
     "README.md": {
-      "bytes": 6550,
-      "sha256": "397fc244b415ceb64fb257170e0c0369330e4ead10fb17f58232107184eb3ef0"
+      "bytes": 7119,
+      "sha256": "c454f570ad91bdf15e6c8acba4e26f62c6ec9864a45b4f89d07bad2c02b90486"
     },
     "STATUS.md": {
-      "bytes": 56599,
-      "sha256": "2992af98176dc6bb685da6fde9f2b91861868ae2ceb6d02bb17f31d253cd4427"
+      "bytes": 57099,
+      "sha256": "68d14c1b18943c14c0e38dc92776961781dc1f12e448ea968006d7d37c1914ee"
     },
     "sources.lock.json": {
       "bytes": 1592587,
       "sha256": "99930f4acb8414087d8cffa34a00d47a4227c181f649b1440f3de6542943b0ca"
     },
     "firmware.lock.json": {
-      "bytes": 661055,
-      "sha256": "7cd700072bef15769759ddd3f86f1ed6eb02a90ac0167f6bd5dffaa84557ab97"
+      "bytes": 661008,
+      "sha256": "d7a5d775903808b6605a5386c6cc9d8fcca505d4787a618f4aba306fbbdc82f5"
     },
     "tools.lock.json": {
-      "bytes": 4075,
-      "sha256": "004158f7b10bf132de0adaf93a23513e511dcc23b9b1534fcda5bf451d540a8b"
+      "bytes": 4030,
+      "sha256": "e4579327b36e04c55552f3ed6ce38de5630caa2fa9651b4fc47329d392c8d26d"
     },
     "docs/HELP-WANTED.md": {
-      "bytes": 5722,
-      "sha256": "0cf71e7e7a079931ee42bcfc22334cfdb2188bb405c7ab4b57d6af9d13e434d2"
+      "bytes": 6118,
+      "sha256": "0d7ba12e2c748971280299c14c2833b1d952770cfb6e28d29e5aba94d64bacf2"
     },
     "docs/PLAN.md": {
-      "bytes": 18019,
-      "sha256": "8b0fad1b82dcdce43710cd9055d2f20f494b3c4079efd750a580588841706dff"
+      "bytes": 18305,
+      "sha256": "7483817a7468a66806a6345baa68151b8bf9a84eb30b3802e1d2d929d21e2a42"
     },
     "docs/adb-defaults.md": {
       "bytes": 7249,
       "sha256": "9d52a5f8f609badafffaab40d410a02c357d3ef628dd22bdffcc836c2bd06d67"
     },
     "docs/bugs.md": {
-      "bytes": 69121,
-      "sha256": "d90a24072d5790d9f99d7ed248afa78b21f1fb0913ff04c665bc577a1eeab0bc"
+      "bytes": 71656,
+      "sha256": "032e41734ee9fc898df47ac515025c2713780c2272db67ff2a623ef29b14542b"
     },
     "docs/build-environment.md": {
       "bytes": 4132,
@@ -97,8 +97,8 @@
       "sha256": "d16804ec3d8a5cb5931fa11e7eade8abce0ae1e19248f703d3acb4d2b89a442b"
     },
     "docs/m2-integrated-runtime-build.md": {
-      "bytes": 11994,
-      "sha256": "be96f7b31cb41006b20379177acc0cfe9d1923e5e17f8d5f4f28f2df66df7bc7"
+      "bytes": 15035,
+      "sha256": "c6daa023fb3902c8b9ba03d855fcb199925483a4d7f79e14eb08a2f285b76e99"
     },
     "docs/m2-metadata-runtime.md": {
       "bytes": 7003,
@@ -117,8 +117,8 @@
       "sha256": "eae21e1595dfbc7c8455a75b94ade705c385eba6b13c410e656f1c1b04f0f765"
     },
     "docs/patch-matrix.md": {
-      "bytes": 58569,
-      "sha256": "20cc8536ab1c8aabb354f03ea22be1abfbb92ab9f44383556fe2e092794572ad"
+      "bytes": 58933,
+      "sha256": "e30785bb7d86b8d58d56a22d995d50221459da4184c3747a9624998d34693ccc"
     },
     "docs/probe13-report.md": {
       "bytes": 6487,
@@ -133,8 +133,8 @@
       "sha256": "72230494c2525132dbf1c2b20e748694e07312b39544df353935c391a10ec91b"
     },
     "docs/sources.md": {
-      "bytes": 18492,
-      "sha256": "6e6cf42be702f12cee0d9086c8f410e21a800e426a01ac1c7f6645132ef3b7ff"
+      "bytes": 18444,
+      "sha256": "759391d79fd3048eeb1e9634f35c7d42f8e4abba07f74be416abd9405dd117d3"
     },
     "patches/fork/0001-host-path-quoting.patch": {
       "bytes": 5385,
@@ -617,8 +617,8 @@
       "sha256": "58e15556e897949920fcfb108c88540afe111b97b5f96352e2e4b9c4e6475d2e"
     },
     "tools/export_github_handoff.py": {
-      "bytes": 4516,
-      "sha256": "93dfd8838144689c0d52f9a7c11399846819ae2d5071dfb2d892c8013ec6800b"
+      "bytes": 4784,
+      "sha256": "76c585012d63221566d6324e914389b16bdec0dc529fcb3c622957266e1d5433"
     },
     "tools/prepare_fork.sh": {
       "bytes": 1351,

@@ -63,15 +63,15 @@
     "runtime_root": "inputs/tooling/go-root/usr/lib/go-1.26",
     "debs": [
       {
-        "path": "/home/whitemmo/Documents/ChatGPT/Port One UI 9 (Android 17) t\u1eeb Galaxy A37 5G (SM-A376B) l\u00ean Galaxy S9+ (star2lte)/inputs/tooling/go-debs/f2fs-tools_1.16.0-2build1_amd64.deb",
+        "path": "${LOCAL_ABSOLUTE_PATH} One UI 9 (Android 17) t\u1eeb Galaxy A37 5G (SM-A376B) l\u00ean Galaxy S9+ (star2lte)/inputs/tooling/go-debs/f2fs-tools_1.16.0-2build1_amd64.deb",
         "sha256": "2c0c1841ba77fb7b4ff98eca6bd0d49740c05f49cee587af7f209ce41847c718"
       },
       {
-        "path": "/home/whitemmo/Documents/ChatGPT/Port One UI 9 (Android 17) t\u1eeb Galaxy A37 5G (SM-A376B) l\u00ean Galaxy S9+ (star2lte)/inputs/tooling/go-debs/golang-1.26-go_1.26.8-1~ubuntu0.26.04.2_amd64.deb",
+        "path": "${LOCAL_ABSOLUTE_PATH} One UI 9 (Android 17) t\u1eeb Galaxy A37 5G (SM-A376B) l\u00ean Galaxy S9+ (star2lte)/inputs/tooling/go-debs/golang-1.26-go_1.26.8-1~ubuntu0.26.04.2_amd64.deb",
         "sha256": "a25f64a8b1bd65d68b7ec9497b649f8ed7fb4fddcdfc62d4aea31d9540e110d0"
       },
       {
-        "path": "/home/whitemmo/Documents/ChatGPT/Port One UI 9 (Android 17) t\u1eeb Galaxy A37 5G (SM-A376B) l\u00ean Galaxy S9+ (star2lte)/inputs/tooling/go-debs/golang-1.26-src_1.26.8-1~ubuntu0.26.04.2_all.deb",
+        "path": "${LOCAL_ABSOLUTE_PATH} One UI 9 (Android 17) t\u1eeb Galaxy A37 5G (SM-A376B) l\u00ean Galaxy S9+ (star2lte)/inputs/tooling/go-debs/golang-1.26-src_1.26.8-1~ubuntu0.26.04.2_all.deb",
         "sha256": "e86fcc27e243b7b8bb8efc86d4b05126bc0eca927fcaaa3d84df889d2356efc5"
       }
     ],

@@ -73,10 +73,10 @@ The source snapshot excludes generated/proprietary outputs and retains role
 aliases instead of physical serials. Acquire firmware/toolchains independently
 and verify local targets before operations.
 
-## Current M2 boot blocker — 24 October 2026
+## Previous M2 boot blocker — resolved on attempt53, 24 October 2026
 
-Attempt52 failed before boot completion with the exact logcat fatal `Missing permission definition for permission "android.permission.RANGING" associated with app op 151` (line74018). Earlier init line4590 says `/metadata/aconfig` could not be created because `/metadata` is read-only. Patch0104 adds a scoped, volatile 16MiB tmpfs for the M2 diagnostic profile; attempt53 is under build and will test whether Aconfig flags and RANGING register on fresh data. It does not solve metadata persistence or vendor aconfig and is not production acceptance.
+Attempt52 failed before boot completion with `Missing permission definition for permission "android.permission.RANGING" associated with app op 151`; init could not create `/metadata/aconfig` on read-only `/metadata`. Attempt53 confirms its scoped 16MiB tmpfs lets fresh-data aconfig initialize: `RANGING` is dangerous, RangingService registers, SystemServer stays alive and boot completes. This only verifies current-boot volatile metadata, not persistence or production acceptance.
 
-## Current gate — attempt53
+## Current gate — attempt53 runtime
 
-A new patch0104 diagnostic package has passed build, compiled, actual ext4 image and eight-stage ZIP32 checks. Read-only G965F TWRP preflight also passes. No device write has occurred: the current AGENTS.md restricts flash permission to a distinct exact package hash, so attempt53 fresh install requires the user to explicitly extend that scope. The metadata tmpfs runtime result, fresh-default ADB behavior and boot completion remain unverified for this exact package. Do not infer attempt52 or earlier reused-data tests as acceptance.
+A one-time user authorization covered the exact attempt53 package hash on G965F `M2_G965F_SERIAL`, fresh USERDATA formatting and boot. All eight install stages passed and the first fresh boot reached `sys.boot_completed=1`. Fresh-data checks show `adb_enabled=1`, `development_settings_enabled=1`, `ro.adb.secure=0`, and Rampart logs `disabledRampart=true`. Attempt53 used the runtime-diagnostic profile, which does not enable the optional patch0095 CACHE logger; its absence is expected for this build and not evidence of patch failure. USB gadget init also logs `init.samsungexynos9810.usb.rc:382 ... No such device` while host ADB remains reachable. Next acceptance items: inspect actual Settings switches and test user changes persist without a forcing boot script; test camera/audio/radio/Wi-Fi and the rest of device hardware; keep metadata persistence and G965N/Android17 explicitly open. Do not reuse attempt53's one-time write authorization for a new package.

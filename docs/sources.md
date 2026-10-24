@@ -137,7 +137,7 @@ patch0018/0019 cho payload đã boot. Xem docs/release-retention.md.
 
 ## A376B16 đã nhận và kiểm — 21/10/2026
 
-File nguồn /home/whitemmo/Downloads/SAMFW.COM_SM-A376B_XXV_A376BXXS5AZH4_fac.zip,
+File nguồn ${LOCAL_ABSOLUTE_PATH}
 9.015.573.471byte. MD5 7ffba2650a25ae900424826b8dc997d6 khớp kỳ vọng;
 SHA256 fe633153bfa05b042943321c410c0e5a761ac03d77a9f42ab9014f61610d4550;
 CRC toànZIP PASS, MD5 trailer cả6Odin PASS. ZIP gốc không di chuyển/ghi đè.

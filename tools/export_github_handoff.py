@@ -3,8 +3,9 @@
 
 Reason: share the port sources without firmware, raw logs, keys or device IDs.
 Files: a new destination directory only; originals remain unchanged.
-Verify: explicit allowlist, known-device redaction, secret-pattern rejection,
-and SHA256 manifest. Patch replay must be checked separately before publishing.
+Verify: explicit allowlist, known-device and local absolute-path redaction,
+secret-pattern rejection, and SHA256 manifest. Patch replay must be checked
+separately before publishing.
 """
 import argparse
 import hashlib
@@ -53,6 +54,9 @@ def main():
             redactions += text.count(identifier)
             text = text.replace(identifier, alias)
         text = text.replace(str(ROOT), '${PROJECT_ROOT}')
+        # Do not publish the workstation username, local Downloads names, or
+        # other machine-specific absolute paths from source/firmware manifests.
+        text = re.sub(r'/(?:home|Users)/[^\s"\'`<>]+', '${LOCAL_ABSOLUTE_PATH}', text)
         relative = source.relative_to(ROOT)
         target = dest / relative
         target.parent.mkdir(parents=True, exist_ok=True)

@@ -145,4 +145,58 @@ Retained output: `rom/out/releases/M2/star2lte-1792833533-dLCdbp/`. Flash ZIP SH
 
 Read-only preflight on G965F serial alias M2 confirms `SM-G965F`, bootloader `G965FXXUHFVG6`, TWRP `3.7.0_9-0`, device `star2lte`; the full package, target-files, BOOT and all stage hashes match. Updater script contains no writes to EFS, CPEFS, RADIO, RECOVERY or BOTA. Exact-size raw reads of those protected partitions and BOOT completed, and BOOT remains baseline `cc618abc72e8e568e56a8c643c906cff0d7b9143dfc77d86dc645f55776ed01d`. Evidence is in `logs/20261024-m2-attempt53/read-only-preflight.json`.
 
-No attempt53 flash, format or device write has been issued. The current AGENTS.md authorizes only a different exact M2 package SHA (`e102bee165410ede2869532d31c8a5b693a5a2c3242a59f5fd1fdf113009d1dc`), while this completed artifact has SHA `f72be9be303e34fd5f625c5fd3d50e0590589e62b85386d8816f97f9758343ef`. Do not infer authorization across package hashes. Patch0104's runtime effect, fresh-data RANGING registration, boot completion, and post-boot ADB behavior remain unverified until the user explicitly updates the allowed package scope. M1 and G965N are untouched.
+The user then granted a one-time exception for exactly this attempt53 package on the same G965F, including fresh USERDATA format and boot. It was not extended to any other package or to G965N. Execution and runtime results follow.
+
+## attempt53 one-time fresh install and runtime result
+
+The installer completed all eight recovery stages with RC=0. Stage 8 reports
+`Formatting cache, omr, preload and data...` and `script succeeded`. USERDATA UUID
+changed from `e7303818-969c-4747-82ea-c7c129d01ed1` to
+`e9858dbe-3a0a-4176-8d84-bed40b751e95`; the pre-format marker was absent afterward.
+Exact-size raw hashes for EFS, CPEFS, RADIO, RECOVERY and BOTA0/1/2 match before
+and after. BOOT matches diagnostic image hash
+`55f3af8c3dc9c5115fd80f944849c8205c2d2bc5459bb2ecc7114d842669fe77`. No protected
+partition or modem/bootloader was written. Evidence is retained in
+`logs/20261024-m2-attempt53/`.
+
+Fresh first boot completed: the watcher saw ADB at about 189.7 seconds and
+`ANDROID_BOOT_COMPLETED=1` at 196.4 seconds. The running kernel identifies as
+`4.9.337-DS-ACK-V1.12-G965F-08.05.2026`, SELinux is Enforcing, and
+`system_server` and SurfaceFlinger remain present. The captured logs contain no
+`Missing permission definition for permission "android.permission.RANGING"`
+or fatal SystemServer exception. Runtime `dumpsys package android` lists
+`android.permission.RANGING` as dangerous, and logcat records
+`RangingService: Registering Ranging service`.
+
+Patch0104's diagnostic effect is confirmed: `/metadata` is a 16 MiB tmpfs and
+`/metadata/aconfig/{boot,flags,maps}` plus storage records exist on fresh data.
+This demonstrates current-boot aconfig initialization, not persistence across
+reboot; the mount is volatile. Fresh ADB settings show `adb_enabled=1`,
+`development_settings_enabled=1`, and `ro.adb.secure=0`; Rampart logged
+`disabledRampart=true` at locked boot. These support the required defaults and
+no-RSA configuration on this first boot. User-toggle persistence/behavior across
+manual changes remains a separate acceptance check.
+
+Attempt53 used `m2-g965f-a376b-android16-runtime-diagnostic.sh`, which enables
+the runtime-kernel diagnostic but does not set `EXYNOS9810_ENABLE_INIT_DEBUG`.
+The separate `m2-g965f-a376b-android16-no-ksu-init-debug.sh` profile carries that
+flag. Therefore the intended CACHE init logger was not enabled for this attempt:
+`/vendor/etc/init/init.debug.rc` and `/vendor/bin/init_debug_log.sh` are absent,
+and `/cache/unica` was not created. Patch0095 provides the final vendor hook,
+but attempt53 did not test it; the earlier test plan incorrectly assumed this
+profile enabled it. Boot milestones came from host ADB/logcat. If another
+logger-dependent probe is needed, use a reviewed combined profile and require
+both files in the final ext4 VENDOR image before flashing.
+
+The captured dmesg also includes USB gadget init failures; for example,
+`init.samsungexynos9810.usb.rc:382` reports `Unable to write to file
+'/config/usb_gadget/g1/UDC' ... No such device`. ADB is reachable on this host
+after boot and `ro.adb.secure=0`. Check this against direct USB behavior and the
+S9+ controller property before any USB-stack patch. Full logs remain local under
+`logs/20261024-m2-attempt53/`.
+
+Attempt53 proves a fresh G965F M2 Android16 first boot through SystemServer and
+boot completion under this diagnostic configuration. It does not prove full
+hardware acceptance, user-toggle lifecycle, persistent metadata, G965N
+compatibility or Android17/M4 readiness. Keep this diagnostic package distinct
+from production duhansysl kernel releases; M1 and G965N remain untouched.

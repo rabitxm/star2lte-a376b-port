@@ -40,6 +40,10 @@ Phần này thay thế các mục xung đột bên dưới theo chỉ thị tr�
   G965FXXUHFVG6; người dùng nói rõ USERDATA không cần giữ. Ngoại lệ chỉ áp dụng
   package M2 SHA256 `e102bee165410ede2869532d31c8a5b693a5a2c3242a59f5fd1fdf113009d1dc`
   trên G965F; không mở rộng sang G965N hoặc package/mốc khác.
+- 24/10/2026: người dùng cho phép một lần duy nhất fresh flash attempt53 trên cùng
+  G965F `M2_G965F_SERIAL`, gồm format USERDATA, boot và thu log. Package SHA256
+  `f72be9be303e34fd5f625c5fd3d50e0590589e62b85386d8816f97f9758343ef`; thao tác
+  hoàn tất thành công. Không mở rộng quyền này sang package khác hoặc G965N.
 
 Các mục kernel tự build và vendor stock bất biến trong tài liệu cũ không còn
 hiệu lực. Mọi quy tắc còn lại bên dưới tiếp tục áp dụng nếu không xung đột.

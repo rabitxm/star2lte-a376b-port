@@ -573,3 +573,44 @@ selection stays pinned. Optional camera vendor tags warn; video/audio/telephoto,
 advanced modes, storage wipe/OTA/staged flags, fresh ADB defaults/switches,
 connectivity and N remain unaccepted. All live test files/BOOT rolled back;
 M2 stays in TWRP. No EFS/CPEFS/radio write issued.
+
+## 24 October 2026 — attempt53 fresh first boot
+
+One-time user approval covered only package SHA
+`f72be9be303e34fd5f625c5fd3d50e0590589e62b85386d8816f97f9758343ef` on G965F
+`M2_G965F_SERIAL`, including fresh USERDATA. Installer completed all eight
+stages with RC=0. USERDATA UUID changed from
+`e7303818-969c-4747-82ea-c7c129d01ed1` to
+`e9858dbe-3a0a-4176-8d84-bed40b751e95`; the preformat marker disappeared.
+EFS/CPEFS/RADIO/RECOVERY/BOTA0/1/2 exact raw hashes matched before and after.
+BOOT is diagnostic hash `55f3af8c3dc9c5115fd80f944849c8205c2d2bc5459bb2ecc7114d842669fe77`.
+
+First boot reaches ADB at about189.7s and `sys.boot_completed=1` at196.4s,
+Enforcing. Runtime creates `/metadata/aconfig/{boot,flags,maps}` on a 16MiB
+tmpfs. `dumpsys package android` lists `android.permission.RANGING` as dangerous;
+logcat records `RangingService: Registering Ranging service`; no prior
+`Missing permission definition ... RANGING` SystemServer fatal is present.
+Fresh settings initially show adb_enabled=1, development_settings_enabled=1,
+rampart_main_switch_enabled=0, and `ro.adb.secure=0`. Rampart also logs
+`BootCompleteActionHandler: ACTION_LOCKED_BOOT_COMPLETED: disabledRampart=true`.
+User-toggled behavior is not tested yet.
+
+Attempt53 selected `m2-g965f-a376b-android16-runtime-diagnostic.sh`, which does
+not enable `EXYNOS9810_ENABLE_INIT_DEBUG`; the separate init-debug profile does.
+Therefore the expected patch0095 diagnostics were not enabled for this run:
+`/vendor/etc/init/init.debug.rc` and `/vendor/bin/init_debug_log.sh` do not exist,
+and `/cache/unica` was not created. The absence is consistent with the selected
+profile, so it is not evidence that patch0095 failed. The earlier attempt plan
+incorrectly expected the logger in this profile. If another logger-dependent
+probe is needed, define/use a reviewed combined profile and require the final
+VENDOR image to contain and label both files. Host-collected logcat/dmesg remain
+usable evidence for attempt53.
+
+USB gadget init also reports `init.samsungexynos9810.usb.rc:382 ... Unable to
+write to file '/config/usb_gadget/g1/UDC' ... No such device`; corresponding
+repeated failures and `symlink() failed: File exists` appear in dmesg while ADB
+is reachable from this host. Establish whether the error impacts physical USB
+interfaces before modifying the USB stack. Full captured evidence:
+`logs/20261024-m2-attempt53/`. This is first-boot progress, not full hardware,
+G965N or Android17 acceptance; the one-time write approval does not authorize
+another package.

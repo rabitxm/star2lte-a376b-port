@@ -62,9 +62,13 @@ boot does not establish G965N compatibility or Android17 support.
 
 Proprietary Samsung firmware, generated output, ROM/BOOT images, EFS dumps,
 credentials, signing keys and raw device logs are excluded. The exported GitHub
-snapshot substitutes physical device identifiers with role aliases and includes
-only allowlisted text/source files. Upstream code and kernel retain their
-respective licenses and credits; this handoff does not relicense third-party code.
+snapshot substitutes physical device identifiers with role aliases, replaces
+local absolute paths with `${LOCAL_ABSOLUTE_PATH}`, and includes only allowlisted
+text/source files. This path redaction was added after review found a local
+Downloads path in prior snapshots; verification is the exporter's new-snapshot
+scan plus secret/identifier checks. Files affected: `tools/export_github_handoff.py`
+and this handoff note. Upstream code and kernel retain their respective licenses
+and credits; this handoff does not relicense third-party code.
 
 ## Runtime kernel diagnostic — 24 October 2026
 
@@ -90,4 +94,4 @@ remain pending; see the updated runtime and metadata reports.
 
 ## M2 diagnostic status — 24 October 2026
 
-The integrated G965F Android 16 diagnostic build attempt53 passed compiled gates, real ext4 SYSTEM/VENDOR/ODM audits and signed-package verification. Its flash ZIP SHA256 is `f72be9be303e34fd5f625c5fd3d50e0590589e62b85386d8816f97f9758343ef`; eight recovery-compatible ZIP32 stages also passed. Read-only preflight confirms the expected G965F/TWRP identity, package and stage hashes, protected-partition byte reads and baseline BOOT. It has not been flashed: the current AGENTS.md authorization explicitly limits package writes to a different M2 SHA. Patch0104's fresh-runtime effect therefore remains unverified. See [the integrated runtime report](docs/m2-integrated-runtime-build.md).
+The integrated G965F Android 16 attempt53 diagnostic build passed compiled gates, actual ext4 SYSTEM/VENDOR/ODM audits, and signed package verification. After one-time authorization for this exact package, it was fresh-installed on G965F `M2_G965F_SERIAL`; all eight TWRP32 stages passed, USERDATA UUID changed, and protected partition hashes remained unchanged. Its first boot reached `sys.boot_completed=1` at 196.4s with Enforcing SELinux. The `/metadata` tmpfs initialized aconfig; RANGING is dangerous and RangingService registered. Fresh ADB defaults were enabled with `ro.adb.secure=0`, and Rampart logged `disabledRampart=true`. Attempt53's selected runtime-diagnostic profile did not enable the optional patch0095 CACHE logger. USB gadget init logs a missing UDC while host ADB is reachable. This is a diagnostic first boot, not full hardware or M4/G965N acceptance. See [the integrated runtime report](docs/m2-integrated-runtime-build.md).
