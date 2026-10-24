@@ -1,0 +1,23 @@
+From: Codex M2 native32 runtime compatibility
+Subject: [PATCH] Include GLES1 wrapper required by Exynos9810 gralloc
+
+Reason: actual camera open aborts provider: dlopen gralloc.exynos9810.so fails
+because system32 libGLESv1_CM.so is missing. Extend the existing hash-pinned
+S22 native32 compatibility set by that wrapper only; no hardware/blob swap,
+app ABI, ART or radio change. File: a376b_native32.lock.json.
+Verify source hash/ELF dependencies, actual Camera open/provider and OMX logs,
+normal native32 final metadata verifier and complete source patch replay.
+Rollback: remove the previously absent system/lib/libGLESv1_CM.so on the test
+phone or reverse this lock entry and rebuild via the existing fork.
+
+diff --git a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_native32.lock.json b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_native32.lock.json
+--- a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_native32.lock.json
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_native32.lock.json
+@@ -23,6 +23,7 @@
+     "android.hardware.graphics.mapper@4.0.so": "af0702596792973c8e194dc7b86f408dc0c245ea0199335386a619936d3a598d",
+     "ld-android.so": "e7540ded3974c2b1152505e011df8afa8a5dae66493c1684268af4eee76eacc1",
+     "libEGL.so": "26a211d62858e6f82a55b14dd62501e1779d87bdbc92992ffd0ddd124671df14",
++    "libGLESv1_CM.so": "37c20346dcf16ec784d1734548550be8967a5eff09c9b66f7817bf7a0095e989",
+     "libGLESv2.so": "d89151c39326bfb215c44289d06794c23f5f6067af981f9d5039aeaa655ea8be",
+     "libGLESv3.so": "96ee3a0a1ee1f9bab511abdcb8c303874c190009dcc2b4c0855f313d5fc659cc",
+     "libSurfaceFlingerProp.so": "b624ed599ac752cb7997a3f4071df63680f198b86e7bda53f1508b143ca6b589",

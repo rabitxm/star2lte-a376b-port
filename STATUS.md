@@ -409,3 +409,28 @@ the A37 module rejects the synthetic5.4.302 kernel for requiring5.10 before
 loading programs. BPF payload layouts differ; `CONFIG_DEBUG_INFO_BTF` is off
 in the controlled4.9 config. Older APEX is now a candidate only, pending A37
 API and tethering feature tests. No APEX/system change or test has been flashed.
+
+
+24/10/2026 — M2 metadata diagnostic completed: prior S22 Tethering APEX test passed bpfloader, and exact S22 system64 graphics V6 interface cleared surfaceflinger linker failure. Next AppOps fatal was missing RANGING. Captured AconfigFlags package-load errors trace to read-only /metadata; generated AppOps flag is true while manifest parsing cannot read aconfig storage. Only new variable: volatile 16MiB /metadata tmpfs before donor aconfigd. M2 boot_completed1 observed at77.7s, Enforcing, Welcome screenshot captured, SystemServer1707/SurfaceFlinger1412/zygote1311 stable through uptime156.61s. RANGING is registered dangerous and donor flag reads enabled/default/read-only. Current adb_enabled1, rampart_main_switch_enabled0, ro.adb.secure0; reused data, not a fresh-default acceptance. Camera still fails AudioSystem symbol resolution; vendor aconfig tables and persistence remain unresolved. After capture, ADB recovery reboot succeeded; original rc/APEX, V6 absence and original BOOT cc618abc...776ed01d all verified. No protected partition changed during BOOT write/rollback. M2 remains in TWRP; production kernel/M1/N unchanged. See docs/m2-metadata-runtime.md. No M4 transition.
+
+24/10/2026 — M2 camera/persistent metadata source fixes completed and live-tested.
+Patch0099 retains the A37 native cameraserver ABI and ports only the existing
+8-byte max_buffers=0 fallback; exact80500 is recognized by the retained Camera
+APK using its existing V8_0 feature set. Patch0100 retains the fork's existing
+CACHE metadata bind after final vendor restore, mirrors20 metadata label aliases,
+and describes the flagless Hybrid Vendor with a validated empty aconfig v2
+container. Platform aconfigd now exits0; RANGING remains dangerous with the
+original donor flag. Patch0101 adds the missing pinned system32 GLES1 wrapper
+required by vendor gralloc. No audio-stack or vendor hardware/radio replacement.
+
+Actual G965F tests: Enforcing/boot_completed1, marker inode/hash preserved across
+reboot, stable cameraserver/SystemServer through uptime397.34s, rear/front preview
+buffers and decoded JPEG4032x3024 /2640x1980. Camera optional vendor-tag warnings
+remain; video/audio/telephoto and full hardware acceptance are open. All temporary
+SYSTEM/VENDOR edits, generated files and BOOT were rolled back with hash checks;
+CACHE metadata fixture backed up (215 hashes verified) and removed, restoring
+its original absence. BOOT cc618abc...776ed01d; M2 stays in TWRP. No USERDATA format,
+M1/G965N or protected-partition write issued. Full report:
+`docs/m2-camera-metadata-fixes.md`. Source replay91patches/72paths PASS, hash locks
+updated. No new complete ROM build/package or M4 transition. Diagnostic kernel,
+Tethering APEX and graphics V6 controls still need explicit build integration.

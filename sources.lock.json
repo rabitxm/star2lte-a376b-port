@@ -679,6 +679,18 @@
         "path": "patches/fork/0098-record-existing-source-for-collaboration.patch",
         "sha256": "b83a07cf523225fe105a89f7826421f9628780ff1e9d75c19715aa88a6a6f345",
         "local_sha256_before_identifier_redaction": "adf24061270fa41b1ea71b6044b67f9e46db17949fdc564ad6c42bcda22f5792"
+      },
+      {
+        "path": "patches/fork/0099-port-a376b-native-camera-abi-and-version.patch",
+        "sha256": "dddcc67e49ebce5504f5544f39eb87890b06e61d28cc86f72a45d79320bf5728"
+      },
+      {
+        "path": "patches/fork/0100-retain-cache-metadata-and-flagless-vendor-container.patch",
+        "sha256": "7b65a74df5610e45c13e0c570cec83ea53b2a09a956dbb90426d0ce820c2794b"
+      },
+      {
+        "path": "patches/fork/0101-retain-native32-gles1-for-legacy-gralloc.patch",
+        "sha256": "a15c67be7ff5e455598b7cc154fc6348f6dbf5ec5dd01930d61abfaa12b349d6"
       }
     ]
   },

@@ -3,7 +3,7 @@
   "purpose": "Source and selected diagnostic evidence for external help",
   "fork_url": "https://github.com/Eend15/Unofficial-Un1ca-9810",
   "fork_commit": "2b25ae6fc3098650be249bd1898e21e563cd5df1",
-  "active_patches": 88,
+  "active_patches": 91,
   "device_identifier_replacements": 55,
   "binary_firmware_raw_logs_credentials_included": false,
   "device_serials_in_exported_text_are_role_aliases": true,
@@ -17,16 +17,16 @@
       "sha256": "4db22bfd900e57f60f1eee4ca42ed7946fec0ada71307008a3303f9ec466b6c6"
     },
     "README.md": {
-      "bytes": 5650,
-      "sha256": "7454f93ac7658a12bd95c133e85f9fdb6177b0e87e2a5bbbfb8633ccfde114da"
+      "bytes": 5817,
+      "sha256": "1d7e1dd994746338978d21923ea22a93492a82e7c2b010126069727bb0671402"
     },
     "STATUS.md": {
-      "bytes": 52254,
-      "sha256": "dbfca5099dfa276afac49efb71b5ab9a67af0d283e23f401b855d9b5cb4aa319"
+      "bytes": 55040,
+      "sha256": "da12c4b002b12c565ba823c65efdeb09747829456582010679e40a1f579fe8b5"
     },
     "sources.lock.json": {
-      "bytes": 1590829,
-      "sha256": "af204f03f1935c2975ea9bb6edc127d977c73144a236b265c5a51252c7e3a932"
+      "bytes": 1591398,
+      "sha256": "ef0e22fb9fd577906564cc24246b98b19b5894546eca18bd9b332540fc0f3b4a"
     },
     "firmware.lock.json": {
       "bytes": 661055,
@@ -37,20 +37,20 @@
       "sha256": "004158f7b10bf132de0adaf93a23513e511dcc23b9b1534fcda5bf451d540a8b"
     },
     "docs/HELP-WANTED.md": {
-      "bytes": 6538,
-      "sha256": "c78004d8e0e5f8f963a8639d968feef235ef190425c570b94f4573d8fcb7d9f4"
+      "bytes": 4553,
+      "sha256": "70e28261a4248531b824de83008c682795405c7d3f48164cec3c4b06070db425"
     },
     "docs/PLAN.md": {
-      "bytes": 14390,
-      "sha256": "84c75bfed46bc96525ece6f8477c1f46ee229d45a374d02a07bc064da30c8163"
+      "bytes": 15982,
+      "sha256": "72e0da80eb9e128b377293e8d78cc9b6f8eac2705cc93500c65a98b9a63deafe"
     },
     "docs/adb-defaults.md": {
       "bytes": 7249,
       "sha256": "9d52a5f8f609badafffaab40d410a02c357d3ef628dd22bdffcc836c2bd06d67"
     },
     "docs/bugs.md": {
-      "bytes": 66342,
-      "sha256": "bf021d5f30d02389272b3a8443e2027a212c5c0a251241fc99b7eed6eafb81bf"
+      "bytes": 69121,
+      "sha256": "d90a24072d5790d9f99d7ed248afa78b21f1fb0913ff04c665bc577a1eeab0bc"
     },
     "docs/build-environment.md": {
       "bytes": 4132,
@@ -85,16 +85,24 @@
       "sha256": "85abc2e781b852e97a85a6c0975bf37ecde3a6e3e829343740881a3eb4648600"
     },
     "docs/m2-build.md": {
-      "bytes": 96080,
-      "sha256": "ba7b47cd9d4f5005c7f521818068f8d98865630c348fbe8537f42cfd5387579f"
+      "bytes": 97672,
+      "sha256": "bb03858513040bcfcd918c8761a0f0b5dafd1f612e123dda94b893b7cefc6596"
+    },
+    "docs/m2-camera-metadata-fixes.md": {
+      "bytes": 10269,
+      "sha256": "d8b0b4918eda25d5f8566c40e18adb7d3309f2edabe5c797c25935ff766beeaf"
     },
     "docs/m2-early-diagnostic-review.md": {
       "bytes": 3613,
       "sha256": "d16804ec3d8a5cb5931fa11e7eade8abce0ae1e19248f703d3acb4d2b89a442b"
     },
+    "docs/m2-metadata-runtime.md": {
+      "bytes": 7003,
+      "sha256": "b968ff13ea56226827e8ede783fd2f861108f58e3e5d3b87effbd3df77c36a49"
+    },
     "docs/m2-runtime-kernel-fix.md": {
-      "bytes": 10787,
-      "sha256": "9cb484d5c4bba5bf805f5669c36d069453e5a795c87af39148f86cccb9466c5a"
+      "bytes": 11773,
+      "sha256": "ec98e5c5f4df7541039ad59fb850ea83c86442e7c20f863e022269bbc6f9b2a2"
     },
     "docs/module-inventory.tsv": {
       "bytes": 804,
@@ -105,8 +113,8 @@
       "sha256": "eae21e1595dfbc7c8455a75b94ade705c385eba6b13c410e656f1c1b04f0f765"
     },
     "docs/patch-matrix.md": {
-      "bytes": 53703,
-      "sha256": "5a2d3094783be6258cb2051550959dd3b5862ac7ea58a3a568b9f01db5d18bae"
+      "bytes": 56150,
+      "sha256": "a7ed74d7638efe1150da340eb8df10583fa45e529e00e7d7f3ba0abf403e6e33"
     },
     "docs/probe13-report.md": {
       "bytes": 6487,
@@ -117,12 +125,12 @@
       "sha256": "a5ec542aac5e5377d6d023bc00e204bc327b8c2616d8583feeb4f90e28572466"
     },
     "docs/repo-map.md": {
-      "bytes": 20019,
-      "sha256": "0ddf403b6946b336630de6b2cf1f7f7d4c1b7779083ecf41e53437d088239b7e"
+      "bytes": 22448,
+      "sha256": "4b705ebeb3723f5d04dc131fd73a5e58dfa60cc885dbffbdf04c5176cdc07864"
     },
     "docs/sources.md": {
-      "bytes": 14746,
-      "sha256": "9e77897371479db5a911eafd40dd39bfcfd44847ac3dd13891f1d97a6566b964"
+      "bytes": 16956,
+      "sha256": "3dde20036dbd782b06ea6bdff1de90f388e51047078b041058e52a6de1c1ab40"
     },
     "patches/fork/0001-host-path-quoting.patch": {
       "bytes": 5385,
@@ -512,9 +520,21 @@
       "bytes": 25299,
       "sha256": "b83a07cf523225fe105a89f7826421f9628780ff1e9d75c19715aa88a6a6f345"
     },
+    "patches/fork/0099-port-a376b-native-camera-abi-and-version.patch": {
+      "bytes": 8017,
+      "sha256": "dddcc67e49ebce5504f5544f39eb87890b06e61d28cc86f72a45d79320bf5728"
+    },
+    "patches/fork/0100-retain-cache-metadata-and-flagless-vendor-container.patch": {
+      "bytes": 9162,
+      "sha256": "7b65a74df5610e45c13e0c570cec83ea53b2a09a956dbb90426d0ce820c2794b"
+    },
+    "patches/fork/0101-retain-native32-gles1-for-legacy-gralloc.patch": {
+      "bytes": 1767,
+      "sha256": "a15c67be7ff5e455598b7cc154fc6348f6dbf5ec5dd01930d61abfaa12b349d6"
+    },
     "patches/fork/series": {
-      "bytes": 4198,
-      "sha256": "236b3db39741394714cc1681fb2f57407c3a59b17c6d1c637cc67e1bbc9caf28"
+      "bytes": 4365,
+      "sha256": "22957b90e40ac7d51e54776921b8ce9dd315fca3edb69d46b01fe28c9410e7be"
     },
     "patches/kernel/0000-reserve-vma-bit-for-wipeonfork.patch": {
       "bytes": 2140,
@@ -552,6 +572,10 @@
       "bytes": 13449,
       "sha256": "099d7cbe645886266f7d1c4efb1349db245ec6f7602058ab1efa95d22c07685d"
     },
+    "diagnostics/m2-metadata-tmpfs.patch": {
+      "bytes": 946,
+      "sha256": "148d1ce03b3737c712941c798f1e4f851723c52bb55bc8a5105a8648bf1b3aec"
+    },
     "diagnostics/madvise_wipeonfork_selftest.c": {
       "bytes": 3673,
       "sha256": "f29d9ed219c4595d57485b8b3bdeda58b6b00fce95448cbadb5f7026c5c74ef5"
@@ -584,6 +608,10 @@
       "bytes": 1351,
       "sha256": "22ca13cef8f0629f79bdba272dcf1fba5e9f3da9baf487efb3384a2f373e92c4"
     },
+    "support/evidence/m2-camera-metadata-summary.json": {
+      "bytes": 1485,
+      "sha256": "47fa1328eb0b6592462b2b2fcf3d240da5273dfc60a8d5bc9063db59e0c83643"
+    },
     "support/evidence/m2-madvise-backport-selected.txt": {
       "bytes": 1553,
       "sha256": "1f6a786a56a172c1a4b3ded65d2c13eb8fbe6e1d3ba56f54ecdd4e55f1ca9718"
@@ -591,6 +619,10 @@
     "support/evidence/m2-madvise-backport-summary.json": {
       "bytes": 1367,
       "sha256": "505bb7338bde13aaa4a40ee4334d2f12a8e8fdee4ccdea7407b02deeb6328e17"
+    },
+    "support/evidence/m2-metadata-welcome-selected.txt": {
+      "bytes": 1246,
+      "sha256": "c2a96e468415fae2d1929c1b260e37cb58b56e593b276a8002a7d791da95bf81"
     },
     "support/evidence/probe10-init.txt": {
       "bytes": 7889,
@@ -657,8 +689,8 @@
       "sha256": "2651d720dac1aed9a91968b800fd32e9b36cf93dc9ebc8c3c1defd109ede7fe9"
     },
     "support/evidence/source-replay-audit.json": {
-      "bytes": 3934,
-      "sha256": "11178fb362486e2e2d0bdeb7be8ce4ccd13aa427bb83e3390cf2eb69e91f5cbd"
+      "bytes": 4351,
+      "sha256": "f4db7fee4cd2d236a2c909e65196e8b8d99df424d40ce1f84758874fc836d64a"
     }
   }
 }

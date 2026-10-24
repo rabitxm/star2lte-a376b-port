@@ -1,0 +1,17 @@
+Reason: test missing writable /metadata as cause of AconfigPackage loading failure and RANGING permission omission.
+Files: test device system/etc/init/aconfigd.rc only; no production recipe changed.
+Verification: donor aconfigd initializes maps/boot values; RANGING permission is registered; SystemServer passes AppOpsService.systemReady.
+Rollback: exact original rc, A37 APEX, remove added V6 library, baseline BOOT. tmpfs is volatile; no metadata block device exists.
+
+--- a/system/etc/init/aconfigd.rc
++++ b/system/etc/init/aconfigd.rc
+@@ -24,6 +24,9 @@
+     socket aconfigd_system stream 666 system system
+ 
+ on early-init
++    # Diagnostic only: legacy star2lte has no metadata partition.
++    mount tmpfs tmpfs /metadata nosuid nodev noexec mode=0755,size=16777216
++    restorecon /metadata
+     mkdir /metadata/aconfig 0775 root system
+     mkdir /metadata/aconfig/flags 0770 root system
+     mkdir /metadata/aconfig/maps 0775 root system

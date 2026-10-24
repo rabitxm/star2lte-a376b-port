@@ -5,31 +5,17 @@ SM-G965F is tested first. Final goal: Galaxy A37 SM-A376B One UI 9 / Android 17.
 This repository shares source patches, diagnostics and evidence for assistance.
 It does not contain a working Android 17 ROM or firmware images.
 
-**Current status — 24 October 2026:** M1 (S22/Android 16) boots on G965F.
-M2 (A37 A376BXXS5AZH4, Android 16 / SDK36.1 / OneUI80500) still bootloops,
-but probe13 now captures the explicit restart trigger. All30 retained boots
-reach second-stage init;23 capture vendor BoringSSL self-test SIGABRT and its
-reboot-on-failure message,22 retain the shutdown command
-`reboot,boringssl-self-check-failed`. The earlier policy-load observation
-boundary was a recorder access failure, demonstrated on M1 and M2.
+**Current status — 24 October 2026:** M1 (S22/Android16) boots on G965F. M2 A37 A376BXXS5AZH4 (Android16 / SDK36.1 / OneUI80500) reaches Android under Enforcing with the documented diagnostic controls. The latest tests retain aconfig data across reboots, make platform aconfigd exit0, and produce rear/front preview buffers plus JPEG photos that fully decode on the PC. The camera ABI, OneUI80500 enum and missing native32 GLES1 fixes are now in the fork patch series.
 
-The native A37 **runtime APEX linker**, in addition to its bootstrap linker,
-reproduces `arc4random data MADV_WIPEONFORK failed: Invalid argument` / exit134
-on the pinned DS-ACK kernel. Attempt50's M1 bootstrap overlay does not replace
-that runtime APEX. A separate linkerconfig execution error remains to be
-resolved; init A37 names the APEX path, so the absence of a system-bin symlink
-alone is not a demonstrated cause. No self-test was bypassed or kernel changed.
-Both diagnostic BOOT images are rolled back: M1 is booted, M2 is in TWRP.
-See [probe13 results](docs/probe13-report.md) and
-[the assistance brief](docs/HELP-WANTED.md) for evidence and remaining limits.
+A complete ROM containing the whole tested combination has not been packaged. Video/audio, connectivity, OTA/CACHE lifecycle, fresh-data ADB defaults/switches and remaining hardware tests are open. All live diagnostic edits and BOOT were rolled back and verified; M2 remains in TWRP. M1/G965N were untouched, production kernel selection and retained releases stay unchanged. See [camera and persistent metadata report](docs/m2-camera-metadata-fixes.md), [kernel diagnostic provenance](docs/m2-runtime-kernel-fix.md) and [current assistance brief](docs/HELP-WANTED.md).
 
 ## Source reproduction
 
 The existing build system is
 [Eend15/Unofficial-Un1ca-9810](https://github.com/Eend15/Unofficial-Un1ca-9810),
 branch Android-16, pinned commit
-`2b25ae6fc3098650be249bd1898e21e563cd5df1`. The 88 active text patches in
-`patches/fork/series` extend that fork; they are numbered through 0098.
+`2b25ae6fc3098650be249bd1898e21e563cd5df1`. The 91 active text patches in
+`patches/fork/series` extend that fork; they are numbered through 0101.
 
 ```bash
 bash tools/prepare_fork.sh
@@ -87,8 +73,10 @@ APEX linker abort: `arc4random data MADV_WIPEONFORK failed: Invalid argument`
 (exit134), followed by init's `reboot_on_failure`. A separately built, narrowly
 scoped DS-ACK V1.12 backport passed real fork/zero-fill/KEEPONFORK checks and
 made the exact A37 linker `--list` exit0 on the M1 G965F control under enforcing.
-M1 has been restored to original BOOT. The audited diagnostic BOOT is now under
-one M2 G965F test; M2 acceptance and original BOOT rollback remain pending.
+M1 has been restored to original BOOT. The audited diagnostic BOOT cleared both vendor/system BoringSSL self-tests on
+M2. Subsequent tests reached Android, retained metadata through reboot and captured
+rear/front photos. All test writes have been rolled back; a complete production
+M2 artifact and hardware acceptance remain pending.
 This is not a production kernel/package change. Details and hashes:
 [diagnostic report](docs/m2-runtime-kernel-fix.md).
 
@@ -96,5 +84,6 @@ The M2 test now clears the previous BoringSSL/linkerconfig failures: both
 BoringSSL self-tests exit0 and linkerconfig generates its config. It then reaches
 a separate A37 Tethering gate: `Android 25Q4 requires kernel 5.10`, causing
 `bpfloader` exit7 and `reboot,bpfloader-failed` on DS-ACK4.9.337. The diagnostic
-BOOT was restored to its original hash after capture. Next work is an evidence
-based BPF requirements audit; see the updated runtime report.
+BOOT was restored to its original hash after capture. The older retained S22 Tethering APEX then cleared that loader gate, and
+the later V6/metadata test reached Welcome. Hardware and module acceptance
+remain pending; see the updated runtime and metadata reports.

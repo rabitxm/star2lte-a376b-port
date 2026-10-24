@@ -86,3 +86,6 @@
 0096-m2-bootstrap-compat-on-exynos9810.patch
 0097-record-final-stage-before-userdata-format.patch
 0098-record-existing-source-for-collaboration.patch
+0099-port-a376b-native-camera-abi-and-version.patch
+0100-retain-cache-metadata-and-flagless-vendor-container.patch
+0101-retain-native32-gles1-for-legacy-gralloc.patch

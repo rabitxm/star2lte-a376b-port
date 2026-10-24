@@ -377,3 +377,21 @@ feature compare 10,189 exported CRCs with no changes. M1 feature calibration
 passes, while M2 test has been launched and is not yet a final acceptance.
 The fork remains at 88 ROM patches; this diagnostic series does not silently
 change the normal ROM kernel default or retained M1/M2 images.
+
+
+24/10/2026 — standalone `diagnostics/m2-metadata-tmpfs.patch`, outside normal fork series. Reason: read-only /metadata prevents donor aconfig tables from loading and RANGING permission registration, causing AppOps systemReady fatal. Affected test file: SYSTEM system/etc/init/aconfigd.rc; adds only tmpfs mount/restorecon before donor early-init aconfig actions. Fixed controls: same WIPEONFORK diagnostic BOOT, retained S22 Tethering APEX and system64 V6 interface as preceding runtime test. Verification: donor flag enabled/default, RANGING registered dangerous, Welcome screenshot, boot_completed1/Enforcing and stable SystemServer; captured unresolved vendor aconfig and camera ABI errors. Full original rc/APEX restoration, newly added V6 deletion and BOOT cc618abc rollback/readback PASS; no protected partition changed during BOOT writes. No production recipe/kernel default changed. Limit: no flag persistence across reboots/OTA and no hardware acceptance. Report: docs/m2-metadata-runtime.md.
+
+## 24 October 2026 — patches0099–0101
+
+| Patch | Reason / affected files | Verification |
+| --- | --- | --- |
+| 0099 native camera ABI/version | Existing native finalization; two Python adapters. A37 server replaces ABI-incompatible S22 server while preserving reviewed8byte fallback; exact80500 enum compatibility | Pinned input/instruction checks, other bytes unchanged, compiled enum, onlyclasses3.dex change/same signer; rear/front preview/JPEG decode PASS |
+| 0100 persistent metadata/container | Existing boot_restore, M1/M2 profiles, two adapters. Reapply lost CACHE bind after vendor restore, mirror20 labels and describe flagless vendor | Idempotence/negative guards, M1 reset, independent upstream readers, actual platform-init exits0, persistent inode/hash through reboot/Enforcing |
+| 0101 missing GLES1 wrapper | One existing native32 lock entry for S22 system/lib/libGLESv1_CM.so | Pinned SHA/label, no app32/ART32, actual gralloc/provider startup and rear/front capture |
+
+All91patches/72touched paths replay identically; Bash syntax and source guards
+PASS. Runtime fixture SYSTEM/VENDOR changes and BOOT fully rolled back with
+hash checks, new CACHE metadata backed up/removed. No full ROM/package yet.
+Detailed reasons/files/provenance/tests/limits/rollback:
+[report](m2-camera-metadata-fixes.md). M1/G965N, protected radio/EFS partitions,
+production kernel choice and retained ROM archives unchanged by these actions.

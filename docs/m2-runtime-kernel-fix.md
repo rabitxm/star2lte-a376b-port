@@ -168,3 +168,8 @@ a reversible M2 test using only the older Tethering APEX, followed by compiled
 APEX/manifest/linker checks and runtime tests for Wi-Fi hotspot, IPv4/IPv6
 forwarding, DHCP, DNS and data saver. Keep every other system/vendor/ODM input
 fixed during that comparison. Do not call it accepted until those checks pass.
+
+
+## Follow-up outcome — diagnostic Welcome boot
+
+The retained S22 Tethering APEX did pass bpfloader on M2 (runtime logs version360743340 and detects 2025Q4/API36.1 from the surrounding A37 environment). This is not a claim that its package was rebuilt as25Q4. The next surfaceflinger linker failure was its missing S22 graphics common V6 interface dependency. Adding the exact matching64-bit interface exposed an AppOps RANGING failure, traced to aconfig flag storage under read-only /metadata. A volatile tmpfs hook before donor aconfigd then brought M2 to Welcome/boot_completed1 with Enforcing. Runtime crypto and linkerconfig gates pass on the diagnostic kernel; camera/audio ABI, vendor aconfig initialization, persistent metadata and hardware acceptance remain open. All temporary SYSTEM edits/diagnostic BOOT have been rolled back and read back; M2 is in TWRP. Production kernel selection is unchanged. Exact sequence, scope, rollback and hashes: docs/m2-metadata-runtime.md.

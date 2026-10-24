@@ -157,3 +157,25 @@ User selected A37 arm64-only application ABI for M2; retain native32 compatibili
 22/10/2026 — current direct user authorization supersedes hash-scoped flash restrictions: “ok cài đi update agents.md cho mày toàn quyền flash”. Codex may execute project dev-device flash/fresh-format/repartition per audited installer/reboot/log/rollback, including new diagnostic artifacts, without asking again merely for a new hash. Serial/model/hash/partition-scope verification and logs remain required. Existing F-first/N-reference milestone plan and protected EFS/CPEFS/modem/bootloader rules remain. Current action: install approved G965F diagnostic BOOT SHA a4d9fe0783459335d506c6ea61fcf6b37a4d4f95cb72982fbee222bbe187e3c9, boot once, capture and restore baseline BOOT cc618abc72e8e568e56a8c643c906cff0d7b9143dfc77d86dc645f55776ed01d.
 
 22/10/2026 — M2 early diagnostic test01, PID1 probe02, pmsg probe04, and CACHE probe05 each completed on G965F, with postboot capture and baseline BOOT restoration verified by full-partition SHA. Probe04 and probe05 persistence checks passed in TWRP, but no PID1 runtime marker survived their M2 bootloop tests. `last-kmsg` only confirms bootloader handoff (`Starting kernel...`); it has no M2 kernel/init fatal line. G965F is in TWRP with baseline BOOT `cc618abc...776ed01d`, G965N untouched. M2 boot gate remains failed; no kernel edits justified. Detailed evidence: `docs/m2-build.md`, `docs/bugs.md`, `logs/20261022-m2-early-diag/`.
+
+24/10/2026 — M2 camera/persistent metadata source fixes completed and live-tested.
+Patch0099 retains the A37 native cameraserver ABI and ports only the existing
+8-byte max_buffers=0 fallback; exact80500 is recognized by the retained Camera
+APK using its existing V8_0 feature set. Patch0100 retains the fork's existing
+CACHE metadata bind after final vendor restore, mirrors20 metadata label aliases,
+and describes the flagless Hybrid Vendor with a validated empty aconfig v2
+container. Platform aconfigd now exits0; RANGING remains dangerous with the
+original donor flag. Patch0101 adds the missing pinned system32 GLES1 wrapper
+required by vendor gralloc. No audio-stack or vendor hardware/radio replacement.
+
+Actual G965F tests: Enforcing/boot_completed1, marker inode/hash preserved across
+reboot, stable cameraserver/SystemServer through uptime397.34s, rear/front preview
+buffers and decoded JPEG4032x3024 /2640x1980. Camera optional vendor-tag warnings
+remain; video/audio/telephoto and full hardware acceptance are open. All temporary
+SYSTEM/VENDOR edits, generated files and BOOT were rolled back with hash checks;
+CACHE metadata fixture backed up (215 hashes verified) and removed, restoring
+its original absence. BOOT cc618abc...776ed01d; M2 stays in TWRP. No USERDATA format,
+M1/G965N or protected-partition write issued. Full report:
+`docs/m2-camera-metadata-fixes.md`. Source replay91patches/72paths PASS, hash locks
+updated. No new complete ROM build/package or M4 transition. Diagnostic kernel,
+Tethering APEX and graphics V6 controls still need explicit build integration.

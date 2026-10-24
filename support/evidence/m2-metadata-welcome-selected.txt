@@ -1,0 +1,23 @@
+M2 controlled metadata test, 24 October 2026. Original BOOT/SYSTEM restored after capture.
+
+runtime/logcat-boot.txt:6058: 10-24 13:51:48.413   898   898 E aconfigd_system: main: Failed to initialize platform storage in post-fs: fail to get storage files for vendor
+runtime/logcat-boot.txt:10703: 10-24 13:51:51.906  1486  1486 F linker  : CANNOT LINK EXECUTABLE "/system/bin/cameraserver": cannot locate symbol "_ZN7android11AudioSystem22streamTypeToAttributesE19audio_stream_type_t" referenced by "/system/bin/cameraserver"...
+runtime/mounts-and-flags.txt:854: android.permission.flags.ranging_permission_enabled                                                              enabled  - default read-only system
+runtime/android-package.txt:7750:   Permission [android.permission.RANGING] (ca8737d):
+runtime/android-package.txt:7751:     sourcePackage=android
+runtime/android-package.txt:7752:     uid=1000 gids=[] type=0 prot=dangerous
+runtime/android-package.txt:7753:     perm=PermissionInfo{6977272 android.permission.RANGING}
+runtime/android-package.txt:7754:     flags=0x0
+runtime/stability-third.txt:
+1
+stopped
+Enforcing
+1707
+1412
+1311
+143.37 353.24
+1
+0
+0
+
+boot_completed observed at77.7s; final pre-recovery uptime156.61s/SystemServer1707.

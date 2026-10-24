@@ -545,3 +545,31 @@ and enforces kernel5.10. Their BPF object layouts differ. Thus a single-module
 APEX downgrade is a plausible reversible experiment, but cross-version Android
 API and hotspot/IPv4/IPv6/DHCP/DNS/data-saver behavior remain unverified. Do not
 adopt based only on bpfloader exit0. APEX hashes/layout: runtime kernel report.
+
+
+## 24/10/2026 — RANGING crash traced to metadata storage; diagnostic Welcome boot
+
+Prior log `logs/20261024-m2-runtime-fix/m2-v6-test/logcat-first-adb.txt:17008` reports `Failed to load aconfig package android.permission.flags`; line6032 fails copying package.map into read-only /metadata. At63013, AppOps throws `Missing permission definition for permission "android.permission.RANGING" associated with app op 151`. Installed framework-res matches final staged hash and declares the permission behind ranging_permission_enabled; generated AppOps code returns true. Volatile tmpfs before donor aconfigd fixes flag table availability and permission registration. M2 reaches boot_completed1/Welcome in77.7s, Enforcing, stable SystemServer through uptime156.61s. Controlled test and full rollback complete.
+
+Remaining exact failures: new `runtime/logcat-boot.txt:6058` says `Failed to initialize platform storage in post-fs: fail to get storage files for vendor`; line10703 says `CANNOT LINK EXECUTABLE "/system/bin/cameraserver": cannot locate symbol "_ZN7android11AudioSystem22streamTypeToAttributesE19audio_stream_type_t"`. The pinned legacy native server imports the symbol; A37 libaudioclient does not export it. No camera/audio fix applied. tmpfs is volatile and is not an accepted persistent metadata solution. Full details and rollback hashes: docs/m2-metadata-runtime.md. All SYSTEM edits restored; baseline BOOT verified; M2 in TWRP.
+
+## 24 October 2026 — camera ABI and persistent metadata fixes
+
+The former camera/audio symbol failure, exact80500 Camera exception and missing
+native32 GLES1 wrapper are fixed in scoped source patches0099/0101 and actual
+rear/front preview/JPEG smoke tests pass. The first errors were
+`CANNOT LINK EXECUTABLE "/system/bin/cameraserver": cannot locate symbol "_ZN7android11AudioSystem22streamTypeToAttributesE19audio_stream_type_t"`,
+`java.lang.IllegalArgumentException: get : argument is invalid - 80500`, and
+`dlopen failed: library "libGLESv1_CM.so" not found`. Exact source/line references
+and candidate hashes are in docs/m2-camera-metadata-fixes.md.
+
+Patch0100 retains the existing CACHE metadata bind after final vendor restore
+and labels both paths. Marker hash/inode persists through reboot. Empty v2
+storage truthfully describes flagless vendor; platform aconfigd exits0 instead
+of `fail to get storage files for vendor`. This does not add A37 hardware flags.
+
+Remaining: complete combination is not yet a packaged ROM; production kernel
+selection stays pinned. Optional camera vendor tags warn; video/audio/telephoto,
+advanced modes, storage wipe/OTA/staged flags, fresh ADB defaults/switches,
+connectivity and N remain unaccepted. All live test files/BOOT rolled back;
+M2 stays in TWRP. No EFS/CPEFS/radio write issued.

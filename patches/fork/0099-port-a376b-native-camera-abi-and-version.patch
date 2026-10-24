@@ -1,0 +1,144 @@
+From: Codex M2 runtime compatibility
+Subject: [PATCH] Match A376B cameraserver ABI and recognize OneUI80500 in legacy Camera
+
+Reason: runtime S22 cameraserver cannot resolve AudioSystem::streamTypeToAttributes,
+and static closure also finds an incompatible OutputConfiguration constructor.
+Use hash-pinned native A37 cameraserver, porting only the existing 8-byte zero
+max-buffer fallback. Retained Camera APK crashes on exact version80500; map only
+that value to its existing V8_0 feature set, preserving unknown-version errors.
+Files: native camera finalization and two reviewed Python adapters. M2/A376B/
+star2lte only. No audio-library, kernel, vendor hardware blob or system-version
+property replacement. Proprietary binaries remain outside the patch.
+Verify: donor/instruction hashes, unchanged server remainder, wrong-input rejection,
+shell syntax and profile scope; compiled APK changes classes3.dex only, retains
+resource/native bytes and signer; actual G965F boot/Enforcing, native service
+stability, device enumeration and Camera launch. Preview/photo acceptance is
+separate from successful service startup. See docs/m2-camera-metadata-fixes.md.
+Rollback: reverse patch/rebuild or restore exact original server/APK on test device.
+
+diff --git a/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh b/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
+--- a/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
+@@ -2913,6 +2913,18 @@
+     local APK_SRC="$SRC/SamsungCamera.apk"
+     local HAL_SRC="$SRC/unihal_main@2.1.so"
+     local CAMERASERVER_SRC="$SRC/cameraserver"
++    local CAMERASERVER_SHA="06d1c14dd93b39b399beb97e0eb06e0dd0f08a3da2d643a96f588c488b43d061"
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++        [ "$TARGET_CODENAME" = "star2lte" ] && [ "${ROM_MILESTONE:-}" = "M2" ] || {
++            LOGE "A376B cameraserver adaptation requires star2lte M2"
++            return 1
++        }
++        CAMERASERVER_SRC="$WORK_DIR/tmp/a376b-cameraserver"
++        python3 "$SRC/patches/a376b_cameraserver.py" \
++            "$FW_DIR/SM-A376B_XXV/system/system/bin/cameraserver" \
++            "$CAMERASERVER_SRC" || return 1
++        CAMERASERVER_SHA="73cba451858345a2860966cb0a7e7faff64abb4f4946193956571476e0ddad7b"
++    fi
+     local APK_DST="$WORK_DIR/system/system/priv-app/SamsungCamera/SamsungCamera.apk"
+     local HAL_DST="$WORK_DIR/vendor/lib/unihal_main@2.1.so"
+     local CAMERASERVER_DST="$WORK_DIR/system/system/bin/cameraserver"
+@@ -2957,7 +2969,7 @@
+         return 1
+     }
+     [ "$(sha256sum "$CAMERASERVER_SRC" | cut -d ' ' -f 1)" = \
+-        "06d1c14dd93b39b399beb97e0eb06e0dd0f08a3da2d643a96f588c488b43d061" ] || {
++        "$CAMERASERVER_SHA" ] || {
+         LOGE "Unexpected native camera cameraserver payload hash"
+         return 1
+     }
+@@ -3016,6 +3028,11 @@
+     # portrait-photo -> gallery -> back lifecycle on the legacy HAL.
+     _EXYNOS9810_FINAL_INSTALL_NATIVE_CAMERA || return 1
+     _EXYNOS9810_FINAL_PATCH_CAMERA_LEGACY_OCR || return 1
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++        DECODE_APK system system/priv-app/SamsungCamera/SamsungCamera.apk || return 1
++        python3 "$MODPATH/native_camera/patches/a376b_camera_version.py" \
++            "$APKTOOL_DIR/system/priv-app/SamsungCamera/SamsungCamera.apk" || return 1
++    fi
+ 
+     _EXYNOS9810_FINAL_RESTORE_BLUETOOTH_LIB || return 1
+     rm -rf "$APKTOOL_DIR/system/app/BluetoothAgent/BluetoothAgent.apk"
+diff --git a/unica/patches/exynos9810_device_stack/exynos9810_finalization/native_camera/patches/a376b_cameraserver.py b/unica/patches/exynos9810_device_stack/exynos9810_finalization/native_camera/patches/a376b_cameraserver.py
+new file mode 100644
+--- /dev/null
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/native_camera/patches/a376b_cameraserver.py
+@@ -0,0 +1,38 @@
++#!/usr/bin/env python3
++"""Retain AZH4 camera ABI and port the fork's zero-max-buffer fallback.
++Reason: the S22 server imports AudioSystem and OutputConfiguration ABIs absent
++from A37. Files: explicit output only, original donor is never edited.
++Verify: pinned input, original instruction guards, exact eight-byte patch;
++runtime linker, camera service/provider enumeration and capture tests.
++"""
++from pathlib import Path
++import argparse, hashlib, json, struct
++SOURCE_SHA = "a85c42524f3a33c9cdc327bd7435a5495ed4d60e08222d1e30b84bb20d887ee2"
++OFFSET = 0x27a314
++BEFORE = bytes.fromhex("21eeff90212c3691")
++AFTER = bytes.fromhex("28008052e5ffff17")
++def patch(data):
++    if hashlib.sha256(data).hexdigest() != SOURCE_SHA:
++        raise ValueError("Unexpected A376B AZH4 cameraserver hash")
++    assert data[:4] == b"\x7fELF" and data[4:6] == b"\x02\x01"
++    assert struct.unpack_from("<H", data, 18)[0] == 183
++    assert data[OFFSET:OFFSET+8] == BEFORE
++    assert data[0x27a2a4:0x27a2ac] == bytes.fromhex("681e40b968030034")
++    assert data[0x27a2ac:0x27a2b0] == bytes.fromhex("610240f9")
++    # The original cbz jumps to this error block only when max_buffers is zero.
++    # Mirror the existing S22 fix: w8=1 and jump to the original continuation.
++    result = data[:OFFSET] + AFTER + data[OFFSET+8:]
++    assert len(result) == len(data)
++    assert result[:OFFSET] == data[:OFFSET] and result[OFFSET+8:] == data[OFFSET+8:]
++    return result
++if __name__ == "__main__":
++    ap=argparse.ArgumentParser(description=__doc__)
++    ap.add_argument("source", type=Path);ap.add_argument("output",type=Path)
++    args=ap.parse_args()
++    if args.source.resolve() == args.output.resolve():ap.error("Source overwrite refused")
++    data=patch(args.source.read_bytes())
++    args.output.parent.mkdir(parents=True,exist_ok=True)
++    args.output.write_bytes(data);args.output.chmod(0o755)
++    print(json.dumps({"result":"PASS","source_sha256":SOURCE_SHA,
++        "output_sha256":hashlib.sha256(data).hexdigest(),"patch_offset":OFFSET,
++        "changed_bytes":8,"size_unchanged":True}))
+diff --git a/unica/patches/exynos9810_device_stack/exynos9810_finalization/native_camera/patches/a376b_camera_version.py b/unica/patches/exynos9810_device_stack/exynos9810_finalization/native_camera/patches/a376b_camera_version.py
+new file mode 100644
+--- /dev/null
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/native_camera/patches/a376b_camera_version.py
+@@ -0,0 +1,35 @@
++#!/usr/bin/env python3
++"""Recognize the A37 OneUI8.5 version in the retained OneUI8 Camera APK.
++Reason: logged Camera.onCreate exception for version80500. Only this exact
++version uses the APK's existing V8_0 feature set; unknown versions still throw.
++Files: the reviewed Camera enum only. No system property/version spoof.
++Verify compiled enum/Camera launch and actual preview/capture separately.
++"""
++from pathlib import Path
++import hashlib,sys
++ORIGINAL_SHA='e2beaff01e9ef41e9c7839ed2c8545f8f46ea65f188a54f7d20f9d01197fbb5f'
++ANCHOR='.method public static a(I)Lx1/k;\n    .locals 5\n'
++ADDITION='''
++    # A376B AZH4 OneUI8.5: retain this legacy APK's existing OneUI8 feature set.
++    const v0, 0x13a74
++
++    if-ne p0, v0, :exynos9810_oneui_known_versions
++
++    sget-object v0, Lx1/k;->V8_0:Lx1/k;
++
++    return-object v0
++
++    :exynos9810_oneui_known_versions
++'''
++def apply(root):
++    files=list(Path(root).glob('smali*/x1/k.smali'))
++    if len(files)!=1:raise ValueError('Unreviewed Camera enum layout')
++    p=files[0];text=p.read_text()
++    original=text.replace(ADDITION,'',1) if ADDITION in text else text
++    if hashlib.sha256(original.encode()).hexdigest()!=ORIGINAL_SHA:
++        raise ValueError('Unreviewed Camera version enum; inspect donor changes')
++    if ADDITION not in text:
++        assert text.count(ANCHOR)==1
++        p.write_text(text.replace(ANCHOR,ANCHOR+ADDITION,1))
++    return p
++if __name__=='__main__':print('PASS Camera 80500 compatibility:',apply(sys.argv[1]))

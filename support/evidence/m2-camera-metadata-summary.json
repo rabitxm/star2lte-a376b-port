@@ -1,0 +1,48 @@
+{
+  "result": "PASS",
+  "scope": "M2 A376BXXS5AZH4 Android16 SDK36.1 OneUI80500 on G965F, diagnostic controls retained",
+  "fork_patches": 91,
+  "touched_paths_replay_match": 72,
+  "boot_completed": "1",
+  "selinux": "Enforcing",
+  "last_observed_uptime_seconds": 397.34,
+  "stable_systemserver_pid": 1713,
+  "stable_cameraserver_pid": 1486,
+  "public_camera_devices": 3,
+  "rear_preview": true,
+  "front_preview": true,
+  "jpeg_validation": [
+    {
+      "file": "20261024_143727.jpg",
+      "format": "JPEG",
+      "size": [
+        4032,
+        3024
+      ],
+      "bytes": 3275539,
+      "sha256": "d6354b704a1e7a9cb249cdd90658fba94dc5e55e332c5db536d58b407363af0b",
+      "fully_decoded": true
+    },
+    {
+      "file": "20261024_143756.jpg",
+      "format": "JPEG",
+      "size": [
+        2640,
+        1980
+      ],
+      "bytes": 1723797,
+      "sha256": "d68edcb8e3a0b84344d7c1993ece911f5d36a2f37598c740e7391da8873ae67c",
+      "fully_decoded": true
+    }
+  ],
+  "metadata_normal_reboot_persistence": true,
+  "metadata_marker_sha256": "66ad8b86a1b006d4a45c4286f783c5c8367e81eeda3c135c37277ef85b219fe6",
+  "actual_platform_aconfigd_exit_status": 0,
+  "vendor_aconfig_packages": 0,
+  "vendor_aconfig_flags": 0,
+  "rollback_boot_sha256": "cc618abc72e8e568e56a8c643c906cff0d7b9143dfc77d86dc645f55776ed01d",
+  "hardware_acceptance_complete": false,
+  "complete_rom_newly_packaged": false,
+  "photos_and_raw_logs_exported": false,
+  "report": "docs/m2-camera-metadata-fixes.md"
+}

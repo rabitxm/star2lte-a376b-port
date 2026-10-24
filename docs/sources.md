@@ -194,3 +194,30 @@ stock_defconfig in `/proc/config.gz`; record real `.config` hash instead of
 treating that embedded config as the release build config. Static and M1
 functional gates pass; M2 device runtime remains pending. No kernel binary,
 firmware or raw log is in source sharing.
+
+
+24/10/2026 M2 runtime compatibility test used retained proprietary inputs locally only: S22 Tethering APEX SHA256601d6c2bb7a81e9d8938ac3681cc95887e49ce1aafe58d3632ba92c586187cbf and S22 system/lib64/android.hardware.graphics.common-V6-ndk.so SHA256010bf814b8e62ac739ff228fd6cd84477d40279c6e1c86892f064d750ee4d652. No payload was added to source sharing. Existing diagnostic WIPEONFORK BOOT provenance remains in docs/m2-runtime-kernel-fix.md. New text-only tmpfs diagnostic is diagnostics/m2-metadata-tmpfs.patch. It loads the original donor flag data; no generated flag map or permission bypass was substituted. M2 reached Welcome, all temporary files/BOOT were restored after capture. Full evidence/limits: docs/m2-metadata-runtime.md.
+
+## 24 October 2026 — camera and aconfig provenance
+
+Patch0099 takes cameraserver from the already verified A376BXXS5AZH4/XXV donor,
+SHA a85c4252...d887ee2; only8bytes of the fork's existing max_buffers fallback
+are ported (candidate73cba451...ad7b). Camera APK stays the retained fork native
+set; exact80500 enum adapter changes only classes3.dex in the live fixture.
+Full hashes, disassembly anchor, signer comparison and checks:
+[m2-camera-metadata-fixes.md](m2-camera-metadata-fixes.md).
+
+Patch0100 reuses the fork's CACHE metadata design after vendor restore. Empty
+v2 vendor container serialization is checked against the existing AOSP
+platform/build checkout at b815dded1eafbf06191a6ae306956bb6ed6fb415,
+origin https://android.googlesource.com/platform/build.git, tools/aconfig/
+aconfig_storage_file/src serializers; independent upstream Java readers and
+actual A37 aconfigd accept zero packages/flags. No Samsung vendor flags copied.
+Patch0101 adds system32 libGLESv1_CM.so from retained SM-S901B/EUX input,
+SHA37c20346dcf16ec784d1734548550be8967a5eff09c9b66f7817bf7a0095e989,
+to the existing native32 lock. Proprietary inputs stay excluded from GitHub.
+
+91 active fork patches/72paths replay byte-identically; sources.lock.json locks
+all patch hashes. No new complete ROM build or source-release kernel selection
+was made. Reproduction of the complete boot still needs explicit diagnostic
+BOOT/APEX/V6 integration and subsequent final-image/fresh-data gates.

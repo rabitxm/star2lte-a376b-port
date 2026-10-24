@@ -205,3 +205,25 @@ separate DS-ACK source patch list, not consumed by the Android ROM build.
 `docs/m2-runtime-kernel-fix.md` records provenance and gates. Paired build
 outputs/images and device evidence are local under
 `logs/20261024-m2-runtime-fix/` and are intentionally excluded from export.
+
+
+24/10/2026 runtime metadata mapping: donor SYSTEM system/etc/init/aconfigd.rc runs early-platform-init in early-init and platform-init in post-fs. A37 framework-res RANGING declaration has featureFlag android.permission.flags.ranging_permission_enabled. Decoded framework.jar classes com/android/internal/pm/pkg/component/AconfigFlags and android/os/flagging/PlatformAconfigPackage consume /metadata/aconfig/maps and /metadata/aconfig/boot; original tables reside in system/etc/aconfig/{package.map,flag.map,flag.val,flag.info}. Existing plat_file_contexts labels /metadata/aconfig as aconfig_storage_metadata_file. No metadata by-name partition/fstab mount exists on the G965F test layout. Diagnostic diff: diagnostics/m2-metadata-tmpfs.patch, not a new build entrypoint or production change.
+
+Native camera mapping: existing exynos9810_finalization/customize.sh `_EXYNOS9810_FINAL_INSTALL_NATIVE_CAMERA` pins native_camera/cameraserver hash06d1c14d... and copies it into system/bin/cameraserver. This server imports the old AudioSystem::streamTypeToAttributes symbol; system/lib64/libaudioclient.so remains A37 and lacks it. Current graphics mapper restore copies S22 libgralloctypes, whose common-V6 NDK dependency is absent from the normal M2 system64 image. Runtime corroboration and exact source hashes are in docs/m2-metadata-runtime.md.
+
+## 24 October 2026 — M2 native camera and metadata finalization
+
+- Existing native-camera finalization installs hash-pinned A37 cameraserver for
+  M2/A376B; native_camera/patches/a376b_cameraserver.py ports the reviewed8bytes.
+- Existing Camera decode/finalization calls a376b_camera_version.py for exact80500;
+  original version property, resources, native libs and signer are retained.
+- exynos9810_boot_restore/customize.sh reapplies metadata after final vendor
+  restore; a376b_metadata_bind.py edits canonical hw init and20 CACHE aliases.
+- a376b_empty_vendor_flags.py generates only zero-package/flag v2 vendor storage;
+  metadata remains registered through the fork's existing helper.
+- a376b_native32.lock.json adds the exact system32 GLES1 wrapper dependency of
+  installed legacy gralloc. No app32/ART32 or hardware driver replacement.
+- M2 profile sets EXYNOS9810_ENABLE_METADATA_BIND=true; M1 resets false.
+
+Patch series now91,72touched paths replay identically. Runtime/basic rear/front
+still proof and remaining build/lifecycle limits: m2-camera-metadata-fixes.md.

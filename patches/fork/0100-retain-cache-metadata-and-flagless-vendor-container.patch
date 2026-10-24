@@ -1,0 +1,161 @@
+From: Codex M2 runtime compatibility
+Subject: [PATCH] Finalize existing CACHE metadata bind and flagless VNDK33 container
+
+Reason: final vendor restore removed the fork's /cache/metadata bind. A37 manifest
+flag parsing then omits RANGING and AppOps crashes. Reinstate the existing bind in
+canonical hw init after the restore; mirror donor metadata labels at the CACHE
+path to survive core restorecon/cache. Represent the legacy vendor's actual zero
+aconfig flags with a valid empty v2 container, avoiding donor hardware flags.
+Files: existing boot_restore finalization, two Python helpers, M1/M2 profiles.
+Enable only reviewed star2lte/A376B M2; M1 resets the opt-in. No new build system,
+partition, kernel or hardware/radio blob replacement. Unknown nonempty vendor
+storage is refused. Generated files are not stored as firmware in this patch.
+Verify: idempotence/anchor rejection, upstream AOSP Java storage readers, actual
+G965F two-boot CACHE inode/hash persistence, labels/flags/RANGING and Enforcing;
+platform aconfigd exits0 with the empty vendor container. See runtime report.
+Rollback: reverse patch/rebuild or restore exact rc/context files, remove only
+newly generated container files and restore original BOOT on the test phone.
+
+diff --git a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/customize.sh b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/customize.sh
+--- a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/customize.sh
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/customize.sh
+@@ -1982,6 +1982,21 @@
+ _EXYNOS9810_FIX_ENFORCING_INIT_DATA_DIRS
+ _EXYNOS9810_APPLY_TARGET_VENDOR_IDENTITY || return 1
+ _EXYNOS9810_SANITIZE_RESTORED_TEXT
++if [ "${EXYNOS9810_ENABLE_METADATA_BIND:-false}" = "true" ]; then
++    [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] && \
++        [ "$TARGET_CODENAME" = "star2lte" ] && [ "${ROM_MILESTONE:-}" = "M2" ] || {
++        LOGE "Final CACHE metadata bind is restricted to reviewed star2lte/A376B M2"
++        return 1
++    }
++    python3 "$MODPATH/a376b_metadata_bind.py" "$WORK_DIR" || return 1
++    python3 "$MODPATH/a376b_empty_vendor_flags.py" "$WORK_DIR" || return 1
++    _EXYNOS9810_SET_METADATA_SAFE vendor vendor/etc/aconfig 0 0 755 "u:object_r:vendor_aconfig_storage_file:s0"
++    for ACONFIG_FILE in package.map flag.map flag.val flag.info; do
++        _EXYNOS9810_SET_METADATA_SAFE vendor "vendor/etc/aconfig/$ACONFIG_FILE" \
++            0 0 444 "u:object_r:vendor_aconfig_storage_file:s0"
++    done
++    unset ACONFIG_FILE
++fi
+     _EXYNOS9810_WRITE_FINAL_BOOT_TRACE
+     _EXYNOS9810_WRITE_FINAL_INIT_DEBUG
+     if [ "${EXYNOS9810_ENABLE_INIT_DEBUG:-false}" = "true" ]; then
+diff --git a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_metadata_bind.py b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_metadata_bind.py
+new file mode 100644
+--- /dev/null
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_metadata_bind.py
+@@ -0,0 +1,48 @@
++#!/usr/bin/env python3
++"""Finalize the fork's existing CACHE-backed metadata mount for M2.
++Reason: vendor baseline restore removes the early recipe's metadata bind.
++Files: canonical vendor hw init, duplicate init block if present, system file contexts.
++Verify actual CACHE-backed /metadata, aconfig labels, flags and reboot persistence.
++"""
++from pathlib import Path
++import argparse, re, json
++ANCHOR = "    mount_all /vendor/etc/fstab.${ro.hardware} --early\n"
++BIND = """
++    # UN1CA Exynos9810 metadata bind mount for devices without a metadata partition.
++    mkdir /cache/metadata 0771 root system
++    mount none /cache/metadata /metadata bind
++    restorecon_recursive /metadata
++"""
++START = "# UN1CA M2 CACHE metadata label aliases BEGIN"
++END = "# UN1CA M2 CACHE metadata label aliases END"
++def apply(root):
++    root=Path(root)
++    hw=root/"vendor/etc/init/hw/init.samsungexynos9810.rc"
++    duplicate=root/"vendor/etc/init/init.samsungexynos9810.rc"
++    fc=root/"system/system/etc/selinux/plat_file_contexts"
++    updates={}
++    for path in (hw, duplicate):
++        text=path.read_text()
++        if text.count(ANCHOR)!=1:raise ValueError(f"Unreviewed init mount_all anchor: {path}")
++        # Remove only this fork's exact block, including a pre-restore copy.
++        text=text.replace(BIND, "")
++        if "mount none /cache/metadata /metadata bind" in text:
++            raise ValueError(f"Unreviewed metadata mount: {path}")
++        if path==hw:text=text.replace(ANCHOR, ANCHOR+BIND,1)
++        updates[path]=text
++    text=fc.read_text()
++    text=re.sub(r"\n?"+re.escape(START)+r"\n.*?"+re.escape(END)+r"\n?", "\n", text, flags=re.S)
++    metadata=[line for line in text.splitlines() if line.startswith("/metadata") and line.split()[0].startswith("/metadata")]
++    if not metadata or not any("aconfig_storage_flags_metadata_file" in s for s in metadata):
++        raise ValueError("Donor metadata/aconfig labels incomplete")
++    # /cache is restorecon_recursive'd by core init after the fs-stage bind.
++    # Mirror every original metadata label at its persistent CACHE path.
++    aliases=["/cache"+line for line in metadata]
++    if any(line.startswith("/cache/metadata") for line in text.splitlines()):
++        raise ValueError("Unreviewed existing CACHE metadata labels")
++    updates[fc]=text.rstrip()+"\n\n"+START+"\n"+"\n".join(aliases)+"\n"+END+"\n"
++    for path,data in updates.items():path.write_text(data)
++    return {"result":"PASS","mount":"/cache/metadata -> /metadata","canonical_rc":str(hw),"aliases":len(aliases)}
++if __name__=="__main__":
++    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument("work_dir",type=Path)
++    print(json.dumps(apply(parser.parse_args().work_dir)))
+diff --git a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_empty_vendor_flags.py b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_empty_vendor_flags.py
+new file mode 100644
+--- /dev/null
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_empty_vendor_flags.py
+@@ -0,0 +1,44 @@
++#!/usr/bin/env python3
++"""Describe the flagless VNDK33 vendor using an empty aconfig v2 container.
++Reason: A37 aconfigd skips absent vendor storage then fails applying vendor
++staged overrides. No vendor flag is invented or copied from the A37 hardware.
++Files: four generated vendor/etc/aconfig files only. Existing nonempty/unknown
++storage is refused. Format is from the fork's AOSP platform_build/tools/aconfig/
++aconfig_storage_file Rust serializers; validate with independent AOSP Java
++readers and the actual donor aconfigd before accepting.
++"""
++from pathlib import Path
++import struct, argparse, json, hashlib
++
++def empty_files():
++    out={}
++    for kind,name in enumerate(('package.map','flag.map','flag.val','flag.info')):
++        prefix=struct.pack('<II',2,6)+b'vendor'+bytes([kind])
++        if kind<2:
++            header=len(prefix)+16;size=header+7*4
++            data=prefix+struct.pack('<IIII',size,0,header,size)+bytes(28)
++        else:
++            header=len(prefix)+12
++            data=prefix+struct.pack('<III',header,0,header)
++        assert struct.unpack_from('<I',data,len(prefix))[0]==len(data)
++        out[name]=data
++    return out
++
++def apply(work):
++    dest=Path(work)/'vendor/etc/aconfig';files=empty_files()
++    if dest.exists():
++        if dest.is_symlink() or not dest.is_dir() or any(p.name not in files for p in dest.iterdir()):
++            raise ValueError('Unreviewed vendor aconfig content')
++        for name,data in files.items():
++            path=dest/name
++            if path.exists() and (path.is_symlink() or path.read_bytes()!=data):
++                raise ValueError('Refuse replacing actual vendor flags: '+name)
++    dest.mkdir(parents=True,exist_ok=True)
++    for name,data in files.items():
++        path=dest/name
++        if not path.exists():path.write_bytes(data)
++        path.chmod(0o444)
++    return {n:hashlib.sha256(v).hexdigest() for n,v in files.items()}
++if __name__=='__main__':
++    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('work_dir',type=Path)
++    print(json.dumps({'result':'PASS','vendor_packages':0,'vendor_flags':0,'sha256':apply(parser.parse_args().work_dir)},indent=2))
+diff --git a/target/star2lte/profiles/m1-g965f-no-ksu.sh b/target/star2lte/profiles/m1-g965f-no-ksu.sh
+--- a/target/star2lte/profiles/m1-g965f-no-ksu.sh
++++ b/target/star2lte/profiles/m1-g965f-no-ksu.sh
+@@ -39,3 +39,4 @@
+     return 1
+ fi
+ unset _STAR2LTE_M1_ROOT _STAR2LTE_M1_HASH
++export EXYNOS9810_ENABLE_METADATA_BIND="false"
+diff --git a/target/star2lte/profiles/m2-g965f-a376b-android16-no-ksu.sh b/target/star2lte/profiles/m2-g965f-a376b-android16-no-ksu.sh
+--- a/target/star2lte/profiles/m2-g965f-a376b-android16-no-ksu.sh
++++ b/target/star2lte/profiles/m2-g965f-a376b-android16-no-ksu.sh
+@@ -8,3 +8,4 @@
+ export STAR2LTE_M2_FIXED_RESOLUTION="true"
+ # User-selected boot-test limitation: retain donor Wi-Fi scan labels/icons.
+ export STAR2LTE_M2_KEEP_DONOR_WIFI_UI="true"
++export EXYNOS9810_ENABLE_METADATA_BIND="true"
