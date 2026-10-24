@@ -1,0 +1,55 @@
+Reason: attempt52 reproduced the RANGING fatal because Android 16 reads aconfig flags from /metadata, while star2lte has no metadata block and the donor init mkdir fails read-only. Keep the already proven volatile 16 MiB tmpfs hook scoped to the opt-in G965F M2 diagnostic profile.
+Files: existing a376b_runtime_compat.py and its hash lock; only final SYSTEM system/etc/init/aconfigd.rc changes at build time.
+Verification: exact donor and generated file hashes, mount-before-mkdir compiled checks, final ext4 image byte audit, runtime flag/RANGING/AppOps/boot_completed checks.
+Rollback: select ordinary profile or reverse this patch; tmpfs is volatile and no block partition is added.
+Actual results: attempt52 log and follow-up report in docs/m2-integrated-runtime-build.md.
+
+--- a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_runtime_compat.py
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_runtime_compat.py
+@@ -33,13 +33,34 @@
+         dst=system/rel;dst.parent.mkdir(parents=True,exist_ok=True)
+         tmp=dst.with_name(dst.name+'.runtime-tmp');shutil.copyfile(compat/rel,tmp)
+         tmp.chmod(0o644);os.replace(tmp,dst)
+-    print('PASS staged pinned M2 Tethering and graphics V6 runtime inputs')
++    # M2 uses a volatile metadata surface because star2lte has no metadata block.
++    rc=system/'etc/init/aconfigd.rc';rc_bytes=rc.read_bytes();rc_sha=hashlib.sha256(rc_bytes).hexdigest()
++    if rc_sha==m['aconfigd_original_sha256']:
++        marker=b'on early-init\n'
++        if rc_bytes.count(marker)!=1:raise ValueError('Unexpected donor aconfigd early-init action')
++        diagnostic=rc_bytes.replace(marker,marker+
++            b'    # Diagnostic only: legacy star2lte has no metadata partition.\n'
++            b'    mount tmpfs tmpfs /metadata nosuid nodev noexec mode=0755,size=16777216\n'
++            b'    restorecon /metadata\n',1)
++        if hashlib.sha256(diagnostic).hexdigest()!=m['aconfigd_diagnostic_sha256']:
++            raise ValueError('Generated volatile metadata init file hash mismatch')
++        tmp=rc.with_name(rc.name+'.runtime-tmp');tmp.write_bytes(diagnostic);tmp.chmod(0o644);os.replace(tmp,rc)
++    elif rc_sha!=m['aconfigd_diagnostic_sha256']:
++        raise ValueError('Unreviewed existing donor aconfigd init file')
++    print('PASS staged pinned M2 Tethering, graphics V6 and volatile metadata diagnostic')
+ def verify(work,tools):
+     scope();m=lock();system=work/'system/system'
+     for rel,h in m['files'].items():
+         if digest(system/rel)!=h:raise ValueError('Final runtime file mismatch: '+rel)
+     if digest(system/'bin/cameraserver')!=m['cameraserver_sha256']:
+         raise ValueError('Final cameraserver ABI adaptation lost')
++    aconfigd=system/'etc/init/aconfigd.rc'
++    if digest(aconfigd)!=m['aconfigd_diagnostic_sha256']:
++        raise ValueError('Final volatile metadata diagnostic hook missing')
++    rc=aconfigd.read_text()
++    if rc.count('mount tmpfs tmpfs /metadata nosuid nodev noexec mode=0755,size=16777216')!=1 or \
++            rc.index('restorecon /metadata')>rc.index('mkdir /metadata/aconfig'):
++        raise ValueError('Volatile metadata mount order/content changed')
+     # Reapply to an isolated text fixture to verify exact final bind/label state.
+     import tempfile
+     with tempfile.TemporaryDirectory() as td:
+--- a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_runtime_compat.lock.json
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_runtime_compat.lock.json
+@@ -11,5 +11,7 @@
+     "lib64/android.hardware.graphics.common-V6-ndk.so": "010bf814b8e62ac739ff228fd6cd84477d40279c6e1c86892f064d750ee4d652"
+   },
+   "original_a37_tethering_sha256": "b2a8b33db76cc9895ffcbb96bfdc24a085c23e52cf2a3b9e26f953cf6343ff22",
+-  "cameraserver_sha256": "73cba451858345a2860966cb0a7e7faff64abb4f4946193956571476e0ddad7b"
++  "cameraserver_sha256": "73cba451858345a2860966cb0a7e7faff64abb4f4946193956571476e0ddad7b",
++  "aconfigd_original_sha256": "78d6bb311aa7126384da4b59780d4a87d9b321c4fd211d04e1339fbd8975447b",
++  "aconfigd_diagnostic_sha256": "822b51c7e9d748bceed9aab50a504efd0b43e7c1ca15aa62bdab24bf95222357"
+ }

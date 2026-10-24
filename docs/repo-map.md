@@ -227,3 +227,24 @@ Native camera mapping: existing exynos9810_finalization/customize.sh `_EXYNOS981
 
 Patch series now91,72touched paths replay identically. Runtime/basic rear/front
 still proof and remaining build/lifecycle limits: m2-camera-metadata-fixes.md.
+
+## Integrated M2 runtime diagnostic path — 24 October 2026
+
+New explicit profile: rom/target/star2lte/profiles/m2-g965f-a376b-android16-runtime-diagnostic.sh.
+The existing DS-ACK archive variable is selected here; preparation helper
+scripts/internal/prepare_m2_runtime_kernel.py creates a separate hash-locked
+archive from the pinned original and already built/calibrated Image. It changes
+two entry contents including a G965F-only guard, with original DTBs retained.
+No kernel compilation/device writes in the helper. M1 resets the opt-in.
+
+Existing boot_restore invokes a376b_runtime_compat.py with its adjacent lock to
+stage Tethering and V6; existing compiled release verifier calls final checks.
+Existing verify_exynos9810_images.sh calls verify_m2_runtime_image.py for actual
+ext4 dumps/metadata, including the compiled ADB SettingsProvider/services bytes.
+make_rom.sh work-dir identity includes runtime flag/kernel hash/metadata flag.
+All normal profile defaults and the existing packaging/retention system remain.
+Detailed execution and limits: docs/m2-integrated-runtime-build.md.
+
+24/10/2026 M2 runtime diagnostic extension: `unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_runtime_compat.py` now hash-checks and stages a volatile `/metadata` tmpfs hook in donor `system/etc/init/aconfigd.rc` for the opt-in G965F M2 profile only. The generated rc SHA is pinned in the adjacent runtime lock and checked by compiled and actual-ext4 gates. Patch0104 is after0103 in the fork series; production/M1 profiles remain off.
+
+24/10/2026 M2 attempt53 output is retained at `rom/out/releases/M2/star2lte-1792833533-dLCdbp`; read-only preflight, eight TWRP32 stages and install helper are under `logs/20261024-m2-attempt53/`. Existing fork paths remain the build, profile, hybrid vendor restore, image verification and package split implementation. The package has not been flashed under the current exact-SHA authorization; see `docs/m2-integrated-runtime-build.md`.

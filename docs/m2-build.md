@@ -607,3 +607,17 @@ M1/G965N or protected-partition write issued. Full report:
 `docs/m2-camera-metadata-fixes.md`. Source replay91patches/72paths PASS, hash locks
 updated. No new complete ROM build/package or M4 transition. Diagnostic kernel,
 Tethering APEX and graphics V6 controls still need explicit build integration.
+
+24/10/2026 — user approved the proposed next integrated M2 diagnostic build/fresh test.
+Added patch0102: independent G965F runtime profile with hash-pinned WIPEONFORK
+archive, retained S22 Tethering/V6 inputs, source cache identity and final compiled
+checks. Patch0103 extends existing actual-ext4 verification for new runtime and
+mandatory ADB artifacts. Production profiles reset the opt-in; no kernel build,
+version-string change or N operation. Recovery-only installer calibration writes
+no BOOT and predicts55f3af8c...669fe77 with original ramdisk/DTB/cmdline.
+Clean attempt51 is in progress through the existing fork. No package/fresh boot
+success yet. Provenance, scope, gates and outcomes: docs/m2-integrated-runtime-build.md;
+logs/20261024-m2-integrated-build. Existing complete releases are retained.
+
+
+24/10/2026 — Attempt52 fresh G965F M2 runtime profile reaches Android second-stage/SystemServer but fails before boot completion: logcat line74018 reports missing `android.permission.RANGING`; init line4590/6042 shows aconfig storage creation failing on read-only `/metadata`. BOOT rolled back to baseline and protected partitions match. Patch0104 enables only the previously proven volatile 16MiB metadata tmpfs in the opt-in G965F M2 diagnostic. Attempt53 is rebuilding through the fork; no acceptance or M4/G965N transition until fresh runtime evidence.

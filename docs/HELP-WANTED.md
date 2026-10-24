@@ -72,3 +72,11 @@ Start with README.md, this brief, docs/repo-map.md and docs/patch-matrix.md.
 The source snapshot excludes generated/proprietary outputs and retains role
 aliases instead of physical serials. Acquire firmware/toolchains independently
 and verify local targets before operations.
+
+## Current M2 boot blocker — 24 October 2026
+
+Attempt52 failed before boot completion with the exact logcat fatal `Missing permission definition for permission "android.permission.RANGING" associated with app op 151` (line74018). Earlier init line4590 says `/metadata/aconfig` could not be created because `/metadata` is read-only. Patch0104 adds a scoped, volatile 16MiB tmpfs for the M2 diagnostic profile; attempt53 is under build and will test whether Aconfig flags and RANGING register on fresh data. It does not solve metadata persistence or vendor aconfig and is not production acceptance.
+
+## Current gate — attempt53
+
+A new patch0104 diagnostic package has passed build, compiled, actual ext4 image and eight-stage ZIP32 checks. Read-only G965F TWRP preflight also passes. No device write has occurred: the current AGENTS.md restricts flash permission to a distinct exact package hash, so attempt53 fresh install requires the user to explicitly extend that scope. The metadata tmpfs runtime result, fresh-default ADB behavior and boot completion remain unverified for this exact package. Do not infer attempt52 or earlier reused-data tests as acceptance.

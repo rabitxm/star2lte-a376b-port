@@ -434,3 +434,17 @@ M1/G965N or protected-partition write issued. Full report:
 `docs/m2-camera-metadata-fixes.md`. Source replay91patches/72paths PASS, hash locks
 updated. No new complete ROM build/package or M4 transition. Diagnostic kernel,
 Tethering APEX and graphics V6 controls still need explicit build integration.
+
+24/10/2026 — attempt52 integrated M2 G965F diagnostic package built, image-audited,
+fresh-installed and boot-tested. Flashable SHA256 61bc3696dfe40939611356285f63ee09f96d0110dc56af4c65d3346dcbebea12;
+eight TWRP32 stages passed; USERDATA UUID changed; protected EFS/CPEFS/RADIO/
+RECOVERY/BOTA raw hashes match. Boot did not complete. Logcat line74018:
+`Missing permission definition for permission "android.permission.RANGING" associated with app op 151`;
+init line4590 reports `/metadata/aconfig` mkdir failed read-only. attempt52 BOOT
+was restored and read back as baseline cc618abc...776ed01d. New scoped patch0104
+adds the already boot-tested volatile metadata tmpfs hook only to M2 diagnostic.
+Fixture apply/hash/idempotence and patch apply/hash-lock checks pass. Clean
+attempt53 runs through the existing fork. M1/G965N untouched. See
+`docs/m2-integrated-runtime-build.md` and `logs/20261024-m2-integrated-build/`.
+
+24/10/2026 — attempt53 build and read-only preflight completed. Patch0104 compiled, actual SYSTEM/VENDOR/ODM ext4 images and signed installer passed. Flash ZIP SHA256 `f72be9be303e34fd5f625c5fd3d50e0590589e62b85386d8816f97f9758343ef`; target-files SHA256 `e0a047c606ce915253c6c9a31a3862d13aa2de01826ffc43f559c64541280392`. Eight TWRP32 stages pass; correct G965F recovery identity, stage hashes, protected-partition byte reads and baseline BOOT pass. No write/format/flash was issued because current AGENTS.md exception names another exact M2 package SHA. Patch0104 runtime and fresh-data boot remain unverified; M1/G965N untouched.

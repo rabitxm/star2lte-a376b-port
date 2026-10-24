@@ -89,3 +89,6 @@
 0099-port-a376b-native-camera-abi-and-version.patch
 0100-retain-cache-metadata-and-flagless-vendor-container.patch
 0101-retain-native32-gles1-for-legacy-gralloc.patch
+0102-add-g965f-m2-runtime-diagnostic-profile.patch
+0103-verify-m2-runtime-files-in-final-ext4-images.patch
+0104-enable-m2-volatile-metadata-diagnostic.patch

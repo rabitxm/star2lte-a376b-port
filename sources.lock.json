@@ -691,6 +691,18 @@
       {
         "path": "patches/fork/0101-retain-native32-gles1-for-legacy-gralloc.patch",
         "sha256": "a15c67be7ff5e455598b7cc154fc6348f6dbf5ec5dd01930d61abfaa12b349d6"
+      },
+      {
+        "path": "patches/fork/0102-add-g965f-m2-runtime-diagnostic-profile.patch",
+        "sha256": "d4500d10237fd9f57e7888e5dcfa90d7218bc346d6048fc0db8b53b7fbd63c27"
+      },
+      {
+        "path": "patches/fork/0103-verify-m2-runtime-files-in-final-ext4-images.patch",
+        "sha256": "26d0a5f5b299529b07b83c89fcdf5eea0a0375765c5551bb9e100c387717f7dc"
+      },
+      {
+        "path": "patches/fork/0104-enable-m2-volatile-metadata-diagnostic.patch",
+        "sha256": "b9ab582aee7483e18ff8e526ada9931871bfeb946f5497f553b80862de8d9d73"
       }
     ]
   },
@@ -32065,6 +32077,15 @@
     "compiler": "AOSP clang-r547379, archive SHA256 ef475266981f2c676384429bda896dbb43bf1e623221e1bd958f35cdc5fae006",
     "normal_rom_kernel_default_unchanged": true,
     "reason": "A37 runtime linker MADV_WIPEONFORK EINVAL/exit134 and vendor self-test reboot_on_failure captured by probe13",
-    "report": "docs/m2-runtime-kernel-fix.md"
+    "report": "docs/m2-runtime-kernel-fix.md",
+    "source_config_path": "support/kernel/g965f-runtime-build.config.txt"
+  },
+  "m2_integrated_runtime_diagnostic": {
+    "profile": "rom/target/star2lte/profiles/m2-g965f-a376b-android16-runtime-diagnostic.sh",
+    "kernel_zip_sha256": "4cea63f84d5add494bfcc2f9fff105848806a930a24aca975dc261bf6720e20a",
+    "expected_installed_boot_sha256": "55f3af8c3dc9c5115fd80f944849c8205c2d2bc5459bb2ecc7114d842669fe77",
+    "runtime_lock": "rom/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_runtime_compat.lock.json",
+    "normal_kernel_default_unchanged": true,
+    "report": "docs/m2-integrated-runtime-build.md"
   }
 }

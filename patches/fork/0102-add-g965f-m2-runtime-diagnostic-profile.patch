@@ -1,0 +1,255 @@
+From: Codex M2 runtime integration
+Subject: [PATCH] Add isolated G965F M2 runtime diagnostic build profile
+
+Reason: preserve proven WIPEONFORK/Tethering/V6 inputs in the existing fork so
+installer does not silently return to original kernel. Earlier logs show
+MADV_WIPEONFORK EINVAL, Android25Q4/kernel5.10 rejection and missing V6 linker ABI.
+Files: explicit diagnostic profile, DS-ACK ZIP preparation helper, runtime
+lock/stager/final verifier, existing boot_restore/cache hash/release gates and
+M1 reset. Only two generated ZIP entries differ; all DTBs unchanged; original
+installer adds a G965F-only guard. No kernel compilation or production default
+change; pinned source/config/patch/Image provenance retained. No binaries in Git.
+Verification: input SHA, BSDIFF decoded payload, profile reset, idempotence,
+wrong-model/input rejection, Bash syntax, final compiled Camera enum, metadata
+and file hashes. Actual build/image/fresh runtime outcomes are recorded in
+parent docs/m2-integrated-runtime-build.md. Full patch-series replay required.
+Rollback: select original profile/rebuild; retained ROMs and baseline BOOT stay
+available. No EFS/CPEFS/radio/modem/bootloader writes are added.
+
+diff --git a/scripts/internal/prepare_m2_runtime_kernel.py b/scripts/internal/prepare_m2_runtime_kernel.py
+new file mode 100644
+--- /dev/null
++++ b/scripts/internal/prepare_m2_runtime_kernel.py
+@@ -0,0 +1,55 @@
++#!/usr/bin/env python3
++"""Prepare the already tested G965F WIPEONFORK kernel in the existing DS-ACK ZIP.
++Reason: the ordinary installer would otherwise overwrite the diagnostic kernel.
++Files: new explicit output only; two ZIP entries differ, DTB/scripts stay pinned
++except a G965F-only guard. No kernel compilation, firmware fetch or device I/O.
++Verify input hashes, decoded BSDIFF result, unchanged entries and recovery install.
++"""
++from pathlib import Path
++import argparse, bz2, hashlib, io, json, struct, zipfile
++SOURCE_SHA = '9a6bad44f3a1a14d43f108fcebeeedfc1b924685f7f13931d902077bceb5c072'
++IMAGE_SHA = '92b14be170225954476869d1fd7700f9c2c92d98eb6447d0181c50a11e80fcdd'
++ENTRY = 'META-INF/com/google/android/update-binary'
++ANCHOR = '\nif [[ $2 = 0 ]]; then\n'
++GUARD = '''
++# Evidence-backed M2 diagnostic: only the calibrated G965F kernel is replaced.
++case "$device" in
++    *G965F*) ;;
++    *) echo "M2 WIPEONFORK diagnostic supports G965F only" >&2; exit 1 ;;
++esac
++'''
++def digest(b): return hashlib.sha256(b).hexdigest()
++def prepare(source, image):
++    if digest(source) != SOURCE_SHA or digest(image) != IMAGE_SHA:
++        raise ValueError('Unreviewed DS-ACK archive or WIPEONFORK Image')
++    # BSDIFF40 extra-only record, interpreted by the original bundled bspatch.
++    ctrl=bz2.compress(struct.pack('<qqq',0,len(image),0),compresslevel=9)
++    diff=bz2.compress(b'',compresslevel=9);extra=bz2.compress(image,compresslevel=9)
++    patch=b'BSDIFF40'+struct.pack('<qqq',len(ctrl),len(diff),len(image))+ctrl+diff+extra
++    assert bz2.decompress(patch[32:32+len(ctrl)])==struct.pack('<qqq',0,len(image),0)
++    assert bz2.decompress(patch[32+len(ctrl)+len(diff):])==image
++    out=io.BytesIO()
++    with zipfile.ZipFile(io.BytesIO(source)) as src, zipfile.ZipFile(out,'w') as dst:
++        script=src.read(ENTRY).decode();assert script.count(ANCHOR)==1
++        for entry in src.infolist():
++            data=src.read(entry)
++            if entry.filename=='floyd/G965F-kernel':data=patch
++            elif entry.filename==ENTRY:data=script.replace(ANCHOR,'\n'+GUARD+ANCHOR,1).encode()
++            entry.compress_type=zipfile.ZIP_STORED
++            dst.writestr(entry,data)
++    data=out.getvalue()
++    with zipfile.ZipFile(io.BytesIO(source)) as src,zipfile.ZipFile(io.BytesIO(data)) as dst:
++        assert src.namelist()==dst.namelist()
++        changed=[n for n in src.namelist() if src.read(n)!=dst.read(n)]
++        assert set(changed)=={ENTRY,'floyd/G965F-kernel'}
++    return data
++if __name__=='__main__':
++    p=argparse.ArgumentParser(description=__doc__)
++    p.add_argument('--source-zip',type=Path,required=True);p.add_argument('--image',type=Path,required=True)
++    p.add_argument('--output',type=Path,required=True);a=p.parse_args()
++    data=prepare(a.source_zip.read_bytes(),a.image.read_bytes())
++    a.output.parent.mkdir(parents=True,exist_ok=True)
++    with a.output.open('xb') as f:f.write(data)
++    a.output.chmod(0o444)
++    print(json.dumps({'result':'PASS','source_zip_sha256':SOURCE_SHA,'image_sha256':IMAGE_SHA,
++        'output_sha256':digest(data),'bytes':len(data),'dtb_entries_unchanged':True,'model_guard':'G965F only'}))
+diff --git a/target/star2lte/profiles/m2-g965f-a376b-android16-runtime-diagnostic.sh b/target/star2lte/profiles/m2-g965f-a376b-android16-runtime-diagnostic.sh
+new file mode 100644
+--- /dev/null
++++ b/target/star2lte/profiles/m2-g965f-a376b-android16-runtime-diagnostic.sh
+@@ -0,0 +1,16 @@
++# Integrated diagnostic M2: only the evidence-backed runtime inputs differ.
++# Reason/files/verification: docs/m2-integrated-runtime-build.md in parent project.
++# Prepare the pinned archive using scripts/internal/prepare_m2_runtime_kernel.py.
++source "$(dirname -- "${BASH_SOURCE[0]}")/m2-g965f-a376b-android16-no-ksu.sh" || return 1
++_M2_RUNTIME_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)"
++export EXYNOS9810_M2_RUNTIME_COMPAT="true"
++export EXYNOS9810_M2_BOOTSTRAP_COMPAT="false"
++export EXYNOS9810_KERNEL_NAME="DS-ACK V1.12 G965F WIPEONFORK diagnostic (no KernelSU)"
++export EXYNOS9810_KERNEL_ZIP="$_M2_RUNTIME_ROOT/../inputs/kernels/DS-ACK-V1.12-G965F-WIPEONFORK-DIAGNOSTIC-Enforcing.zip"
++export EXYNOS9810_EXPECTED_KERNEL_SHA256="4cea63f84d5add494bfcc2f9fff105848806a930a24aca975dc261bf6720e20a"
++[ -f "$EXYNOS9810_KERNEL_ZIP" ] && \
++    [ "$(sha256sum "$EXYNOS9810_KERNEL_ZIP" | cut -d ' ' -f1)" = "$EXYNOS9810_EXPECTED_KERNEL_SHA256" ] || {
++    printf 'Missing/unreviewed G965F WIPEONFORK diagnostic archive; no fallback.\n' >&2
++    return 1
++}
++unset _M2_RUNTIME_ROOT
+diff --git a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_runtime_compat.lock.json b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_runtime_compat.lock.json
+new file mode 100644
+--- /dev/null
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_runtime_compat.lock.json
+@@ -0,0 +1,15 @@
++{
++  "scope": "M2 A376B AZH4 star2lte G965F diagnostic only",
++  "kernel_zip_sha256": "4cea63f84d5add494bfcc2f9fff105848806a930a24aca975dc261bf6720e20a",
++  "kernel_image_sha256": "92b14be170225954476869d1fd7700f9c2c92d98eb6447d0181c50a11e80fcdd",
++  "kernel_source_commit": "914eabe7b6799ab0eb159360a5f9731dd50d0f1d",
++  "kernel_patches": "parent project patches/kernel/series 0000-0002",
++  "kernel_config_sha256": "e71a7e50519aec68eb2208a0a25f4eb1319f18501e00183832be4fc016bc85b6",
++  "compat_source": "SM-S901B_EUX/system/system",
++  "files": {
++    "apex/com.google.android.tethering_compressed.apex": "601d6c2bb7a81e9d8938ac3681cc95887e49ce1aafe58d3632ba92c586187cbf",
++    "lib64/android.hardware.graphics.common-V6-ndk.so": "010bf814b8e62ac739ff228fd6cd84477d40279c6e1c86892f064d750ee4d652"
++  },
++  "original_a37_tethering_sha256": "b2a8b33db76cc9895ffcbb96bfdc24a085c23e52cf2a3b9e26f953cf6343ff22",
++  "cameraserver_sha256": "73cba451858345a2860966cb0a7e7faff64abb4f4946193956571476e0ddad7b"
++}
+diff --git a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_runtime_compat.py b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_runtime_compat.py
+new file mode 100644
+--- /dev/null
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_runtime_compat.py
+@@ -0,0 +1,75 @@
++#!/usr/bin/env python3
++"""Stage and verify the minimal runtime inputs already boot-tested on G965F.
++Reason: A37 25Q4 BPF loader rejects4.9 and retained gralloctypes needs V6.
++Files: existing system Tethering APEX plus one system64 interface only.
++Verify final hashes, selected G965F-only kernel ZIP, persistent metadata and
++compiled Camera enum; ordinary M1/M2 defaults remain independent.
++"""
++from pathlib import Path
++import argparse, hashlib, importlib.util, json, os, re, shutil
++HERE=Path(__file__).resolve().parent
++def lock():return json.loads((HERE/'a376b_runtime_compat.lock.json').read_text())
++def digest(p):return hashlib.sha256(p.read_bytes()).hexdigest()
++def scope():
++    expected={'ROM_SOURCE_CONFIG':'essi_a376b_android16','ROM_MILESTONE':'M2',
++        'TARGET_CODENAME':'star2lte','STAR2LTE_BUILD_MODEL':'SM-G965F',
++        'TARGET_OS_FILE_SYSTEM_TYPE':'ext4','EXYNOS9810_M2_RUNTIME_COMPAT':'true',
++        'EXYNOS9810_ENABLE_METADATA_BIND':'true','EXYNOS9810_ENABLE_KERNELSU_RUNTIME':'false'}
++    for key,value in expected.items():
++        if os.environ.get(key)!=value:raise ValueError('Unreviewed runtime diagnostic scope: '+key)
++    if os.environ.get('EXYNOS9810_M2_BOOTSTRAP_COMPAT','false')!='false':
++        raise ValueError('Do not mix the earlier bootstrap swap with the proven runtime kernel')
++    if digest(Path(os.environ['EXYNOS9810_KERNEL_ZIP']))!=lock()['kernel_zip_sha256']:
++        raise ValueError('Wrong runtime diagnostic kernel archive')
++def apply(work,compat):
++    scope();m=lock();system=work/'system/system'
++    for rel,h in m['files'].items():
++        if digest(compat/rel)!=h:raise ValueError('Unreviewed runtime source: '+rel)
++        dst=system/rel
++        allowed={h,m['original_a37_tethering_sha256']} if rel.startswith('apex/') else {h}
++        if dst.exists() and (dst.is_symlink() or digest(dst) not in allowed):
++            raise ValueError('Unreviewed existing runtime destination: '+rel)
++    for rel in m['files']:
++        dst=system/rel;dst.parent.mkdir(parents=True,exist_ok=True)
++        tmp=dst.with_name(dst.name+'.runtime-tmp');shutil.copyfile(compat/rel,tmp)
++        tmp.chmod(0o644);os.replace(tmp,dst)
++    print('PASS staged pinned M2 Tethering and graphics V6 runtime inputs')
++def verify(work,tools):
++    scope();m=lock();system=work/'system/system'
++    for rel,h in m['files'].items():
++        if digest(system/rel)!=h:raise ValueError('Final runtime file mismatch: '+rel)
++    if digest(system/'bin/cameraserver')!=m['cameraserver_sha256']:
++        raise ValueError('Final cameraserver ABI adaptation lost')
++    # Reapply to an isolated text fixture to verify exact final bind/label state.
++    import tempfile
++    with tempfile.TemporaryDirectory() as td:
++        t=Path(td)
++        paths=['vendor/etc/init/hw/init.samsungexynos9810.rc',
++            'vendor/etc/init/init.samsungexynos9810.rc','system/system/etc/selinux/plat_file_contexts']
++        for rel in paths:
++            p=t/rel;p.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(work/rel,p)
++        spec=importlib.util.spec_from_file_location('m2_meta',HERE/'a376b_metadata_bind.py')
++        meta=importlib.util.module_from_spec(spec);spec.loader.exec_module(meta);meta.apply(t)
++        if any((t/rel).read_bytes()!=(work/rel).read_bytes() for rel in paths):
++            raise ValueError('Final metadata bind/labels missing or duplicated')
++    spec=importlib.util.spec_from_file_location('m2_empty',HERE/'a376b_empty_vendor_flags.py')
++    empty=importlib.util.module_from_spec(spec);spec.loader.exec_module(empty)
++    for n,data in empty.empty_files().items():
++        if (work/'vendor/etc/aconfig'/n).read_bytes()!=data:raise ValueError('Final vendor container drift')
++    adb=HERE.parent/'exynos9810_finalization/adb_defaults.py'
++    spec=importlib.util.spec_from_file_location('m2_adb',adb);checker=importlib.util.module_from_spec(spec);spec.loader.exec_module(checker)
++    text=checker.disassemble_class(system/'priv-app/SamsungCamera/SamsungCamera.apk','x1/k',tools)
++    body=checker.method(text,'a(I)Lx1/k;').group()
++    if not re.search(r'const v0, 0x13a74\s+if-ne p0, v0, (:\w+)\s+sget-object v0, Lx1/k;->V8_0:Lx1/k;\s+return-object v0\s+\1\s+invoke-static',body):
++        raise ValueError('Compiled Camera80500 branch lost')
++    print('PASS final M2 runtime inputs, kernel selection, camera compiled enum and persistent metadata')
++if __name__=='__main__':
++    p=argparse.ArgumentParser(description=__doc__);p.add_argument('mode',choices=['apply','verify'])
++    p.add_argument('--work-dir',type=Path,required=True);p.add_argument('--compat-root',type=Path);p.add_argument('--tools-dir',type=Path)
++    a=p.parse_args()
++    if a.mode=='apply':
++        if a.compat_root is None:p.error('apply needs compat-root')
++        apply(a.work_dir,a.compat_root)
++    else:
++        if a.tools_dir is None:p.error('verify needs tools-dir')
++        verify(a.work_dir,a.tools_dir)
+diff --git a/scripts/make_rom.sh b/scripts/make_rom.sh
+--- a/scripts/make_rom.sh
++++ b/scripts/make_rom.sh
+@@ -49,7 +49,10 @@
+     # tree merely because the source files and output filesystem match.
+     DONOR_HASH="$(printf '%s\n' "${ROM_SOURCE_CONFIG:-$TARGET_OS_SINGLE_SYSTEM_IMAGE}" \
+         "$SOURCE_FIRMWARE" "$SOURCE_PLATFORM_SDK_VERSION" \
+-        "$(cat "$FW_DIR/$SOURCE_FIRMWARE_PATH/.extracted" 2>/dev/null)" | sha256sum | cut -d ' ' -f 1)"
++        "$(cat "$FW_DIR/$SOURCE_FIRMWARE_PATH/.extracted" 2>/dev/null)" \
++        "runtime=${EXYNOS9810_M2_RUNTIME_COMPAT:-false}" \
++        "kernel=${EXYNOS9810_EXPECTED_KERNEL_SHA256:-default}" \
++        "metadata=${EXYNOS9810_ENABLE_METADATA_BIND:-false}" | sha256sum | cut -d ' ' -f 1)"
+ 
+     SOURCE_HASH="$(find "$SRC_DIR/platform/$TARGET_PLATFORM" "$SRC_DIR/unica" "$SRC_DIR/target/$TARGET_CODENAME" \
+         -type d -name __pycache__ -prune -o -type f -print0 | \
+diff --git a/scripts/internal/verify_exynos9810_release_defaults.py b/scripts/internal/verify_exynos9810_release_defaults.py
+--- a/scripts/internal/verify_exynos9810_release_defaults.py
++++ b/scripts/internal/verify_exynos9810_release_defaults.py
+@@ -43,6 +43,11 @@
+         spec=importlib.util.spec_from_file_location("a376b_native32",adapter)
+         module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+         module.verify(work)
++        if os.environ.get("EXYNOS9810_M2_RUNTIME_COMPAT", "false") == "true":
++            runtime=adapter.with_name("a376b_runtime_compat.py")
++            rspec=importlib.util.spec_from_file_location("a376b_runtime",runtime)
++            rmod=importlib.util.module_from_spec(rspec);rspec.loader.exec_module(rmod)
++            rmod.verify(work,ROOT/"out/tools")
+     face_disabled = os.environ.get("EXYNOS9810_FACE_UNLOCK_DISABLED", "false") == "true"
+     if face_disabled:
+         if (target, os.environ.get("ROM_SOURCE_CONFIG"), os.environ.get("ROM_MILESTONE")) != ("star2lte", "essi_a376b_android16", "M2"):
+diff --git a/target/star2lte/profiles/m1-g965f-no-ksu.sh b/target/star2lte/profiles/m1-g965f-no-ksu.sh
+--- a/target/star2lte/profiles/m1-g965f-no-ksu.sh
++++ b/target/star2lte/profiles/m1-g965f-no-ksu.sh
+@@ -40,3 +40,4 @@
+ fi
+ unset _STAR2LTE_M1_ROOT _STAR2LTE_M1_HASH
+ export EXYNOS9810_ENABLE_METADATA_BIND="false"
++export EXYNOS9810_M2_RUNTIME_COMPAT="false"
+diff --git a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/customize.sh b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/customize.sh
+--- a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/customize.sh
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/customize.sh
+@@ -1978,6 +1978,14 @@
+     python3 "$MODPATH/a376b_native32.py" verify --work-dir "$WORK_DIR" || return 1
+ fi
+ _EXYNOS9810_RESTORE_GRAPHICS_MAPPER_COMPAT || return 1
++if [ "${EXYNOS9810_M2_RUNTIME_COMPAT:-false}" = "true" ]; then
++    python3 "$MODPATH/a376b_runtime_compat.py" apply --work-dir "$WORK_DIR" \
++        --compat-root "$FW_DIR/SM-S901B_EUX/system/system" || return 1
++    _EXYNOS9810_SET_METADATA_SAFE system system/apex/com.google.android.tethering_compressed.apex \
++        0 0 644 "u:object_r:system_file:s0"
++    _EXYNOS9810_SET_METADATA_SAFE system system/lib64/android.hardware.graphics.common-V6-ndk.so \
++        0 0 644 "u:object_r:system_lib_file:s0"
++fi
+ _EXYNOS9810_REMOVE_MISSING_AUDIO_EFFECTS
+ _EXYNOS9810_FIX_ENFORCING_INIT_DATA_DIRS
+ _EXYNOS9810_APPLY_TARGET_VENDOR_IDENTITY || return 1

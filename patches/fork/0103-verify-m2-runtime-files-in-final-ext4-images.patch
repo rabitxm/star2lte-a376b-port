@@ -1,0 +1,88 @@
+From: Codex M2 final image verification
+Subject: [PATCH] Check integrated runtime and ADB artifacts inside actual ext4 images
+
+Reason: new runtime source/staging checks do not establish that final filesystem
+packing retains the same files, modes and labels. Extend the existing image
+verification stage after sparse conversion; no image/device writes.
+Files: existing verify_exynos9810_images.sh and one read-only debugfs helper.
+Verify: actual system/vendor ext4 bytes against verified staging, selected modes,
+donor-matched ownership (cameraserver0:2000) and SELinux labels; include compiled SettingsProvider/services
+artifacts already checked by mandatory ADB gate. Default profiles unchanged.
+Rollback: reverse source patch; generated images/retained ROMs are not removed.
+Actual build/runtime results: parent docs/m2-integrated-runtime-build.md.
+
+diff --git a/scripts/internal/verify_exynos9810_images.sh b/scripts/internal/verify_exynos9810_images.sh
+--- a/scripts/internal/verify_exynos9810_images.sh
++++ b/scripts/internal/verify_exynos9810_images.sh
+@@ -70,6 +70,12 @@
+                 fi
+                 echo "Verified distinct libPSI.so/libpsi.so in actual $PARTITION image"
+             fi
++            if [ "${EXYNOS9810_M2_RUNTIME_COMPAT:-false}" = "true" ] && \
++                    [[ "$PARTITION" == system || "$PARTITION" == vendor ]]; then
++                python3 "$(dirname "$0")/verify_m2_runtime_image.py" \
++                    --image "$RAW_IMAGE" --partition "$PARTITION" \
++                    --work-dir "${WORK_DIR:?WORK_DIR required for runtime image audit}" || exit 1
++            fi
+             ;;
+     esac
+ 
+diff --git a/scripts/internal/verify_m2_runtime_image.py b/scripts/internal/verify_m2_runtime_image.py
+new file mode 100644
+--- /dev/null
++++ b/scripts/internal/verify_m2_runtime_image.py
+@@ -0,0 +1,54 @@
++#!/usr/bin/env python3
++"""Verify new runtime inputs and mandatory ADB artifacts in real ext4 images.
++Reason: a staged file/label check alone cannot detect loss during image packing.
++Files: temporary read-only debugfs dumps only; no image or device writes.
++Verify exact staging bytes plus selected mode/UID/GID/SELinux labels; fail closed.
++"""
++from pathlib import Path
++import argparse, subprocess, tempfile, re, os, json, hashlib
++
++def verify(image,partition,work):
++    if os.environ.get('EXYNOS9810_M2_RUNTIME_COMPAT','false')!='true':
++        raise ValueError('Image audit requires explicit M2 runtime profile')
++    entries={
++      'system':[
++       ('system/bin/cameraserver',0o755,'cameraserver_exec'),
++       ('system/priv-app/SamsungCamera/SamsungCamera.apk',0o644,None),
++       ('system/apex/com.google.android.tethering_compressed.apex',0o644,None),
++       ('system/lib64/android.hardware.graphics.common-V6-ndk.so',0o644,'system_lib_file'),
++       ('system/lib/libGLESv1_CM.so',0o644,'system_lib_file'),
++       ('system/etc/init/aconfigd.rc',None,None),
++       ('system/etc/selinux/plat_file_contexts',None,None),
++       ('system/priv-app/SettingsProvider/SettingsProvider.apk',None,None),
++       ('system/framework/services.jar',None,None)],
++      'vendor':[
++       ('etc/init/hw/init.samsungexynos9810.rc',0o644,None),
++       ('etc/init/init.samsungexynos9810.rc',0o644,None),
++       *[('etc/aconfig/'+n,0o444,'vendor_aconfig_storage_file') for n in ['package.map','flag.map','flag.val','flag.info']]]}
++    def cmd(text):
++        r=subprocess.run(['debugfs','-R',text,str(image)],capture_output=True,text=True,check=True)
++        return r.stdout+r.stderr
++    checks=[]
++    with tempfile.TemporaryDirectory(prefix='m2-image-audit-') as td:
++        for i,(rel,mode,label) in enumerate(entries[partition]):
++            out=Path(td)/str(i);cmd('dump /'+rel+' '+str(out))
++            expected=work/partition/rel
++            if not out.is_file() or out.read_bytes()!=expected.read_bytes():
++                raise ValueError('Image bytes differ/missing: '+partition+'/'+rel)
++            stat=cmd('stat /'+rel)
++            if mode is not None:
++                m=re.search(r'Type:\s+regular\s+Mode:\s+(\d+)',stat)
++                if not m or int(m[1],8)!=mode:raise ValueError('Image mode mismatch: '+rel+' '+stat)
++                owner=(0,2000) if partition=='system' and rel=='system/bin/cameraserver' else (0,0)
++                found=re.search(r'User:\s+(\d+)\s+Group:\s+(\d+)',stat)
++                if not found or tuple(map(int,found.groups()))!=owner:
++                    raise ValueError('Image owner mismatch: '+rel+' expected='+str(owner))
++            if label is not None:
++                attr=cmd('ea_get /'+rel+' security.selinux')
++                if 'u:object_r:'+label+':s0' not in attr:raise ValueError('Image SELinux label mismatch: '+rel+' '+attr)
++            checks.append({'path':partition+'/'+rel,'sha256':hashlib.sha256(out.read_bytes()).hexdigest(),'mode_checked':mode,'label_checked':label})
++    print(json.dumps({'result':'PASS','real_ext4_image':partition,'checks':checks}))
++if __name__=='__main__':
++    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--image',type=Path,required=True)
++    p.add_argument('--partition',choices=['system','vendor'],required=True);p.add_argument('--work-dir',type=Path,required=True)
++    a=p.parse_args();verify(a.image,a.partition,a.work_dir)

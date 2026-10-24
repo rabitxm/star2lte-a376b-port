@@ -221,3 +221,11 @@ to the existing native32 lock. Proprietary inputs stay excluded from GitHub.
 all patch hashes. No new complete ROM build or source-release kernel selection
 was made. Reproduction of the complete boot still needs explicit diagnostic
 BOOT/APEX/V6 integration and subsequent final-image/fresh-data gates.
+
+## 24 October 2026 — integrated M2 attempt52 result and metadata diagnostic
+
+Attempt52 package SHA `61bc3696dfe40939611356285f63ee09f96d0110dc56af4c65d3346dcbebea12` passed signed ext4 image gates and fresh installation. Runtime logcat line74018 contains `Missing permission definition for permission "android.permission.RANGING" associated with app op 151`; init line4590 shows `/metadata/aconfig` mkdir failed read-only. BOOT rollback to cc618abc...776ed01d passed. Patch0104 enables the previously tested volatile tmpfs on `/metadata` only under the G965F M2 diagnostic opt-in. Hashes and current attempt53 outcomes are maintained in `docs/m2-integrated-runtime-build.md` and `sources.lock.json`.
+
+## 24 October 2026 — attempt53 build and staged recovery package
+
+Patch0104's clean attempt53 build through the existing fork completed. Compiled ADB/no-auth choice-lifecycle and staged SELinux checks passed; actual ext4 SYSTEM/VENDOR/ODM image verification and the six-payload signed installer verifier passed. Flash ZIP SHA256 `f72be9be303e34fd5f625c5fd3d50e0590589e62b85386d8816f97f9758343ef`; target-files SHA256 `e0a047c606ce915253c6c9a31a3862d13aa2de01826ffc43f559c64541280392`. Eight signed ZIP32 recovery stages passed CRC/signature/hash checks. Read-only G965F TWRP preflight passed; the package was not flashed because the current AGENTS.md write exception names a different exact M2 SHA. Therefore patch0104 has no runtime result on this artifact. Logs and staged packages are local, excluded from the public snapshot.

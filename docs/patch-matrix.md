@@ -395,3 +395,24 @@ hash checks, new CACHE metadata backed up/removed. No full ROM/package yet.
 Detailed reasons/files/provenance/tests/limits/rollback:
 [report](m2-camera-metadata-fixes.md). M1/G965N, protected radio/EFS partitions,
 production kernel choice and retained ROM archives unchanged by these actions.
+
+## Integrated diagnostic build gates — patches0102/0103
+
+0102 reason: installer would replace a staged diagnostic BOOT kernel. Files:
+explicit M2 G965F runtime profile, original ZIP preparation helper, runtime lock
+and stager, existing boot_restore/release checker/cache identity and M1 reset.
+Checks: actual recovery BSPATCH/Image hash and original BOOT components, strict
+model/donor/hash rejection, stage idempotence and profile reset. Generated ZIP
+and firmware stay excluded. Original production kernel selection unchanged.
+
+0103 reason: staged verification alone cannot prove actual image contents.
+Files: existing image verifier and a read-only debugfs helper. Checks: real ext4
+file bytes compared to verified staging, selected modes/owners/SELinux labels;
+Camera/runtime/storage and mandatory ADB artifacts included. Build/runtime
+outcomes pending, not assumed. Rollback: reverse patch/select original profile;
+retained artifacts and baseline BOOT kept. No protected partition write added.
+Report: docs/m2-integrated-runtime-build.md.
+
+24/10/2026 — Patch0104, `0104-enable-m2-volatile-metadata-diagnostic.patch`. Reason: attempt52 failed at `init` because `/metadata` is read-only, so aconfig did not load and SystemServer raised the RANGING AppOps fatal. Files: existing `a376b_runtime_compat.py` and its hash lock; the opt-in M2 final SYSTEM receives a 16MiB tmpfs mount at `/metadata` before donor aconfigd creates maps. Ordinary profiles are unchanged. Verification: exact donor/generated SHA, apply idempotence/order, patch apply from0102-created source, compiled/final image exact-byte check; attempt53 fresh runtime must verify flag, dangerous RANGING, SystemServer stability and boot completion. Rollback: select normal profile or reverse0104; tmpfs is volatile. No AppOps bypass, kernel, RIL, EFS or G965N change.
+
+Attempt53 execution for patch0104: clean existing-fork build exit0; compiled ADB defaults/no-auth and saved-choice lifecycle, Exynos9810 contract, staged SELinux and real ext4 SYSTEM/VENDOR/ODM checks PASS. Signed flash ZIP and eight recovery ZIP32 stages PASS. Read-only correct-device/package/protected-partition preflight PASS. No flash was performed because the current AGENTS.md exact-SHA write exception does not cover attempt53; runtime acceptance is pending authorization and fresh-device evidence. Full details and local logs are in `docs/m2-integrated-runtime-build.md`.

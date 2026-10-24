@@ -3,8 +3,8 @@
   "purpose": "Source and selected diagnostic evidence for external help",
   "fork_url": "https://github.com/Eend15/Unofficial-Un1ca-9810",
   "fork_commit": "2b25ae6fc3098650be249bd1898e21e563cd5df1",
-  "active_patches": 91,
-  "device_identifier_replacements": 55,
+  "active_patches": 94,
+  "device_identifier_replacements": 57,
   "binary_firmware_raw_logs_credentials_included": false,
   "device_serials_in_exported_text_are_role_aliases": true,
   "files": {
@@ -17,16 +17,16 @@
       "sha256": "4db22bfd900e57f60f1eee4ca42ed7946fec0ada71307008a3303f9ec466b6c6"
     },
     "README.md": {
-      "bytes": 5817,
-      "sha256": "1d7e1dd994746338978d21923ea22a93492a82e7c2b010126069727bb0671402"
+      "bytes": 6550,
+      "sha256": "397fc244b415ceb64fb257170e0c0369330e4ead10fb17f58232107184eb3ef0"
     },
     "STATUS.md": {
-      "bytes": 55040,
-      "sha256": "da12c4b002b12c565ba823c65efdeb09747829456582010679e40a1f579fe8b5"
+      "bytes": 56599,
+      "sha256": "2992af98176dc6bb685da6fde9f2b91861868ae2ceb6d02bb17f31d253cd4427"
     },
     "sources.lock.json": {
-      "bytes": 1591398,
-      "sha256": "ef0e22fb9fd577906564cc24246b98b19b5894546eca18bd9b332540fc0f3b4a"
+      "bytes": 1592587,
+      "sha256": "99930f4acb8414087d8cffa34a00d47a4227c181f649b1440f3de6542943b0ca"
     },
     "firmware.lock.json": {
       "bytes": 661055,
@@ -37,12 +37,12 @@
       "sha256": "004158f7b10bf132de0adaf93a23513e511dcc23b9b1534fcda5bf451d540a8b"
     },
     "docs/HELP-WANTED.md": {
-      "bytes": 4553,
-      "sha256": "70e28261a4248531b824de83008c682795405c7d3f48164cec3c4b06070db425"
+      "bytes": 5722,
+      "sha256": "0cf71e7e7a079931ee42bcfc22334cfdb2188bb405c7ab4b57d6af9d13e434d2"
     },
     "docs/PLAN.md": {
-      "bytes": 15982,
-      "sha256": "72e0da80eb9e128b377293e8d78cc9b6f8eac2705cc93500c65a98b9a63deafe"
+      "bytes": 18019,
+      "sha256": "8b0fad1b82dcdce43710cd9055d2f20f494b3c4079efd750a580588841706dff"
     },
     "docs/adb-defaults.md": {
       "bytes": 7249,
@@ -85,8 +85,8 @@
       "sha256": "85abc2e781b852e97a85a6c0975bf37ecde3a6e3e829343740881a3eb4648600"
     },
     "docs/m2-build.md": {
-      "bytes": 97672,
-      "sha256": "bb03858513040bcfcd918c8761a0f0b5dafd1f612e123dda94b893b7cefc6596"
+      "bytes": 99047,
+      "sha256": "6a32400e9f402aef09727f4f8049388b0a1d13f3c9167f5617d98c79bda2fc9c"
     },
     "docs/m2-camera-metadata-fixes.md": {
       "bytes": 10269,
@@ -95,6 +95,10 @@
     "docs/m2-early-diagnostic-review.md": {
       "bytes": 3613,
       "sha256": "d16804ec3d8a5cb5931fa11e7eade8abce0ae1e19248f703d3acb4d2b89a442b"
+    },
+    "docs/m2-integrated-runtime-build.md": {
+      "bytes": 11994,
+      "sha256": "be96f7b31cb41006b20379177acc0cfe9d1923e5e17f8d5f4f28f2df66df7bc7"
     },
     "docs/m2-metadata-runtime.md": {
       "bytes": 7003,
@@ -113,8 +117,8 @@
       "sha256": "eae21e1595dfbc7c8455a75b94ade705c385eba6b13c410e656f1c1b04f0f765"
     },
     "docs/patch-matrix.md": {
-      "bytes": 56150,
-      "sha256": "a7ed74d7638efe1150da340eb8df10583fa45e529e00e7d7f3ba0abf403e6e33"
+      "bytes": 58569,
+      "sha256": "20cc8536ab1c8aabb354f03ea22be1abfbb92ab9f44383556fe2e092794572ad"
     },
     "docs/probe13-report.md": {
       "bytes": 6487,
@@ -125,12 +129,12 @@
       "sha256": "a5ec542aac5e5377d6d023bc00e204bc327b8c2616d8583feeb4f90e28572466"
     },
     "docs/repo-map.md": {
-      "bytes": 22448,
-      "sha256": "4b705ebeb3723f5d04dc131fd73a5e58dfa60cc885dbffbdf04c5176cdc07864"
+      "bytes": 24437,
+      "sha256": "72230494c2525132dbf1c2b20e748694e07312b39544df353935c391a10ec91b"
     },
     "docs/sources.md": {
-      "bytes": 16956,
-      "sha256": "3dde20036dbd782b06ea6bdff1de90f388e51047078b041058e52a6de1c1ab40"
+      "bytes": 18492,
+      "sha256": "6e6cf42be702f12cee0d9086c8f410e21a800e426a01ac1c7f6645132ef3b7ff"
     },
     "patches/fork/0001-host-path-quoting.patch": {
       "bytes": 5385,
@@ -532,9 +536,21 @@
       "bytes": 1767,
       "sha256": "a15c67be7ff5e455598b7cc154fc6348f6dbf5ec5dd01930d61abfaa12b349d6"
     },
+    "patches/fork/0102-add-g965f-m2-runtime-diagnostic-profile.patch": {
+      "bytes": 16168,
+      "sha256": "d4500d10237fd9f57e7888e5dcfa90d7218bc346d6048fc0db8b53b7fbd63c27"
+    },
+    "patches/fork/0103-verify-m2-runtime-files-in-final-ext4-images.patch": {
+      "bytes": 5317,
+      "sha256": "26d0a5f5b299529b07b83c89fcdf5eea0a0375765c5551bb9e100c387717f7dc"
+    },
+    "patches/fork/0104-enable-m2-volatile-metadata-diagnostic.patch": {
+      "bytes": 4205,
+      "sha256": "b9ab582aee7483e18ff8e526ada9931871bfeb946f5497f553b80862de8d9d73"
+    },
     "patches/fork/series": {
-      "bytes": 4365,
-      "sha256": "22957b90e40ac7d51e54776921b8ce9dd315fca3edb69d46b01fe28c9410e7be"
+      "bytes": 4522,
+      "sha256": "189f37f47896b8c990748c7c9efa6fc1e6b7d749475a6d5be778046f035f02ca"
     },
     "patches/kernel/0000-reserve-vma-bit-for-wipeonfork.patch": {
       "bytes": 2140,
@@ -691,6 +707,10 @@
     "support/evidence/source-replay-audit.json": {
       "bytes": 4351,
       "sha256": "f4db7fee4cd2d236a2c909e65196e8b8d99df424d40ce1f84758874fc836d64a"
+    },
+    "support/kernel/g965f-runtime-build.config.txt": {
+      "bytes": 162515,
+      "sha256": "e71a7e50519aec68eb2208a0a25f4eb1319f18501e00183832be4fc016bc85b6"
     }
   }
 }

@@ -87,3 +87,7 @@ a separate A37 Tethering gate: `Android 25Q4 requires kernel 5.10`, causing
 BOOT was restored to its original hash after capture. The older retained S22 Tethering APEX then cleared that loader gate, and
 the later V6/metadata test reached Welcome. Hardware and module acceptance
 remain pending; see the updated runtime and metadata reports.
+
+## M2 diagnostic status — 24 October 2026
+
+The integrated G965F Android 16 diagnostic build attempt53 passed compiled gates, real ext4 SYSTEM/VENDOR/ODM audits and signed-package verification. Its flash ZIP SHA256 is `f72be9be303e34fd5f625c5fd3d50e0590589e62b85386d8816f97f9758343ef`; eight recovery-compatible ZIP32 stages also passed. Read-only preflight confirms the expected G965F/TWRP identity, package and stage hashes, protected-partition byte reads and baseline BOOT. It has not been flashed: the current AGENTS.md authorization explicitly limits package writes to a different M2 SHA. Patch0104's fresh-runtime effect therefore remains unverified. See [the integrated runtime report](docs/m2-integrated-runtime-build.md).
