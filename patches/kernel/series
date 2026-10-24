@@ -1,0 +1,3 @@
+0000-reserve-vma-bit-for-wipeonfork.patch
+0001-star2lte-madvise-wipeonfork-backport.patch
+0002-defer-wipeonfork-anon-vma-until-fault.patch

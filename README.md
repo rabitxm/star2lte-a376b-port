@@ -79,3 +79,22 @@ credentials, signing keys and raw device logs are excluded. The exported GitHub
 snapshot substitutes physical device identifiers with role aliases and includes
 only allowlisted text/source files. Upstream code and kernel retain their
 respective licenses and credits; this handoff does not relicense third-party code.
+
+## Runtime kernel diagnostic — 24 October 2026
+
+Probe13 reproduced the M2 vendor BoringSSL restart trigger as an A37 runtime
+APEX linker abort: `arc4random data MADV_WIPEONFORK failed: Invalid argument`
+(exit134), followed by init's `reboot_on_failure`. A separately built, narrowly
+scoped DS-ACK V1.12 backport passed real fork/zero-fill/KEEPONFORK checks and
+made the exact A37 linker `--list` exit0 on the M1 G965F control under enforcing.
+M1 has been restored to original BOOT. The audited diagnostic BOOT is now under
+one M2 G965F test; M2 acceptance and original BOOT rollback remain pending.
+This is not a production kernel/package change. Details and hashes:
+[diagnostic report](docs/m2-runtime-kernel-fix.md).
+
+The M2 test now clears the previous BoringSSL/linkerconfig failures: both
+BoringSSL self-tests exit0 and linkerconfig generates its config. It then reaches
+a separate A37 Tethering gate: `Android 25Q4 requires kernel 5.10`, causing
+`bpfloader` exit7 and `reboot,bpfloader-failed` on DS-ACK4.9.337. The diagnostic
+BOOT was restored to its original hash after capture. Next work is an evidence
+based BPF requirements audit; see the updated runtime report.

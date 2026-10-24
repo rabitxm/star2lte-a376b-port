@@ -359,3 +359,53 @@ changes across boot/recovery remain unverified with no EFS write/restore.
 No kernel/vendor/radio/policy/self-test change or ROM rebuild. Full report,
 limits and next implementation decision: docs/probe13-report.md. Selected
 counts, exact lines, source hashes and loader outputs are in support/evidence/.
+
+## 24/10/2026 — WIPEONFORK backport calibration and M2 test
+
+The precise runtime failure captured in probe13 justified a diagnostic kernel
+build. A clean isolated source at duhansysl V1.12 commit
+`914eabe7b6799ab0eb159360a5f9731dd50d0f1d` received patches0000–0002.
+The unpatched baseline and feature builds used identical real `.config`, AOSP
+clang-r547379, DTB, ramdisk, command line and release string. Static replay,
+10,189 exported CRC comparison, no-KSU symbol check, and BOOT component audit
+passed. The source writes stock_defconfig into `/proc/config.gz`, so the actual
+build config is tracked by its own hash instead of inferred from runtime.
+
+M1 control ran the rebuilt baseline enforcing to `boot_completed=1`; the
+standalone test correctly saw `MADV_WIPEONFORK_RC=-22`. It then booted the
+backport enforcing and passed: `MADV_WIPEONFORK_RC=0`, 32 parent/child/
+grandchild zero-fill rounds, parent preservation, KEEPONFORK, and shared/file
+mapping rejection. The exact A37 runtime APEX linker `--list` changed from
+exit134 to exit0. The crypto self-test main is still not validated. M1 BOOT
+was rolled back and full hash returned to `cc618abc...776ed01d`; it booted
+completed1 again.
+
+The feature BOOT SHA256
+`b01912f62ae111570d9de3e45d799da3da4788f27d86f119f78a06a9efb8abd7` was then
+written only to authorized G965F M2 BOOT (`M2_G965F_SERIAL`), with model,
+bootloader, partition size/current hash and protected partition hashes checked.
+Only BOOT changed. M2 is under bounded boot observation; capture probe13,
+verify actual runtime-selftest logs, then restore BOOT to
+`cc618abc72e8e568e56a8c643c906cff0d7b9143dfc77d86dc645f55776ed01d` and verify
+protected hashes. No USERDATA format, system/vendor/ODM, radio, EFS/CPEFS or
+G965N operation occurred. Full technical record:
+`docs/m2-runtime-kernel-fix.md`.
+
+24/10/2026 M2 feature BOOT result: probe13 generation33 records 6,446 frames,
+heartbeat17,773ms and zero drops; second-stage init and post-fs-data are reached.
+`linkerconfig generated /linkerconfig with mounted APEX modules info`. Vendor
+and system BoringSSL self-test services exit0, clearing the observed MADV/linker
+restart trigger on this boot. New blocker from logcat line24286:
+`NetBpfLoad: Android 25Q4 requires kernel 5.10.` `bpfloader` exits7 and init
+logs `reboot,bpfloader-failed`. M2 returned to TWRP and guarded BOOT rollback to
+cc618abc...776ed01d PASS; protected writes unchanged. Next: audit 25Q4 BPF
+objects/APIs against DS-ACK4.9 before a separate kernel change or APEX decision.
+See docs/m2-runtime-kernel-fix.md and exact local logs.
+
+Candidate investigation: actual A37 Tethering APEX is version361153320 / 25Q4
+(API36.1); retained M1 S22 APEX is360743340 / 2025Q2 (API36.0). On this same
+S9+ DS-ACK setup the older M1 module logs `detected 5 of 5` and bpfloader exits0;
+the A37 module rejects the synthetic5.4.302 kernel for requiring5.10 before
+loading programs. BPF payload layouts differ; `CONFIG_DEBUG_INFO_BTF` is off
+in the controlled4.9 config. Older APEX is now a candidate only, pending A37
+API and tethering feature tests. No APEX/system change or test has been flashed.

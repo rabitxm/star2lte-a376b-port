@@ -4,7 +4,7 @@
   "fork_url": "https://github.com/Eend15/Unofficial-Un1ca-9810",
   "fork_commit": "2b25ae6fc3098650be249bd1898e21e563cd5df1",
   "active_patches": 88,
-  "device_identifier_replacements": 54,
+  "device_identifier_replacements": 55,
   "binary_firmware_raw_logs_credentials_included": false,
   "device_serials_in_exported_text_are_role_aliases": true,
   "files": {
@@ -13,20 +13,20 @@
       "sha256": "82a88c020fdd03eb231a3550e49a1238a3366caa5b3cf4769169c135a3b0d2c4"
     },
     "AGENTS.md": {
-      "bytes": 6795,
-      "sha256": "b2785c1bf0b2f265309449166157e490b838f288937366cbd99e376821bdc3ea"
+      "bytes": 7487,
+      "sha256": "4db22bfd900e57f60f1eee4ca42ed7946fec0ada71307008a3303f9ec466b6c6"
     },
     "README.md": {
-      "bytes": 4473,
-      "sha256": "ba594fc9d6d7e4949e0d1570b6026ad7acfd2b79334182b31f2b4a25ff675ddb"
+      "bytes": 5650,
+      "sha256": "7454f93ac7658a12bd95c133e85f9fdb6177b0e87e2a5bbbfb8633ccfde114da"
     },
     "STATUS.md": {
-      "bytes": 49125,
-      "sha256": "f472c408719abe54ffb7d46c460a42a4cd7102c53bc70e2141c7e7c377954bc8"
+      "bytes": 52254,
+      "sha256": "dbfca5099dfa276afac49efb71b5ab9a67af0d283e23f401b855d9b5cb4aa319"
     },
     "sources.lock.json": {
-      "bytes": 1589553,
-      "sha256": "91b29449827120784a853afa419e1eadee9dec9be1c10b7a64d48bd06ed324f1"
+      "bytes": 1590829,
+      "sha256": "af204f03f1935c2975ea9bb6edc127d977c73144a236b265c5a51252c7e3a932"
     },
     "firmware.lock.json": {
       "bytes": 661055,
@@ -37,8 +37,8 @@
       "sha256": "004158f7b10bf132de0adaf93a23513e511dcc23b9b1534fcda5bf451d540a8b"
     },
     "docs/HELP-WANTED.md": {
-      "bytes": 5279,
-      "sha256": "15d7fa98a145458f7c5dbaff71d45b4ee38781a6878050a6581fc498469a21f8"
+      "bytes": 6538,
+      "sha256": "c78004d8e0e5f8f963a8639d968feef235ef190425c570b94f4573d8fcb7d9f4"
     },
     "docs/PLAN.md": {
       "bytes": 14390,
@@ -49,8 +49,8 @@
       "sha256": "9d52a5f8f609badafffaab40d410a02c357d3ef628dd22bdffcc836c2bd06d67"
     },
     "docs/bugs.md": {
-      "bytes": 63215,
-      "sha256": "7974e9d478a28ecd38afcc4f7a02bcaa92abeb86a10b7372b785ebee644deac0"
+      "bytes": 66342,
+      "sha256": "bf021d5f30d02389272b3a8443e2027a212c5c0a251241fc99b7eed6eafb81bf"
     },
     "docs/build-environment.md": {
       "bytes": 4132,
@@ -92,6 +92,10 @@
       "bytes": 3613,
       "sha256": "d16804ec3d8a5cb5931fa11e7eade8abce0ae1e19248f703d3acb4d2b89a442b"
     },
+    "docs/m2-runtime-kernel-fix.md": {
+      "bytes": 10787,
+      "sha256": "9cb484d5c4bba5bf805f5669c36d069453e5a795c87af39148f86cccb9466c5a"
+    },
     "docs/module-inventory.tsv": {
       "bytes": 804,
       "sha256": "53c67e5a0abad3ab61e8cafd8acf8e93f347ebda03a2780782f98c4f6d385d88"
@@ -101,8 +105,8 @@
       "sha256": "eae21e1595dfbc7c8455a75b94ade705c385eba6b13c410e656f1c1b04f0f765"
     },
     "docs/patch-matrix.md": {
-      "bytes": 53028,
-      "sha256": "922a7058ad95e0b4fe1265555a349aa0cde6509d7d6cd0148a4330c54738acfb"
+      "bytes": 53703,
+      "sha256": "5a2d3094783be6258cb2051550959dd3b5862ac7ea58a3a568b9f01db5d18bae"
     },
     "docs/probe13-report.md": {
       "bytes": 6487,
@@ -113,12 +117,12 @@
       "sha256": "a5ec542aac5e5377d6d023bc00e204bc327b8c2616d8583feeb4f90e28572466"
     },
     "docs/repo-map.md": {
-      "bytes": 19587,
-      "sha256": "9b6d6f93507e98c7c4f5973928aea88a5a8a717c4112c419429fa640f8a573e4"
+      "bytes": 20019,
+      "sha256": "0ddf403b6946b336630de6b2cf1f7f7d4c1b7779083ecf41e53437d088239b7e"
     },
     "docs/sources.md": {
-      "bytes": 13891,
-      "sha256": "465d0c828e8a39b14226fa8055ff3a61bb8fea709569225a1d9aa63a44b94d56"
+      "bytes": 14746,
+      "sha256": "9e77897371479db5a911eafd40dd39bfcfd44847ac3dd13891f1d97a6566b964"
     },
     "patches/fork/0001-host-path-quoting.patch": {
       "bytes": 5385,
@@ -512,9 +516,21 @@
       "bytes": 4198,
       "sha256": "236b3db39741394714cc1681fb2f57407c3a59b17c6d1c637cc67e1bbc9caf28"
     },
+    "patches/kernel/0000-reserve-vma-bit-for-wipeonfork.patch": {
+      "bytes": 2140,
+      "sha256": "ba22a689c01958c2a52674df5d6e97ef731d5304818e77ecb5692e1d01e31c5f"
+    },
     "patches/kernel/0001-star2lte-madvise-wipeonfork-backport.patch": {
-      "bytes": 5268,
-      "sha256": "10a78800d22b76d70463b5c3496d74e2079cd5b5b1fbd2d3cd7a6086add18ff4"
+      "bytes": 5352,
+      "sha256": "1c6193251ca18717c0ef8f03bc97c9b3075bb0078f240be0d684a6bd910c1dbd"
+    },
+    "patches/kernel/0002-defer-wipeonfork-anon-vma-until-fault.patch": {
+      "bytes": 1098,
+      "sha256": "a70c50c8a2111ebeb129311185014eefa1a393e211ca65ab03a1d6e1e511d501"
+    },
+    "patches/kernel/series": {
+      "bytes": 139,
+      "sha256": "35ac3809324c5297985842bfdc7ecd24d2331aa8b77eddc3fb2fd678f46f4913"
     },
     "diagnostics/README.md": {
       "bytes": 6058,
@@ -535,6 +551,10 @@
     "diagnostics/bootlogger_pid1_probe13.c": {
       "bytes": 13449,
       "sha256": "099d7cbe645886266f7d1c4efb1349db245ec6f7602058ab1efa95d22c07685d"
+    },
+    "diagnostics/madvise_wipeonfork_selftest.c": {
+      "bytes": 3673,
+      "sha256": "f29d9ed219c4595d57485b8b3bdeda58b6b00fce95448cbadb5f7026c5c74ef5"
     },
     "diagnostics/offline-recorder-policy.md": {
       "bytes": 3214,
@@ -563,6 +583,14 @@
     "tools/prepare_fork.sh": {
       "bytes": 1351,
       "sha256": "22ca13cef8f0629f79bdba272dcf1fba5e9f3da9baf487efb3384a2f373e92c4"
+    },
+    "support/evidence/m2-madvise-backport-selected.txt": {
+      "bytes": 1553,
+      "sha256": "1f6a786a56a172c1a4b3ded65d2c13eb8fbe6e1d3ba56f54ecdd4e55f1ca9718"
+    },
+    "support/evidence/m2-madvise-backport-summary.json": {
+      "bytes": 1367,
+      "sha256": "505bb7338bde13aaa4a40ee4334d2f12a8e8fdee4ccdea7407b02deeb6328e17"
     },
     "support/evidence/probe10-init.txt": {
       "bytes": 7889,

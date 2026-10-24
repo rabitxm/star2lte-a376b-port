@@ -81,3 +81,22 @@ support/evidence/ contains selected text and hashes. Full firmware, images,
 raw logs, credentials and physical identifiers are excluded from this source
 snapshot. Acquire proprietary inputs and toolchains independently. Exported
 device commands use role aliases; verify local targets before any operation.
+
+8. The WIPEONFORK diagnostic backport passes real M1 semantics and makes both
+   M2 BoringSSL self-test processes exit0. M2 then reaches `post-fs-data`,
+   generates `/linkerconfig`, but reboots because the installed A37 Tethering
+   APEX identifies as Android25Q4 and logs `Android 25Q4 requires kernel 5.10.`
+   `bpfloader` exits7 with `reboot,bpfloader-failed`. The kernel is the pinned
+   DS-ACK4.9.337. Help needed: trace the exact APEX build/source revision,
+   required BPF maps/programs and kernel APIs; assess any bounded safe backport
+   to4.9 versus a donor-compatible Tethering APEX. Do not only spoof uname or
+   skip the reboot gate. Runtime evidence: `logs/20261024-m2-runtime-fix/`;
+   summary: `docs/m2-runtime-kernel-fix.md`.
+
+The retained M1 S22 Tethering APEX version360743340 (2025Q2/API36.0) gets past
+its own BPF kernel-version gate on the S9+ DS-ACK environment and `bpfloader`
+exits0; A37's version361153320 (25Q4/API36.1) requires kernel5.10. This makes
+an isolated old-APEX-on-A37 test a plausible next experiment, but API and
+hotspot functionality are unproven. APEX hashes and extracted BPF object layout
+are in `docs/m2-runtime-kernel-fix.md`. Please assess module compatibility and
+which connectivity tests must gate adoption.

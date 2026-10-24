@@ -1,0 +1,54 @@
+From: Codex <codex@local>
+Subject: [PATCH] mm: reserve the legacy VMA bit before WIPEONFORK
+
+Reason: the existing WIPEONFORK draft consumes VM_ARCH_2 while 4.9 x86 MPX
+still references it. Carry the upstream prerequisite so the common header
+remains internally consistent; ARM64 runtime settings are unchanged.
+Files affected: arch/x86/Kconfig; include/linux/mm.h.
+Verification: apply before0001, compare ARM64 config, compile paired baseline
+and feature kernels, and check bit allocations. Use the VM_HIGH_ARCH_4 bit
+mask as in Linux v4.14, not the initial commit's numeric bit-index typo.
+References: df3735c5b40fad8d0d28eb8ab065fe955b3347ee and Linux v4.14 mm.h.
+---
+--- a/arch/x86/Kconfig
++++ b/arch/x86/Kconfig
+@@ -1714,7 +1714,9 @@
+ config X86_INTEL_MPX
+ 	prompt "Intel MPX (Memory Protection Extensions)"
+ 	def_bool n
+-	depends on CPU_SUP_INTEL
++	# Reserve the legacy VMA bit for MADV_WIPEONFORK.
++	depends on CPU_SUP_INTEL && X86_64
++	select ARCH_USES_HIGH_VMA_FLAGS
+ 	---help---
+ 	  MPX provides hardware features that can be used in
+ 	  conjunction with compiler-instrumented code to check
+--- a/include/linux/mm.h
++++ b/include/linux/mm.h
+@@ -231,10 +231,12 @@
+ #define VM_HIGH_ARCH_BIT_1	33	/* bit only usable on 64-bit architectures */
+ #define VM_HIGH_ARCH_BIT_2	34	/* bit only usable on 64-bit architectures */
+ #define VM_HIGH_ARCH_BIT_3	35	/* bit only usable on 64-bit architectures */
++#define VM_HIGH_ARCH_BIT_4	36	/* bit only usable on 64-bit architectures */
+ #define VM_HIGH_ARCH_0	BIT(VM_HIGH_ARCH_BIT_0)
+ #define VM_HIGH_ARCH_1	BIT(VM_HIGH_ARCH_BIT_1)
+ #define VM_HIGH_ARCH_2	BIT(VM_HIGH_ARCH_BIT_2)
+ #define VM_HIGH_ARCH_3	BIT(VM_HIGH_ARCH_BIT_3)
++#define VM_HIGH_ARCH_4	BIT(VM_HIGH_ARCH_BIT_4)
+ #endif /* CONFIG_ARCH_USES_HIGH_VMA_FLAGS */
+ 
+ #if defined(CONFIG_X86)
+@@ -258,9 +260,11 @@
+ # define VM_MAPPED_COPY	VM_ARCH_1	/* T if mapped copy of data (nommu mmap) */
+ #endif
+ 
+-#if defined(CONFIG_X86)
++#if defined(CONFIG_X86_INTEL_MPX)
+ /* MPX specific bounds table or bounds directory */
+-# define VM_MPX		VM_ARCH_2
++# define VM_MPX		VM_HIGH_ARCH_4
++#else
++# define VM_MPX		VM_NONE
+ #endif
+ 
+ #ifndef VM_GROWSUP

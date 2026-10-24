@@ -180,3 +180,17 @@ check on recovery and pinned DS-ACK; both reproduce MADV_WIPEONFORK EINVAL /
 exit134. No proprietary payload is exported. Existing source lock, kernel,
 normal fork series and retained ROM artifacts are unchanged. See
 support/evidence/probe13-runtime-linker.json and docs/probe13-report.md.
+
+## 24/10/2026 isolated DS-ACK diagnostic backport
+
+Runtime justification and exact source/toolchain/config provenance are recorded
+in `docs/m2-runtime-kernel-fix.md`. The original source input and normal
+`rom/` kernel package are preserved. Diagnostic series `patches/kernel/series`
+applies to duhansysl V1.12 source commit `914eabe7b6799ab0eb159360a5f9731dd50d0f1d`.
+Three textual patches affect seven kernel source files. The two paired builds
+use identical real `.config`, pinned AOSP clang-r547379, and unchanged
+`4.9.337-DS-ACK-V1.12-G965F-08.05.2026` release string. Source embeds
+stock_defconfig in `/proc/config.gz`; record real `.config` hash instead of
+treating that embedded config as the release build config. Static and M1
+functional gates pass; M2 device runtime remains pending. No kernel binary,
+firmware or raw log is in source sharing.

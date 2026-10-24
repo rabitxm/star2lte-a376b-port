@@ -32029,5 +32029,30 @@
     "probe09_m2_pmsg_attribution": "CAPTURED_IN_TWRP_RECOVERY_CANNOT_ATTRIBUTE_TO_M2",
     "probe09_postboot_userdata_inventory": "logs/20261023-m2-postboot-userdata/inventory.txt",
     "probe09_postboot_userdata_inventory_sha256": "ca72d3b6acecaaa7497bcffaafa6f6cc5c8e5eb5754718928ccb9353709d559a"
+  },
+  "kernel_diagnostic_backport": {
+    "status": "M1 functional calibration PASS; G965F M2 runtime test in progress",
+    "source": "duhansysl/exynos9810-kernel",
+    "commit": "914eabe7b6799ab0eb159360a5f9731dd50d0f1d",
+    "patch_series": "patches/kernel/series",
+    "patches": [
+      {
+        "path": "patches/kernel/0000-reserve-vma-bit-for-wipeonfork.patch",
+        "sha256": "ba22a689c01958c2a52674df5d6e97ef731d5304818e77ecb5692e1d01e31c5f"
+      },
+      {
+        "path": "patches/kernel/0001-star2lte-madvise-wipeonfork-backport.patch",
+        "sha256": "1c6193251ca18717c0ef8f03bc97c9b3075bb0078f240be0d684a6bd910c1dbd"
+      },
+      {
+        "path": "patches/kernel/0002-defer-wipeonfork-anon-vma-until-fault.patch",
+        "sha256": "a70c50c8a2111ebeb129311185014eefa1a393e211ca65ab03a1d6e1e511d501"
+      }
+    ],
+    "source_config_sha256": "e71a7e50519aec68eb2208a0a25f4eb1319f18501e00183832be4fc016bc85b6",
+    "compiler": "AOSP clang-r547379, archive SHA256 ef475266981f2c676384429bda896dbb43bf1e623221e1bd958f35cdc5fae006",
+    "normal_rom_kernel_default_unchanged": true,
+    "reason": "A37 runtime linker MADV_WIPEONFORK EINVAL/exit134 and vendor self-test reboot_on_failure captured by probe13",
+    "report": "docs/m2-runtime-kernel-fix.md"
   }
 }

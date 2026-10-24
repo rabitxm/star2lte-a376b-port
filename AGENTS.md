@@ -86,3 +86,13 @@ Kế hoạch đầy đủ: `docs/PLAN.md`. Đọc file đó trước khi làm b�
 ## Tài liệu phải tạo và cập nhật
 `docs/repo-map.md`, `docs/sources.md`, `docs/hw-diff.md`, `docs/patch-matrix.md`, `docs/bugs.md`.
 Cập nhật `README.md` mỗi khi hoàn thành một mốc.
+
+- 24/10/2026: probe13 supplied direct runtime proof that A37 runtime APEX
+  aborts on the pinned DS-ACK kernel because MADV_WIPEONFORK returns EINVAL,
+  and the vendor self-test's reboot_on_failure restarts M2. This meets the
+  existing evidence-first exception for a diagnostic kernel build. A three
+  patch upstream-semantics backport was isolated, calibrated on M1 with actual
+  nested-fork/KEEPONFORK checks and exact linker loading, then returned M1 to
+  baseline. It is being tested only as a diagnostic BOOT on authorized G965F
+  M2; this does not replace the selected production kernel package or authorize
+  G965N. Keep full build/image provenance in docs/m2-runtime-kernel-fix.md.

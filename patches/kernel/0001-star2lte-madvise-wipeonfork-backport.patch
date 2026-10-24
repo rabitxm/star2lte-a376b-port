@@ -15,10 +15,11 @@ include/trace/events/mmflags.h; include/uapi/asm-generic/mman-common.h;
 kernel/fork.c; mm/madvise.c.
 
 Verification:
-Apply/check against the pinned source, build with the Android 16 kernel
-compiler and the live M1 kernel config, inspect the generated Image and
-functionally verify madvise+fork zero-fill/KEEPONFORK. Do not flash until all
-checks pass and the artifact/rollback are audited.
+Pinned-source replay and paired builds pass. M1 enforcing runtime passed 32
+nested fork/zero-fill rounds, parent preservation, KEEPONFORK and invalid-map
+rejection. The exact A37 runtime linker --list exits0 on the backport. M1 was
+rolled back and M2 BOOT is under test. The crypto self-test main and M2 boot
+remain pending; do not bypass BoringSSL checks.
 
 Upstream reference: Linux commit d2cd9ede6e193dd7d88b6d27399e96229a551b19.
 ---

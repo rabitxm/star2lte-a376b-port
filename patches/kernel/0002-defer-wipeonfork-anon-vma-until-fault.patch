@@ -1,0 +1,26 @@
+From: Codex <codex@local>
+Subject: [PATCH] mm: defer WIPEONFORK anon_vma creation until fault
+
+Reason: upstream93949bb fixes the initial WIPEONFORK implementation. During
+VMA duplication vm_prev/vm_next still refer to parent neighbors, so eager
+anon_vma_prepare can incorrectly reuse the parent's anon_vma. Since no pages
+are copied for this child VMA, prepare only at its first fault.
+Files affected: kernel/fork.c.
+Verification: compile against pinned DS-ACK; test parent preservation, child
+zero fill, repeated child/grandchild forks and KEEPONFORK after a test boot.
+Reference: 93949bb21b52aae924fd26f9775c8655dd9e885e.
+---
+--- a/kernel/fork.c
++++ b/kernel/fork.c
+@@ -633,10 +633,8 @@
+ 			goto fail_nomem_policy;
+ 		tmp->vm_mm = mm;
+ 		if (tmp->vm_flags & VM_WIPEONFORK) {
+-			/* The child sees a fresh anonymous mapping after fork. */
++			/* Prepare a fresh anon_vma lazily on the child's first fault. */
+ 			tmp->anon_vma = NULL;
+-			if (anon_vma_prepare(tmp))
+-				goto fail_nomem_anon_vma_fork;
+ 		} else if (anon_vma_fork(tmp, mpnt))
+ 			goto fail_nomem_anon_vma_fork;
+ 		tmp->vm_flags &=

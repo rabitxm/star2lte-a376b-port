@@ -366,3 +366,14 @@ complete:30 second-stage starts,23 BoringSSL SIGABRT/reboot-on-failure records,
 22 explicit shutdown commands. Runtime APEX linker EINVAL/exit134 is reproduced
 on recovery and pinned DS-ACK. No normal ROM patch was changed. Detailed report:
 `docs/probe13-report.md`.
+
+## Standalone kernel diagnostics (separate from ROM patch series)
+
+`patches/kernel/series` contains 0000–0002 for the evidence-backed A37 runtime
+APEX WIPEONFORK failure. Reasons, affected files, pinned source, actual config,
+compiler, image hashes and rollback are in `docs/m2-runtime-kernel-fix.md`.
+Replay of 3 patches / 7 files matches the isolated built source; baseline and
+feature compare 10,189 exported CRCs with no changes. M1 feature calibration
+passes, while M2 test has been launched and is not yet a final acceptance.
+The fork remains at 88 ROM patches; this diagnostic series does not silently
+change the normal ROM kernel default or retained M1/M2 images.

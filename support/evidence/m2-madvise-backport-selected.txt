@@ -1,0 +1,26 @@
+G965F M1 control, DS-ACK feature BOOT, enforced; dmesg first ADB at 12.5s:
+4.9.337-DS-ACK-V1.12-G965F-08.05.2026; probe runtime linked exact A37 runtime APEX binary.
+MADV_WIPEONFORK_RC=0
+PASS parent preservation + child/grandchild zero-fill (32 rounds)
+MADV_KEEPONFORK_RC=0
+PASS KEEPONFORK restores ordinary inheritance
+SHARED_WIPE_RC=-22
+FILE_WIPE_RC=-22
+PASS WIPEONFORK kernel semantics
+SELFTEST_RC=0
+RUNTIME A37 APEX linker --list: RUNTIME_LINKER_RC=0
+M1 BOOT rollback full SHA256: cc618abc72e8e568e56a8c643c906cff0d7b9143dfc77d86dc645f55776ed01d
+
+Same WIPEONFORK feature BOOT, G965F M2; CACHE generation33:
+init second stage started!
+linkerconfig generated /linkerconfig with mounted APEX modules info
+Service 'boringssl_self_test64_vendor' (pid 846) exited with status 0 waiting took 0.032000 seconds
+Service 'boringssl_self_test64' (pid 866) exited with status 0 waiting took 0.008000 seconds
+NetBpfLoad: NetBpfLoad (/apex/com.android.tethering/bin/netbpfload) api:36/3610 kver:504012e (64-on-aarch64) libbpf: v1.4 uid:0 rc:01
+NetBpfLoad: Tethering APEX version 361153320
+NetBpfLoad: Android 25Q4 requires kernel 5.10.
+Service 'bpfloader' (pid 1294) exited with status 7 waiting took 0.026000 seconds
+Service bpfloader has 'reboot_on_failure' option and failed, shutting down system.
+Got shutdown_command 'reboot,bpfloader-failed' Calling HandlePowerctlMessage()
+M2 BOOT rollback full SHA256: cc618abc72e8e568e56a8c643c906cff0d7b9143dfc77d86dc645f55776ed01d
+All EFS/CPEFS/RADIO/RECOVERY/BOTA/DTBO/DTB write guards: no protected partition changed.

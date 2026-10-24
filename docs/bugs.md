@@ -498,3 +498,50 @@ changes across boot/recovery remain unverified with no EFS write/restore.
 No kernel/vendor/radio/policy/self-test change or ROM rebuild. Full report,
 limits and next implementation decision: docs/probe13-report.md. Selected
 counts, exact lines, source hashes and loader outputs are in support/evidence/.
+
+## 24/10/2026 — M2 BoringSSL loader kernel interface, backport under test
+
+Probe13 established the actual restart path. The exact installed A37 runtime
+APEX linker emitted `arc4random data MADV_WIPEONFORK failed: Invalid argument`
+and exited134; vendor init then logged `boringssl_self_test64_vendor ...
+received SIGABRT` and `reboot_on_failure`. The pinned4.9.337 kernel's madvise
+returned EINVAL. This is direct evidence for a narrowly scoped kernel
+compatibility backport; it is not evidence of a broken crypto algorithm.
+
+The isolated DS-ACK V1.12 source build adds the upstream WIPEONFORK semantics
+and its prerequisite/follow-up. M1 calibration booted enforcing, a raw AArch64
+test passed 32 parent/child/grandchild rounds, KEEPONFORK and invalid mapping
+checks, and the exact A37 linker `--list` exited0. The self-test's crypto main
+has not been validated yet. M1 has been returned to original BOOT hash
+`cc618abc...776ed01d`; M2 candidate is now being tested with the same probe13
+ramdisk. See `docs/m2-runtime-kernel-fix.md` and its retained image/build audit.
+Open items: confirm M2 reaches Android, observe vendor self-test completion,
+inspect linkerconfig execution, and restore M2 BOOT baseline after capture.
+
+## 24/10/2026 — M2 next boot gate after WIPEONFORK fix: Android 25Q4 BPF
+
+Feature BOOT `b01912f...` was tested and then rolled back. Probe13 generation33
+has 6,446 valid frames, heartbeat17,773ms, zero dropped frames, and captures
+second-stage init. `linkerconfig generated /linkerconfig with mounted APEX
+modules info`; vendor and system BoringSSL self-test services both exit status0.
+The next failure is exact: `/cache/unica/logcat_live.txt:24286` reports
+`NetBpfLoad: Android 25Q4 requires kernel 5.10.` Then line24287 records
+`Service 'bpfloader' ... exited with status 7`, and lines24291–24292 record
+`reboot_on_failure` and `reboot,bpfloader-failed`. Thus M2 still cannot boot,
+but the earlier linkerconfig and BoringSSL blockers were cleared by this
+controlled kernel test. APEX version is361153320 and reports API36/3610. The
+loader logs a synthetic minimum 5.4.302 while the actual kernel release remains
+4.9.337; spoofing a string is not an acceptable fix because actual BPF
+features are used. M2 BOOT returned to `cc618abc...776ed01d`; protected hash
+snapshot and guarded no-change audit are retained. Next: inventory exact
+25Q4 BPF object requirements against DS-ACK4.9 before considering a separate
+kernel backport or a compatible APEX. No SELinux relaxation or reboot-on-failure
+bypass. Details: `docs/m2-runtime-kernel-fix.md`.
+
+Candidate narrowing: the retained S22 M1 Tethering APEX is version360743340
+(2025Q2/API36.0); on the same DS-ACK environment it logs `detected 5 of 5:
+2025Q2 api:36.0.0` and `bpfloader` exits0. A37's APEX is361153320 (25Q4/API36.1)
+and enforces kernel5.10. Their BPF object layouts differ. Thus a single-module
+APEX downgrade is a plausible reversible experiment, but cross-version Android
+API and hotspot/IPv4/IPv6/DHCP/DNS/data-saver behavior remain unverified. Do not
+adopt based only on bpfloader exit0. APEX hashes/layout: runtime kernel report.

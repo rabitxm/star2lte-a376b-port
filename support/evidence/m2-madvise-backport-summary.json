@@ -1,0 +1,33 @@
+{
+  "date": "2026-10-24",
+  "source_commit": "914eabe7b6799ab0eb159360a5f9731dd50d0f1d",
+  "patch_series": "patches/kernel/series",
+  "feature_image_sha256": "92b14be170225954476869d1fd7700f9c2c92d98eb6447d0181c50a11e80fcdd",
+  "feature_boot_sha256": "b01912f62ae111570d9de3e45d799da3da4788f27d86f119f78a06a9efb8abd7",
+  "m1": {
+    "boot_completed": true,
+    "selinux": "Enforcing",
+    "wipeonfork_selftest": "PASS: 32 parent/child/grandchild rounds, KEEPONFORK, invalid maps",
+    "runtime_apex_linker_list_exit": 0,
+    "rolled_back": "cc618abc72e8e568e56a8c643c906cff0d7b9143dfc77d86dc645f55776ed01d"
+  },
+  "m2": {
+    "probe13_generation": 33,
+    "frames": 6446,
+    "heartbeat_ms": 17773,
+    "dropped_frames": 0,
+    "second_stage": true,
+    "linkerconfig_generated": true,
+    "vendor_boringssl_selftest_exit": 0,
+    "system_boringssl_selftest_exit": 0,
+    "tethering_apex_version": 361153320,
+    "tethering_kernel_gate": "Android 25Q4 requires kernel 5.10.",
+    "bpfloader_exit": 7,
+    "shutdown_reason": "reboot,bpfloader-failed",
+    "rolled_back_to": "cc618abc72e8e568e56a8c643c906cff0d7b9143dfc77d86dc645f55776ed01d",
+    "protected_partitions_changed_by_write": []
+  },
+  "candidate_m1_tethering_apex_version": 360743340,
+  "candidate_a37_tethering_apex_version": 361153320,
+  "no_userdata_format_or_system_vendor_odm_radio_efs_write": true
+}

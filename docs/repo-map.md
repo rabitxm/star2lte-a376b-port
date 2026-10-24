@@ -198,3 +198,10 @@ outside the normal fork patch series/recipes. Installed SYSTEM runtime input:
 self-test rc is `vendor/etc/init/boringssl_self_test.rc`, executable
 `vendor/bin/boringssl_self_test64`, interpreter `/system/bin/linker64` pointing
 at the runtime APEX. Do not infer paths from the old S22 layout.
+
+24/10/2026 kernel-runtime diagnostic additions: `patches/kernel/series` is a
+separate DS-ACK source patch list, not consumed by the Android ROM build.
+`diagnostics/madvise_wipeonfork_selftest.c` tests real kernel fork semantics.
+`docs/m2-runtime-kernel-fix.md` records provenance and gates. Paired build
+outputs/images and device evidence are local under
+`logs/20261024-m2-runtime-fix/` and are intentionally excluded from export.
