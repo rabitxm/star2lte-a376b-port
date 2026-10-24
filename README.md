@@ -11,8 +11,11 @@ A37's native bootstrap linker has a reproduced MADV_WIPEONFORK incompatibility
 with the pinned kernel. The M1 bootstrap compatibility overlay in attempt50
 gets init through partition mounts and SELinux setup, but the boot gate remains
 failed. Actual A37 secilc compilation now passes on both TWRP and M1 DS-ACK,
-producing byte-identical policy; a ptrace signal-decoding bug was found in
-probe10. See [the assistance brief](docs/HELP-WANTED.md) for exact evidence,
+producing byte-identical policy. Corrected probe11 and passive probe12 both
+reach kernel SELinux initialization and still bootloop. Probe12 disables PID1
+ptrace and reproduces the same last persisted phase; no fatal/panic or
+second-stage marker has been captured. Both BOOT tests were rolled back to the
+pinned baseline. Recorder access after policy activation remains unverified. See [the assistance brief](docs/HELP-WANTED.md) for exact evidence,
 corrections and the next diagnostic question.
 
 ## Source reproduction

@@ -17,12 +17,12 @@
       "sha256": "b2785c1bf0b2f265309449166157e490b838f288937366cbd99e376821bdc3ea"
     },
     "README.md": {
-      "bytes": 3959,
-      "sha256": "bcdd84d97e1690bfd270c85f5e9ccf3e5dc794b70963d1085e853b4f736d5167"
+      "bytes": 4256,
+      "sha256": "6f5048f61bb771cf1bb52d93d37c92b3d9c0b7deba74a4dad0569544485ff4f3"
     },
     "STATUS.md": {
-      "bytes": 45313,
-      "sha256": "c0075f9a3a26babec3c4808ab79f8e5d7f2f2335bf5b5198695f618d909f6e23"
+      "bytes": 46182,
+      "sha256": "143d5f852244f3212342423ff8c997fc50e08ab400df479a7e52ae7fdc913a14"
     },
     "sources.lock.json": {
       "bytes": 1589553,
@@ -37,8 +37,8 @@
       "sha256": "004158f7b10bf132de0adaf93a23513e511dcc23b9b1534fcda5bf451d540a8b"
     },
     "docs/HELP-WANTED.md": {
-      "bytes": 4346,
-      "sha256": "0a347342eb4381cd85a6ed64a43275eb0d66b4f2601c98a5ed0034e7ca1e8053"
+      "bytes": 5941,
+      "sha256": "46824453f792d3e4c72bac878aae2da5c32b30106e1ac939a21bdc3937244563"
     },
     "docs/PLAN.md": {
       "bytes": 14390,
@@ -49,8 +49,8 @@
       "sha256": "9d52a5f8f609badafffaab40d410a02c357d3ef628dd22bdffcc836c2bd06d67"
     },
     "docs/bugs.md": {
-      "bytes": 58485,
-      "sha256": "f8cd49e262ea0bee0216ca4f87c246ac2be8b6ca96df4bc47344d3d26f53358c"
+      "bytes": 60272,
+      "sha256": "8e57a18dc13d90da6ba23822078390680b8b868c6ac325a91d87a5398115bb62"
     },
     "docs/build-environment.md": {
       "bytes": 4132,
@@ -85,8 +85,8 @@
       "sha256": "85abc2e781b852e97a85a6c0975bf37ecde3a6e3e829343740881a3eb4648600"
     },
     "docs/m2-build.md": {
-      "bytes": 90285,
-      "sha256": "cfb98488383c1d6567e994f3407137a9a4dccc24127d2093849bc383a66dacef"
+      "bytes": 93137,
+      "sha256": "58e33bf5d6b6d7651be36a8144518fbbee35ac644bc0b80cc882786bdda6fbfd"
     },
     "docs/m2-early-diagnostic-review.md": {
       "bytes": 3613,
@@ -101,8 +101,8 @@
       "sha256": "eae21e1595dfbc7c8455a75b94ade705c385eba6b13c410e656f1c1b04f0f765"
     },
     "docs/patch-matrix.md": {
-      "bytes": 50924,
-      "sha256": "d71a623eddea10d286be31263e515fbbdaf15307eb4aba1b672d9d2706e3e690"
+      "bytes": 51848,
+      "sha256": "727cfc72a825acb3712cd39a182502243eca492ef7a2c88e22081958d95679fc"
     },
     "docs/release-retention.md": {
       "bytes": 3032,
@@ -513,20 +513,28 @@
       "sha256": "10a78800d22b76d70463b5c3496d74e2079cd5b5b1fbd2d3cd7a6086add18ff4"
     },
     "diagnostics/README.md": {
-      "bytes": 2003,
-      "sha256": "975776f9029e5512382ba057257a693919a90f55436e7654da2ada21e2ba63cc"
+      "bytes": 4006,
+      "sha256": "9720e2a99507b80c03ac2a8d500ba179105cd9b8ed729052dfd4624e429c5f04"
     },
     "diagnostics/bootlogger_pid1_probe10.c": {
       "bytes": 23869,
       "sha256": "8bd9a8297998d5c6e6b71915b3e6bd7efaf12f9658cab2c60682c6e37c8ba0ca"
     },
     "diagnostics/bootlogger_pid1_probe11.c": {
-      "bytes": 26736,
-      "sha256": "d062a945654cea0ea4e4f77547be6a7187fac888b9513d4a7488e54de1b171c4"
+      "bytes": 28479,
+      "sha256": "353a2888cdfc139a69d0b71b380f64475d5676dee0398b7ddcfbc2ba03348698"
+    },
+    "diagnostics/bootlogger_pid1_probe12_passive.c": {
+      "bytes": 25961,
+      "sha256": "a0c06689b3b8cb405570eb82dc9c86683b1ac0ddbffea2ce04d4beddfaca42cc"
     },
     "diagnostics/probe11-wait-status.patch": {
-      "bytes": 6771,
-      "sha256": "5c07957816a9729ab3e2b10802cf286f0d1a9d770ec718a8075bd64718acbbd8"
+      "bytes": 9880,
+      "sha256": "6f8efed3bd0a1fbe27f52cde5a25175e7cf0d3d559a5c2931128f0fb800cc627"
+    },
+    "diagnostics/probe13-plan.md": {
+      "bytes": 3111,
+      "sha256": "6a2bd0f987a6f5186e52aa0de507e222ddf730bdadec324271beb1d9e4dfec46"
     },
     "diagnostics/replay_secilc_in_chroot.sh": {
       "bytes": 2344,
@@ -548,9 +556,25 @@
       "bytes": 1016,
       "sha256": "afcda42e6557d6e7b380db2fb3abd78a9b6a30f2d5fed7363c24c93237efd603"
     },
+    "support/evidence/probe11-init-policy.txt": {
+      "bytes": 30364,
+      "sha256": "a9faa51940206faab95d2dbac663ed897e7ea082a607a5452e8cd9a520835f35"
+    },
     "support/evidence/probe11-selftests.txt": {
       "bytes": 349,
       "sha256": "6ce2e3fad71491c29b8dab3f4aee4e11245ecce2270b3727717b6a4e81823436"
+    },
+    "support/evidence/probe11-summary.json": {
+      "bytes": 1039,
+      "sha256": "13b9fa832ce4bb2405fb287d7d18d0ab287b55924983788087d975e13292646f"
+    },
+    "support/evidence/probe12-init-policy.txt": {
+      "bytes": 1280,
+      "sha256": "ea94efd3d1ae8e7a8dbe361d149f11fb55c34c7ca3430e389217675c9910c852"
+    },
+    "support/evidence/probe12-summary.json": {
+      "bytes": 1110,
+      "sha256": "ce8396b4486b1f01f7d40781333d72b05c3f6c11e963b2f0b94f70156ad750aa"
     },
     "support/evidence/secilc-argv.txt": {
       "bytes": 520,
@@ -568,11 +592,5 @@
       "bytes": 3934,
       "sha256": "11178fb362486e2e2d0bdeb7be8ce4ccd13aa427bb83e3390cf2eb69e91f5cbd"
     }
-  },
-  "canonical_patch_tool": "GNU patch --batch --forward -p1 (dry-run before each application)",
-  "source_replay_verified": {
-    "patches": 88,
-    "modified_or_added_files": 68,
-    "result": "PASS"
   }
 }

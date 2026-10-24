@@ -1,0 +1,30 @@
+{
+  "date": "2026-10-24",
+  "probe": "11 corrected ptrace",
+  "boot_image_sha256": "aa78cd9aa517dfec4847ff65d843fc06aaab654911e008462659c292906b870c",
+  "raw_log_sha256": "946fc304e0abc5550c4402970ae7983ba5e3bf4c7d86f1d508d475c5f9ab88a9",
+  "raw_log_bytes": 3149748,
+  "boot_sequences": 8,
+  "compiler_child_exit_statuses": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "kernel_policy_parsing_and_superblock_initialization_observed": true,
+  "load_policy_return_success_confirmed": false,
+  "second_stage_marker_captured": false,
+  "fatal_or_panic_captured": false,
+  "ptrace_resume_errors": 0,
+  "proc_paths_lost_after_switch_root": true,
+  "boot_rollback_sha256": "cc618abc72e8e568e56a8c643c906cff0d7b9143dfc77d86dc645f55776ed01d",
+  "other_protected_hashes_unchanged_across_boot": true,
+  "efs_hash_changed_across_boot": true,
+  "efs_write_or_restore_performed": false,
+  "passive_control_pending": false,
+  "passive_control_result": "probe12 reproduces bootloop and policy-load observation boundary without ptrace"
+}

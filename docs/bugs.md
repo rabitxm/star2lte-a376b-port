@@ -424,4 +424,32 @@ SIGCHLD test reproduces `OLD-DECODE signal=127 PTRACE_CONT errno=5`; old code
 ignored this resume error. Thus probe10 can freeze its tracee after the compiler
 child exits. The corrected test resumes with WSTOPSIG17 and passes. Source and
 limits: `diagnostics/`; evidence: `support/evidence/probe11-selftests.txt`.
-No corrected PID1 boot test has run; underlying M2 bootloop remains unresolved.
+Corrected probe11 and passive probe12 subsequently ran; see the dated result below. Underlying M2 bootloop remains unresolved.
+
+
+## 24/10/2026 — corrected probe11 and passive probe12 reach policy loading
+
+Probe11 captures compiler SIGCHLD `child_status=0`, `init: Loading SELinux
+policy`, then kernel `SELinux: Completing initialization.` and `SELinux:
+Setting up existing superblocks.` across eight boot sequences. No resume error
+was captured after the WSTOPSIG correction. Passive probe12 uses no PID1 ptrace
+and still bootloops: 14 first-stage starts, 11 load-policy markers and 10
+existing-superblock markers in 5,151,108 bytes. Representative exact lines and
+raw-log hashes are in `support/evidence/probe11-init-policy.txt` and
+`probe12-init-policy.txt` plus their summary JSON files.
+
+Neither run captured a second-stage marker, explicit fatal/panic, or successful
+return from load_policy. The five `SELinux: __security_genfs_sid: genfs || cmp`
+messages are emitted on an ENOENT path in the pinned kernel source; the text
+alone does not establish a panic. Both BOOT tests were restored to baseline
+`cc618abc72e8e568e56a8c643c906cff0d7b9143dfc77d86dc645f55776ed01d`.
+Protected hashes were unchanged during each rollback. EFS raw hash changed
+across each boot/recovery cycle; no EFS write/restore command was performed,
+and the cause remains unverified. Other measured protected partitions match.
+
+Recorder limitations remain: proc paths become ENOENT after SwitchRoot;
+CACHE write/fsync results and negative kmsg reads are not persisted. The kernel
+revalidates file permissions when the SELinux policy sequence changes, even
+for already-open descriptors. This supports testing recorder visibility before
+inferring a hang at the last persisted line. See `diagnostics/probe13-plan.md`.
+No kernel/vendor/radio change or full ROM rebuild was made for probe11/12.

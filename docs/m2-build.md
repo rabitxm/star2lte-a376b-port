@@ -494,3 +494,49 @@ Probe11 correction source and test limits are in `diagnostics/README.md`;
 no probe11 BOOT was built/flashed. M2 BOOT was already restored after probe10
 and remains at pinned baseline. Next useful runtime work is a corrected trace
 through compiler completion, policy loading and second-stage handoff.
+
+## 24/10/2026 — probe11 first PID1 boot test in progress
+
+Prepared a BOOT-only diagnostic from pinned baseline. Image SHA256
+`aa78cd9aa517dfec4847ff65d843fc06aaab654911e008462659c292906b870c`,
+57,671,680 bytes; full readback matches. The image audit preserves kernel/DTB/
+cmdline and every CPIO entry except the new wrapper/original-init rename.
+Five selftests (SIGCHLD forwarding, attach, exec-error, warm/cold private proc)
+pass on recovery and DS-ACK, with unchanged parent mountinfo hashes. SIGCHLD
+siginfo/status/wchan/children snapshots are enabled for this test. Target is
+the verified M2 G965F; M1 remains booted. Reboot observation is in progress;
+postboot log capture and baseline BOOT rollback remain pending. No SYSTEM/
+VENDOR/ODM changes or fresh-data format. Local record: logs/20261024-probe11/.
+
+
+## 24/10/2026 — probe11 and passive probe12 completed, BOOT restored
+
+The preceding in-progress probe11 entry is closed. Its eight captured boot
+sequences pass compiler completion (`child_status=0`) and enter kernel SELinux
+initialization. User reports bootloop; recovery capture/rollback completed.
+Passive probe12 then removes all PID1 ptrace operations while keeping the same
+installed attempt50, kernel/DTB/cmdline and private CACHE monitor. Image SHA256
+`ec061a8fe7a26cdc29fa6a1546fb2884853565dd78ef39508147d69f8c38ba60`;
+image/CPIO audit and full BOOT readback pass. Namespace and exec-error tests
+pass on M2 recovery; private namespace test passes on booted M1. M1 remains
+booted and G965N is untouched.
+
+Probe12 captured 14 first-stage starts, 11 `init: Loading SELinux policy`
+markers and 10 `SELinux: Setting up existing superblocks.` markers. No
+second-stage start, explicit fatal/panic, or load-policy success return was
+captured. The user returned M2 to TWRP after a bootloop. CACHE log is 5,151,108
+bytes, SHA256 `09e296536e634168903b538db977d82277c60189e9781d8ff3d03b000f3a8201`.
+BOOT rollback readback matches baseline
+`cc618abc72e8e568e56a8c643c906cff0d7b9143dfc77d86dc645f55776ed01d`.
+All measured protected hashes are unchanged during rollback; EFS changed
+across the Android/recovery cycle only, cause unverified, with no EFS write or
+restore performed. All other measured protected hashes match across the cycle.
+
+Reason/files/verification for the passive diagnostic: isolate PID1 tracer
+influence; add `diagnostics/bootlogger_pid1_probe12_passive.c` only, outside
+normal ROM recipes. Static compile, actual selftests, baseline-vs-probe image
+audit, controlled boot, captured evidence and rollback are complete. The loop
+reproduces without PID1 ptrace. Next gate is recorder visibility through SELinux
+activation, not another identical ROM build. Raw evidence remains local under
+`logs/20261024-probe11/` and `logs/20261024-probe12-passive/`; selected sanitized
+text/hash summaries are under `support/evidence/`.

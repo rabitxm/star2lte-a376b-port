@@ -113,7 +113,13 @@ static long tracee_file(long cache, const char *path, long limit)
 {
     char buffer[2048];
     long fd = open_file(path, O_RDONLY, 0);
-    if (fd < 0) return 0;
+    if (fd < 0) {
+        char line[128]; long z=0;
+        const char *tag="PROC-READ-FAILED errno=";
+        copy_bytes(line+z,tag,string_length(tag));z+=string_length(tag);
+        z+=append_decimal(line+z,-fd);line[z++]='\n';write_all(cache,line,z);
+        return 0;
+    }
     long total = 0;
     while (total < limit) {
         long want = sizeof(buffer);
@@ -155,6 +161,26 @@ static void trace_snapshot(long cache, long out, long pid, long status, long eve
     n += append_hex(line+n, event_msg); line[n++]='\n'; write_all(cache, line, n);
     tag = "--- /proc/1/cmdline ---\n"; write_all(cache, tag, string_length(tag)); tracee_file(cache, "/proc/1/cmdline", 4096);
     tag = "\n--- /proc/1/maps ---\n"; write_all(cache, tag, string_length(tag)); tracee_file(cache, "/proc/1/maps", 65536);
+    const char *extra="\n--- /proc/1/status ---\n";
+    write_all(cache,extra,string_length(extra));tracee_file(cache,"/proc/1/status",8192);
+    extra="\n--- /proc/1/wchan ---\n";
+    write_all(cache,extra,string_length(extra));tracee_file(cache,"/proc/1/wchan",512);
+    extra="\n--- /proc/1/task/1/children ---\n";
+    write_all(cache,extra,string_length(extra));tracee_file(cache,"/proc/1/task/1/children",1024);
+    write_all(cache,"\n",1);
+    unsigned long si_words[16]={0};
+    long si_rc=syscall6(117,0x4202,pid,0,(long)si_words,0,0); /* GETSIGINFO */
+    if (si_rc == 0) {
+        int *si=(int *)si_words;
+        n=0;tag="SIGNAL_INFO signo=";copy_bytes(line+n,tag,string_length(tag));n+=string_length(tag);
+        n+=append_decimal(line+n,si[0]);tag=" code=";copy_bytes(line+n,tag,string_length(tag));n+=string_length(tag);
+        if (si[2]<0) {line[n++]='-';n+=append_decimal(line+n,-(long)si[2]);} else n+=append_decimal(line+n,si[2]);
+        if (si[0] == 17) {
+            tag=" child_pid=";copy_bytes(line+n,tag,string_length(tag));n+=string_length(tag);n+=append_decimal(line+n,si[4]);
+            tag=" child_status=";copy_bytes(line+n,tag,string_length(tag));n+=string_length(tag);n+=append_decimal(line+n,si[6]);
+        }
+        line[n++]='\n';write_all(cache,line,n);
+    }
     trace_regs(cache, pid);
     long kmsg = open_file("/dev/kmsg", O_RDONLY | O_NONBLOCK, 0);
     if (kmsg >= 0) {
@@ -312,8 +338,8 @@ static void monitor(long exec_pipe, long attach_read, long ack_write)
             if (pid == 1 && (status & 0xff) == 0x7f) {
                 long event = (unsigned long)status >> 16;
                 long sig = trace_stop_signal(status);
-                if (event == 4 || event == 6 || (event == 0 &&
-                    (sig == 4 || sig == 6 || sig == 7 || sig == 11 || sig == 31))) {
+                /* Include SIGCHLD: record compiler exit before init reaps it. */
+                if (event == 4 || event == 6 || event == 0) {
                     trace_snapshot(cache, out, pid, status, event);
                     if (event == 6 || (event == 0 && (sig == 4 || sig == 6 || sig == 7 || sig == 11 || sig == 31)))
                         sleep_milliseconds(500);
@@ -494,6 +520,9 @@ void probe_start(unsigned long *stack)
                 write_all(1, written, string_length(written));
                 finish(0);
             }
+            if (tracee_file(1,"/proc/1/status",8192) <= 0) finish(72);
+            const char *proc_ok="\nPROBE-PRIVATE-PROC-READ-PASS\n";
+            write_all(1,proc_ok,string_length(proc_ok));
             const char *ok = "PROBE-PRIVATE-TMPFS-SYSFS-KMSG-OPEN-PASS\n";
             write_all(1, ok, string_length(ok));
             finish(0); /* No pmsg write in self-test. Mounts vanish at exit. */

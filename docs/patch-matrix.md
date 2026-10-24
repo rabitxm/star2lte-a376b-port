@@ -334,3 +334,17 @@ class-location guard). Record their actual content without editing the local
 fork. Verification: canonical GNU patch replay88 and comparison against every
 modified/added source path. Some historical patch headers require GNU patch,
 so the handoff helper uses --dry-run then --batch --forward, as prior audits did.
+
+
+24/10/2026 — standalone passive diagnostic (outside the 88-patch fork series):
+`diagnostics/bootlogger_pid1_probe12_passive.c` removes PID1 ptrace from the
+probe11 boot path while retaining the private CACHE logger. Reason: isolate
+tracer influence. Files: the standalone C source, diagnostic documentation and
+selected evidence only; normal fork recipes are unchanged. Verification:
+static AArch64 compile, actual recovery/M1 namespace tests, exec-error test,
+full image/CPIO audit, BOOT readback, bounded boot observation, log capture and
+baseline rollback all completed. M2 still bootloops with policy-load markers;
+no fatal/panic or second-stage start captured. See probe12-summary.json.
+The existing probe11 correction diff now also records SIGCHLD details and
+proc-read failures; boot-tested source is retained. `probe13-plan.md` describes
+instrumentation acceptance gates only and has not produced another image.

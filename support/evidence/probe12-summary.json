@@ -1,0 +1,25 @@
+{
+  "date": "2026-10-24",
+  "probe": "12 passive control, no ptrace against PID1",
+  "boot_image_sha256": "ec061a8fe7a26cdc29fa6a1546fb2884853565dd78ef39508147d69f8c38ba60",
+  "raw_log_sha256": "09e296536e634168903b538db977d82277c60189e9781d8ff3d03b000f3a8201",
+  "raw_log_bytes": 5151108,
+  "boot_sequences": 14,
+  "first_stage_start_markers": 14,
+  "load_policy_markers": 11,
+  "existing_superblock_initialization_markers": 10,
+  "second_stage_marker_captured": false,
+  "explicit_fatal_or_panic_captured": false,
+  "load_policy_return_success_confirmed": false,
+  "cache_unica_present": false,
+  "pstore_console_present": false,
+  "ptrace_disabled_in_actual_boot_path": true,
+  "conclusion": "Bootloop and policy-load observation boundary reproduce without PID1 ptrace. Exact fatal cause and post-policy recorder access remain unproven.",
+  "boot_rollback_sha256": "cc618abc72e8e568e56a8c643c906cff0d7b9143dfc77d86dc645f55776ed01d",
+  "protected_changed_during_rollback": [],
+  "protected_changed_across_boot": [
+    "EFS"
+  ],
+  "efs_write_or_restore_performed": false,
+  "device_left_in_recovery": true
+}

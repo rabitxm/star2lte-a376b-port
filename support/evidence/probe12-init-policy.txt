@@ -1,0 +1,22 @@
+Selected original line numbers from first passive probe12 boot.
+No physical device IDs or raw command line included.
+This is an observation boundary, not a captured fatal error.
+
+2: M2-PID1-PROBE12: passive monitor ready
+3: PASSIVE-CONTROL ptrace_disabled=1
+5780: 14,4032,1526756,-;init: init first stage started!
+5795: 14,4043,1564015,-;init: Switching root to '/system'
+5813: 14,4061,1701803,-;init: Opening SELinux policy
+5815: 14,4063,1703860,-;init: Compiling SELinux policy
+6110: 14,4162,3292880,-;init: Loading SELinux policy
+6111: 7,4163,3295370,-;SELinux: 32768 avtab hash slots, 83452 rules.
+6112: 7,4164,3306425,-;SELinux: 32768 avtab hash slots, 83452 rules.
+6113: 7,4165,3306504,-;SELinux:  1 users, 4 roles, 4095 types, 0 bools, 1 sens, 1024 cats
+6114: 7,4166,3306508,-;SELinux:  107 classes, 83452 rules
+6115: 7,4167,3314036,-;SELinux:  Completing initialization.
+6116: 7,4168,3314038,-;SELinux:  Setting up existing superblocks.
+6117: 3,4169,3314061,-;SELinux: __security_genfs_sid: genfs || cmp
+6118: 3,4170,3314070,-;SELinux: __security_genfs_sid: genfs || cmp
+6119: 3,4171,3323444,-;SELinux: __security_genfs_sid: genfs || cmp
+6120: 3,4172,3323451,-;SELinux: __security_genfs_sid: genfs || cmp
+6121: 3,4173,3323454,-;SELinux: __security_genfs_sid: genfs || cmp

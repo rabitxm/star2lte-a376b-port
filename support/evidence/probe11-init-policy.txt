@@ -1,0 +1,360 @@
+6: PID1-STOP pid=1 status=0x4057f event=4
+78: SIGNAL_INFO signo=5 code=1029
+3850: PID1-STOP pid=1 status=0x4057f event=4
+3867: SIGNAL_INFO signo=5 code=1029
+6239: 14,4032,1525998,-;init: init first stage started!
+6240: 14,4033,1526005,-;init: !@Boot: start init process
+6241: 14,4034,1526030,-;init: boot_stat write failed
+6242: 14,4035,1526042,-;init: boot_stat write failed
+6243: 14,4036,1526766,-;init: Using Android DT directory /proc/device-tree/firmware/android/
+6250: 14,4039,1560302,-;init: [libfs_mgr]superblock s_max_mnt_count:35,/dev/block/platform/11120000.ufs/by-name/SYSTEM
+6252: 14,4041,1562057,-;init: [libfs_mgr]__mount(source=/dev/block/platform/11120000.ufs/by-name/SYSTEM,target=/system,type=ext4)=0: Success
+6253: 14,4042,1562069,-;init: [libfs_mgr]__mount return 0(source=SYSTEM,target=/system,type=ext4,flags=1,options=): Success
+6254: 14,4043,1562261,-;init: Switching root to '/system'
+6255: 14,4044,1566057,-;init: [libfs_mgr]superblock s_max_mnt_count:37,/dev/block/platform/11120000.ufs/by-name/ODM
+6257: 14,4046,1567071,-;init: [libfs_mgr]__mount(source=/dev/block/platform/11120000.ufs/by-name/ODM,target=/odm,type=ext4)=0: Success
+6258: 14,4047,1567080,-;init: [libfs_mgr]__mount return 0(source=ODM,target=/odm,type=ext4,flags=1,options=): Success
+6259: 14,4048,1567604,-;init: [libfs_mgr]superblock s_max_mnt_count:25,/dev/block/platform/11120000.ufs/by-name/VENDOR
+6261: 14,4050,1569353,-;init: [libfs_mgr]__mount(source=/dev/block/platform/11120000.ufs/by-name/VENDOR,target=/vendor,type=ext4)=0: Success
+6262: 14,4051,1569362,-;init: [libfs_mgr]__mount return 0(source=VENDOR,target=/vendor,type=ext4,flags=1,options=): Success
+6263: 14,4052,1632072,-;init: Skipped setting INIT_AVB_VERSION (not in recovery mode)
+6264: 14,4053,1632103,-;init: boot_stat write failed
+6265: 14,4054,1709998,-;init: [libfstab] Using Android DT directory /proc/device-tree/firmware/android/
+6266: 14,4055,1713149,-;init: [libfstab] zramsize and zram_backingdev_size are automatically selected
+6267: 14,4056,1713315,-;init: [libfstab] Storage model: UFS, proc_name
+6268: 14,4057,1714196,-;init: [libfstab] storage_blocks: 119 lg: 6
+6269: 14,4058,1714218,-;init: [libfstab] SetNandswapSize(): storage_size: 128GB zramsize: 8192MB zram_backingdev_size: 2048MB
+6270: 14,4059,1714589,-;init: Skipping mount of system_ext, system is not dynamic.
+6271: 14,4060,1714596,-;init: Skipping mount of product, system is not dynamic.
+6272: 14,4061,1714610,-;init: Opening SELinux policy
+6273: 14,4062,1716396,-;init: No precompiled sepolicy at /vendor/etc/selinux/precompiled_sepolicy: No such file or directory
+6274: 14,4063,1716402,-;init: Compiling SELinux policy
+6275: 14,4064,1718075,-;init: Missing /system/etc/selinux/plat_sepolicy_genfs_202404.cil; skipping
+6568: PID1-STOP pid=1 status=0x117f event=0
+6585: SIGNAL_INFO signo=17 code=1 child_pid=750 child_status=0
+6587: 11,4160,3308822,-;init: /system/bin/secilc: linker: Warning: failed to find generated linker configuration from "/linkerconfig/ld.config.txt"
+6588: 11,4161,3308842,-;init: /system/bin/secilc: WARNING: linker: Warning: failed to find generated linker configuration from "/linkerconfig/ld.config.txt"
+6589: 14,4162,3310309,-;init: Loading SELinux policy
+6593: 7,4166,3324071,-;SELinux:  107 classes, 83452 rules
+6594: 7,4167,3331673,-;SELinux:  Completing initialization.
+6595: 7,4168,3331675,-;SELinux:  Setting up existing superblocks.
+6596: 3,4169,3331696,-;SELinux: __security_genfs_sid: genfs || cmp
+6597: 3,4170,3331705,-;SELinux: __security_genfs_sid: genfs || cmp
+6598: 3,4171,3340905,-;SELinux: __security_genfs_sid: genfs || cmp
+6599: 3,4172,3340913,-;SELinux: __security_genfs_sid: genfs || cmp
+6600: 3,4173,3340917,-;SELinux: __security_genfs_sid: genfs || cmp
+6607: PID1-STOP pid=1 status=0x4057f event=4
+6679: SIGNAL_INFO signo=5 code=1029
+10781: PID1-STOP pid=1 status=0x4057f event=4
+10798: SIGNAL_INFO signo=5 code=1029
+12817: 14,4009,4351964,-;init: init first stage started!
+12818: 14,4010,4351971,-;init: !@Boot: start init process
+12819: 14,4011,4351996,-;init: boot_stat write failed
+12820: 14,4012,4352007,-;init: boot_stat write failed
+12821: 14,4013,4352672,-;init: Using Android DT directory /proc/device-tree/firmware/android/
+12828: 14,4016,4386841,-;init: [libfs_mgr]superblock s_max_mnt_count:35,/dev/block/platform/11120000.ufs/by-name/SYSTEM
+12830: 14,4018,4388515,-;init: [libfs_mgr]__mount(source=/dev/block/platform/11120000.ufs/by-name/SYSTEM,target=/system,type=ext4)=0: Success
+12831: 14,4019,4388524,-;init: [libfs_mgr]__mount return 0(source=SYSTEM,target=/system,type=ext4,flags=1,options=): Success
+12832: 14,4020,4388698,-;init: Switching root to '/system'
+12833: 14,4021,4392827,-;init: [libfs_mgr]superblock s_max_mnt_count:37,/dev/block/platform/11120000.ufs/by-name/ODM
+12835: 14,4023,4393794,-;init: [libfs_mgr]__mount(source=/dev/block/platform/11120000.ufs/by-name/ODM,target=/odm,type=ext4)=0: Success
+12836: 14,4024,4393801,-;init: [libfs_mgr]__mount return 0(source=ODM,target=/odm,type=ext4,flags=1,options=): Success
+12837: 14,4025,4394291,-;init: [libfs_mgr]superblock s_max_mnt_count:25,/dev/block/platform/11120000.ufs/by-name/VENDOR
+12839: 14,4027,4396145,-;init: [libfs_mgr]__mount(source=/dev/block/platform/11120000.ufs/by-name/VENDOR,target=/vendor,type=ext4)=0: Success
+12840: 14,4028,4396152,-;init: [libfs_mgr]__mount return 0(source=VENDOR,target=/vendor,type=ext4,flags=1,options=): Success
+12841: 14,4029,4463034,-;init: Skipped setting INIT_AVB_VERSION (not in recovery mode)
+12842: 14,4030,4463066,-;init: boot_stat write failed
+12843: 14,4031,4540675,-;init: [libfstab] Using Android DT directory /proc/device-tree/firmware/android/
+12844: 14,4032,4544093,-;init: [libfstab] zramsize and zram_backingdev_size are automatically selected
+12845: 14,4033,4544302,-;init: [libfstab] Storage model: UFS, proc_name
+12846: 14,4034,4545274,-;init: [libfstab] storage_blocks: 119 lg: 6
+12847: 14,4035,4545296,-;init: [libfstab] SetNandswapSize(): storage_size: 128GB zramsize: 8192MB zram_backingdev_size: 2048MB
+12848: 14,4036,4545673,-;init: Skipping mount of system_ext, system is not dynamic.
+12849: 14,4037,4545681,-;init: Skipping mount of product, system is not dynamic.
+12850: 14,4038,4545695,-;init: Opening SELinux policy
+12851: 14,4039,4547531,-;init: No precompiled sepolicy at /vendor/etc/selinux/precompiled_sepolicy: No such file or directory
+12852: 14,4040,4547537,-;init: Compiling SELinux policy
+12853: 14,4041,4549132,-;init: Missing /system/etc/selinux/plat_sepolicy_genfs_202404.cil; skipping
+13146: PID1-STOP pid=1 status=0x117f event=0
+13163: SIGNAL_INFO signo=17 code=1 child_pid=746 child_status=0
+13165: 11,4137,6140738,-;init: /system/bin/secilc: linker: Warning: failed to find generated linker configuration from "/linkerconfig/ld.config.txt"
+13166: 11,4138,6140757,-;init: /system/bin/secilc: WARNING: linker: Warning: failed to find generated linker configuration from "/linkerconfig/ld.config.txt"
+13167: 14,4139,6142142,-;init: Loading SELinux policy
+13171: 7,4143,6155899,-;SELinux:  107 classes, 83452 rules
+13172: 7,4144,6163560,-;SELinux:  Completing initialization.
+13173: 7,4145,6163562,-;SELinux:  Setting up existing superblocks.
+13174: 3,4146,6163584,-;SELinux: __security_genfs_sid: genfs || cmp
+13175: 3,4147,6163592,-;SELinux: __security_genfs_sid: genfs || cmp
+13176: 3,4148,6172828,-;SELinux: __security_genfs_sid: genfs || cmp
+13177: 3,4149,6172835,-;SELinux: __security_genfs_sid: genfs || cmp
+13178: 3,4150,6172839,-;SELinux: __security_genfs_sid: genfs || cmp
+13185: PID1-STOP pid=1 status=0x4057f event=4
+13257: SIGNAL_INFO signo=5 code=1029
+17684: PID1-STOP pid=1 status=0x4057f event=4
+17701: SIGNAL_INFO signo=5 code=1029
+19392: 14,4008,4363551,-;init: init first stage started!
+19393: 14,4009,4363558,-;init: !@Boot: start init process
+19394: 14,4010,4363582,-;init: boot_stat write failed
+19395: 14,4011,4363594,-;init: boot_stat write failed
+19396: 14,4012,4364292,-;init: Using Android DT directory /proc/device-tree/firmware/android/
+19403: 14,4015,4398531,-;init: [libfs_mgr]superblock s_max_mnt_count:35,/dev/block/platform/11120000.ufs/by-name/SYSTEM
+19405: 14,4017,4400291,-;init: [libfs_mgr]__mount(source=/dev/block/platform/11120000.ufs/by-name/SYSTEM,target=/system,type=ext4)=0: Success
+19406: 14,4018,4400301,-;init: [libfs_mgr]__mount return 0(source=SYSTEM,target=/system,type=ext4,flags=1,options=): Success
+19407: 14,4019,4400497,-;init: Switching root to '/system'
+19408: 14,4020,4405219,-;init: [libfs_mgr]superblock s_max_mnt_count:37,/dev/block/platform/11120000.ufs/by-name/ODM
+19410: 14,4022,4406353,-;init: [libfs_mgr]__mount(source=/dev/block/platform/11120000.ufs/by-name/ODM,target=/odm,type=ext4)=0: Success
+19411: 14,4023,4406362,-;init: [libfs_mgr]__mount return 0(source=ODM,target=/odm,type=ext4,flags=1,options=): Success
+19412: 14,4024,4406884,-;init: [libfs_mgr]superblock s_max_mnt_count:25,/dev/block/platform/11120000.ufs/by-name/VENDOR
+19414: 14,4026,4408763,-;init: [libfs_mgr]__mount(source=/dev/block/platform/11120000.ufs/by-name/VENDOR,target=/vendor,type=ext4)=0: Success
+19415: 14,4027,4408781,-;init: [libfs_mgr]__mount return 0(source=VENDOR,target=/vendor,type=ext4,flags=1,options=): Success
+19416: 14,4028,4478975,-;init: Skipped setting INIT_AVB_VERSION (not in recovery mode)
+19417: 14,4029,4479012,-;init: boot_stat write failed
+19418: 14,4030,4557827,-;init: [libfstab] Using Android DT directory /proc/device-tree/firmware/android/
+19419: 14,4031,4561209,-;init: [libfstab] zramsize and zram_backingdev_size are automatically selected
+19420: 14,4032,4561410,-;init: [libfstab] Storage model: UFS, proc_name
+19421: 14,4033,4562397,-;init: [libfstab] storage_blocks: 119 lg: 6
+19422: 14,4034,4562420,-;init: [libfstab] SetNandswapSize(): storage_size: 128GB zramsize: 8192MB zram_backingdev_size: 2048MB
+19423: 14,4035,4562805,-;init: Skipping mount of system_ext, system is not dynamic.
+19424: 14,4036,4562813,-;init: Skipping mount of product, system is not dynamic.
+19425: 14,4037,4562831,-;init: Opening SELinux policy
+19426: 14,4038,4564740,-;init: No precompiled sepolicy at /vendor/etc/selinux/precompiled_sepolicy: No such file or directory
+19427: 14,4039,4564746,-;init: Compiling SELinux policy
+19428: 14,4040,4566432,-;init: Missing /system/etc/selinux/plat_sepolicy_genfs_202404.cil; skipping
+19721: PID1-STOP pid=1 status=0x117f event=0
+19738: SIGNAL_INFO signo=17 code=1 child_pid=749 child_status=0
+19740: 11,4136,6154344,-;init: /system/bin/secilc: linker: Warning: failed to find generated linker configuration from "/linkerconfig/ld.config.txt"
+19741: 11,4137,6154361,-;init: /system/bin/secilc: WARNING: linker: Warning: failed to find generated linker configuration from "/linkerconfig/ld.config.txt"
+19742: 14,4138,6155755,-;init: Loading SELinux policy
+19746: 7,4142,6169378,-;SELinux:  107 classes, 83452 rules
+19747: 7,4143,6177033,-;SELinux:  Completing initialization.
+19748: 7,4144,6177034,-;SELinux:  Setting up existing superblocks.
+19749: 3,4145,6177057,-;SELinux: __security_genfs_sid: genfs || cmp
+19750: 3,4146,6177065,-;SELinux: __security_genfs_sid: genfs || cmp
+19751: 3,4147,6186277,-;SELinux: __security_genfs_sid: genfs || cmp
+19752: 3,4148,6186296,-;SELinux: __security_genfs_sid: genfs || cmp
+19753: 3,4149,6186300,-;SELinux: __security_genfs_sid: genfs || cmp
+19760: PID1-STOP pid=1 status=0x4057f event=4
+19832: SIGNAL_INFO signo=5 code=1029
+24563: PID1-STOP pid=1 status=0x4057f event=4
+24580: SIGNAL_INFO signo=5 code=1029
+25961: 14,4006,4308797,-;init: init first stage started!
+25962: 14,4007,4308804,-;init: !@Boot: start init process
+25963: 14,4008,4308828,-;init: boot_stat write failed
+25964: 14,4009,4308841,-;init: boot_stat write failed
+25965: 14,4010,4309525,-;init: Using Android DT directory /proc/device-tree/firmware/android/
+25966: 14,4011,4343355,-;init: [libfs_mgr]superblock s_max_mnt_count:35,/dev/block/platform/11120000.ufs/by-name/SYSTEM
+25968: 14,4013,4345145,-;init: [libfs_mgr]__mount(source=/dev/block/platform/11120000.ufs/by-name/SYSTEM,target=/system,type=ext4)=0: Success
+25969: 14,4014,4345155,-;init: [libfs_mgr]__mount return 0(source=SYSTEM,target=/system,type=ext4,flags=1,options=): Success
+25970: 14,4015,4345364,-;init: Switching root to '/system'
+25971: 14,4016,4349752,-;init: [libfs_mgr]superblock s_max_mnt_count:37,/dev/block/platform/11120000.ufs/by-name/ODM
+25973: 14,4018,4350971,-;init: [libfs_mgr]__mount(source=/dev/block/platform/11120000.ufs/by-name/ODM,target=/odm,type=ext4)=0: Success
+25974: 14,4019,4350981,-;init: [libfs_mgr]__mount return 0(source=ODM,target=/odm,type=ext4,flags=1,options=): Success
+25975: 14,4020,4351517,-;init: [libfs_mgr]superblock s_max_mnt_count:25,/dev/block/platform/11120000.ufs/by-name/VENDOR
+25977: 14,4022,4353829,-;init: [libfs_mgr]__mount(source=/dev/block/platform/11120000.ufs/by-name/VENDOR,target=/vendor,type=ext4)=0: Success
+25978: 14,4023,4353838,-;init: [libfs_mgr]__mount return 0(source=VENDOR,target=/vendor,type=ext4,flags=1,options=): Success
+25985: 14,4026,4426907,-;init: Skipped setting INIT_AVB_VERSION (not in recovery mode)
+25986: 14,4027,4426938,-;init: boot_stat write failed
+25987: 14,4028,4506314,-;init: [libfstab] Using Android DT directory /proc/device-tree/firmware/android/
+25988: 14,4029,4509602,-;init: [libfstab] zramsize and zram_backingdev_size are automatically selected
+25989: 14,4030,4509799,-;init: [libfstab] Storage model: UFS, proc_name
+25990: 14,4031,4510724,-;init: [libfstab] storage_blocks: 119 lg: 6
+25991: 14,4032,4510748,-;init: [libfstab] SetNandswapSize(): storage_size: 128GB zramsize: 8192MB zram_backingdev_size: 2048MB
+25992: 14,4033,4511108,-;init: Skipping mount of system_ext, system is not dynamic.
+25993: 14,4034,4511116,-;init: Skipping mount of product, system is not dynamic.
+25994: 14,4035,4511133,-;init: Opening SELinux policy
+25995: 14,4036,4512972,-;init: No precompiled sepolicy at /vendor/etc/selinux/precompiled_sepolicy: No such file or directory
+25996: 14,4037,4512979,-;init: Compiling SELinux policy
+25997: 14,4038,4514639,-;init: Missing /system/etc/selinux/plat_sepolicy_genfs_202404.cil; skipping
+26290: PID1-STOP pid=1 status=0x117f event=0
+26307: SIGNAL_INFO signo=17 code=1 child_pid=748 child_status=0
+26309: 11,4134,6111449,-;init: /system/bin/secilc: linker: Warning: failed to find generated linker configuration from "/linkerconfig/ld.config.txt"
+26310: 11,4135,6111467,-;init: /system/bin/secilc: WARNING: linker: Warning: failed to find generated linker configuration from "/linkerconfig/ld.config.txt"
+26311: 14,4136,6112914,-;init: Loading SELinux policy
+26315: 7,4140,6126693,-;SELinux:  107 classes, 83452 rules
+26316: 7,4141,6134384,-;SELinux:  Completing initialization.
+26317: 7,4142,6134385,-;SELinux:  Setting up existing superblocks.
+26318: 3,4143,6134407,-;SELinux: __security_genfs_sid: genfs || cmp
+26319: 3,4144,6134416,-;SELinux: __security_genfs_sid: genfs || cmp
+26320: 3,4145,6143721,-;SELinux: __security_genfs_sid: genfs || cmp
+26321: 3,4146,6143728,-;SELinux: __security_genfs_sid: genfs || cmp
+26322: 3,4147,6143732,-;SELinux: __security_genfs_sid: genfs || cmp
+26329: PID1-STOP pid=1 status=0x4057f event=4
+26401: SIGNAL_INFO signo=5 code=1029
+30237: PID1-STOP pid=1 status=0x4057f event=4
+30254: SIGNAL_INFO signo=5 code=1029
+32536: 14,4008,4359513,-;init: init first stage started!
+32537: 14,4009,4359519,-;init: !@Boot: start init process
+32538: 14,4010,4359543,-;init: boot_stat write failed
+32539: 14,4011,4359555,-;init: boot_stat write failed
+32540: 14,4012,4360240,-;init: Using Android DT directory /proc/device-tree/firmware/android/
+32547: 14,4015,4394639,-;init: [libfs_mgr]superblock s_max_mnt_count:35,/dev/block/platform/11120000.ufs/by-name/SYSTEM
+32549: 14,4017,4396294,-;init: [libfs_mgr]__mount(source=/dev/block/platform/11120000.ufs/by-name/SYSTEM,target=/system,type=ext4)=0: Success
+32550: 14,4018,4396302,-;init: [libfs_mgr]__mount return 0(source=SYSTEM,target=/system,type=ext4,flags=1,options=): Success
+32551: 14,4019,4396473,-;init: Switching root to '/system'
+32552: 14,4020,4400652,-;init: [libfs_mgr]superblock s_max_mnt_count:37,/dev/block/platform/11120000.ufs/by-name/ODM
+32554: 14,4022,4401623,-;init: [libfs_mgr]__mount(source=/dev/block/platform/11120000.ufs/by-name/ODM,target=/odm,type=ext4)=0: Success
+32555: 14,4023,4401630,-;init: [libfs_mgr]__mount return 0(source=ODM,target=/odm,type=ext4,flags=1,options=): Success
+32556: 14,4024,4402128,-;init: [libfs_mgr]superblock s_max_mnt_count:25,/dev/block/platform/11120000.ufs/by-name/VENDOR
+32558: 14,4026,4404255,-;init: [libfs_mgr]__mount(source=/dev/block/platform/11120000.ufs/by-name/VENDOR,target=/vendor,type=ext4)=0: Success
+32559: 14,4027,4404262,-;init: [libfs_mgr]__mount return 0(source=VENDOR,target=/vendor,type=ext4,flags=1,options=): Success
+32560: 14,4028,4459828,-;init: Skipped setting INIT_AVB_VERSION (not in recovery mode)
+32561: 14,4029,4459859,-;init: boot_stat write failed
+32562: 14,4030,4538972,-;init: [libfstab] Using Android DT directory /proc/device-tree/firmware/android/
+32563: 14,4031,4542392,-;init: [libfstab] zramsize and zram_backingdev_size are automatically selected
+32564: 14,4032,4542581,-;init: [libfstab] Storage model: UFS, proc_name
+32565: 14,4033,4543458,-;init: [libfstab] storage_blocks: 119 lg: 6
+32566: 14,4034,4543480,-;init: [libfstab] SetNandswapSize(): storage_size: 128GB zramsize: 8192MB zram_backingdev_size: 2048MB
+32567: 14,4035,4543874,-;init: Skipping mount of system_ext, system is not dynamic.
+32568: 14,4036,4543884,-;init: Skipping mount of product, system is not dynamic.
+32569: 14,4037,4543903,-;init: Opening SELinux policy
+32570: 14,4038,4545675,-;init: No precompiled sepolicy at /vendor/etc/selinux/precompiled_sepolicy: No such file or directory
+32571: 14,4039,4545682,-;init: Compiling SELinux policy
+32572: 14,4040,4547389,-;init: Missing /system/etc/selinux/plat_sepolicy_genfs_202404.cil; skipping
+32865: PID1-STOP pid=1 status=0x117f event=0
+32882: SIGNAL_INFO signo=17 code=1 child_pid=748 child_status=0
+32884: 11,4136,6145203,-;init: /system/bin/secilc: linker: Warning: failed to find generated linker configuration from "/linkerconfig/ld.config.txt"
+32885: 11,4137,6145220,-;init: /system/bin/secilc: WARNING: linker: Warning: failed to find generated linker configuration from "/linkerconfig/ld.config.txt"
+32886: 14,4138,6146711,-;init: Loading SELinux policy
+32890: 7,4142,6160277,-;SELinux:  107 classes, 83452 rules
+32891: 7,4143,6167834,-;SELinux:  Completing initialization.
+32892: 7,4144,6167836,-;SELinux:  Setting up existing superblocks.
+32893: 3,4145,6167857,-;SELinux: __security_genfs_sid: genfs || cmp
+32894: 3,4146,6167866,-;SELinux: __security_genfs_sid: genfs || cmp
+32895: 3,4147,6177158,-;SELinux: __security_genfs_sid: genfs || cmp
+32896: 3,4148,6177165,-;SELinux: __security_genfs_sid: genfs || cmp
+32897: 3,4149,6177169,-;SELinux: __security_genfs_sid: genfs || cmp
+32904: PID1-STOP pid=1 status=0x4057f event=4
+32976: SIGNAL_INFO signo=5 code=1029
+37712: PID1-STOP pid=1 status=0x4057f event=4
+37729: SIGNAL_INFO signo=5 code=1029
+39111: 14,4008,4355791,-;init: init first stage started!
+39112: 14,4009,4355798,-;init: !@Boot: start init process
+39113: 14,4010,4355825,-;init: boot_stat write failed
+39114: 14,4011,4355835,-;init: boot_stat write failed
+39115: 14,4012,4356524,-;init: Using Android DT directory /proc/device-tree/firmware/android/
+39122: 14,4015,4395028,-;init: [libfs_mgr]superblock s_max_mnt_count:35,/dev/block/platform/11120000.ufs/by-name/SYSTEM
+39124: 14,4017,4396920,-;init: [libfs_mgr]__mount(source=/dev/block/platform/11120000.ufs/by-name/SYSTEM,target=/system,type=ext4)=0: Success
+39125: 14,4018,4396929,-;init: [libfs_mgr]__mount return 0(source=SYSTEM,target=/system,type=ext4,flags=1,options=): Success
+39126: 14,4019,4397083,-;init: Switching root to '/system'
+39127: 14,4020,4401255,-;init: [libfs_mgr]superblock s_max_mnt_count:37,/dev/block/platform/11120000.ufs/by-name/ODM
+39129: 14,4022,4402252,-;init: [libfs_mgr]__mount(source=/dev/block/platform/11120000.ufs/by-name/ODM,target=/odm,type=ext4)=0: Success
+39130: 14,4023,4402261,-;init: [libfs_mgr]__mount return 0(source=ODM,target=/odm,type=ext4,flags=1,options=): Success
+39131: 14,4024,4402737,-;init: [libfs_mgr]superblock s_max_mnt_count:25,/dev/block/platform/11120000.ufs/by-name/VENDOR
+39133: 14,4026,4404824,-;init: [libfs_mgr]__mount(source=/dev/block/platform/11120000.ufs/by-name/VENDOR,target=/vendor,type=ext4)=0: Success
+39134: 14,4027,4404833,-;init: [libfs_mgr]__mount return 0(source=VENDOR,target=/vendor,type=ext4,flags=1,options=): Success
+39135: 14,4028,4508027,-;init: Skipped setting INIT_AVB_VERSION (not in recovery mode)
+39136: 14,4029,4508068,-;init: boot_stat write failed
+39144: 14,4032,4587735,-;init: [libfstab] Using Android DT directory /proc/device-tree/firmware/android/
+39145: 14,4033,4590964,-;init: [libfstab] zramsize and zram_backingdev_size are automatically selected
+39146: 14,4034,4591138,-;init: [libfstab] Storage model: UFS, proc_name
+39147: 14,4035,4592027,-;init: [libfstab] storage_blocks: 119 lg: 6
+39148: 14,4036,4592050,-;init: [libfstab] SetNandswapSize(): storage_size: 128GB zramsize: 8192MB zram_backingdev_size: 2048MB
+39149: 14,4037,4592389,-;init: Skipping mount of system_ext, system is not dynamic.
+39150: 14,4038,4592397,-;init: Skipping mount of product, system is not dynamic.
+39151: 14,4039,4592411,-;init: Opening SELinux policy
+39152: 14,4040,4594259,-;init: No precompiled sepolicy at /vendor/etc/selinux/precompiled_sepolicy: No such file or directory
+39153: 14,4041,4594266,-;init: Compiling SELinux policy
+39154: 14,4042,4595980,-;init: Missing /system/etc/selinux/plat_sepolicy_genfs_202404.cil; skipping
+39440: PID1-STOP pid=1 status=0x117f event=0
+39457: SIGNAL_INFO signo=17 code=1 child_pid=749 child_status=0
+39459: 11,4136,6190650,-;init: /system/bin/secilc: linker: Warning: failed to find generated linker configuration from "/linkerconfig/ld.config.txt"
+39460: 11,4137,6190668,-;init: /system/bin/secilc: WARNING: linker: Warning: failed to find generated linker configuration from "/linkerconfig/ld.config.txt"
+39461: 14,4138,6192173,-;init: Loading SELinux policy
+39465: 7,4142,6206146,-;SELinux:  107 classes, 83452 rules
+39466: 7,4143,6213704,-;SELinux:  Completing initialization.
+39467: 7,4144,6213706,-;SELinux:  Setting up existing superblocks.
+39468: 3,4145,6213729,-;SELinux: __security_genfs_sid: genfs || cmp
+39469: 3,4146,6213738,-;SELinux: __security_genfs_sid: genfs || cmp
+39470: 3,4147,6223091,-;SELinux: __security_genfs_sid: genfs || cmp
+39471: 3,4148,6223099,-;SELinux: __security_genfs_sid: genfs || cmp
+39472: 3,4149,6223103,-;SELinux: __security_genfs_sid: genfs || cmp
+39479: PID1-STOP pid=1 status=0x4057f event=4
+39551: SIGNAL_INFO signo=5 code=1029
+44240: PID1-STOP pid=1 status=0x4057f event=4
+44257: SIGNAL_INFO signo=5 code=1029
+45612: 14,3978,4308220,-;init: init first stage started!
+45613: 14,3979,4308226,-;init: !@Boot: start init process
+45614: 14,3980,4308252,-;init: boot_stat write failed
+45615: 14,3981,4308263,-;init: boot_stat write failed
+45616: 14,3982,4308945,-;init: Using Android DT directory /proc/device-tree/firmware/android/
+45617: 14,3983,4342949,-;init: [libfs_mgr]superblock s_max_mnt_count:35,/dev/block/platform/11120000.ufs/by-name/SYSTEM
+45619: 14,3985,4344660,-;init: [libfs_mgr]__mount(source=/dev/block/platform/11120000.ufs/by-name/SYSTEM,target=/system,type=ext4)=0: Success
+45620: 14,3986,4344669,-;init: [libfs_mgr]__mount return 0(source=SYSTEM,target=/system,type=ext4,flags=1,options=): Success
+45621: 14,3987,4344875,-;init: Switching root to '/system'
+45622: 14,3988,4348941,-;init: [libfs_mgr]superblock s_max_mnt_count:37,/dev/block/platform/11120000.ufs/by-name/ODM
+45624: 14,3990,4349969,-;init: [libfs_mgr]__mount(source=/dev/block/platform/11120000.ufs/by-name/ODM,target=/odm,type=ext4)=0: Success
+45625: 14,3991,4349978,-;init: [libfs_mgr]__mount return 0(source=ODM,target=/odm,type=ext4,flags=1,options=): Success
+45626: 14,3992,4350508,-;init: [libfs_mgr]superblock s_max_mnt_count:25,/dev/block/platform/11120000.ufs/by-name/VENDOR
+45628: 14,3994,4352353,-;init: [libfs_mgr]__mount(source=/dev/block/platform/11120000.ufs/by-name/VENDOR,target=/vendor,type=ext4)=0: Success
+45629: 14,3995,4352361,-;init: [libfs_mgr]__mount return 0(source=VENDOR,target=/vendor,type=ext4,flags=1,options=): Success
+45636: 14,3998,4439098,-;init: Skipped setting INIT_AVB_VERSION (not in recovery mode)
+45637: 14,3999,4439131,-;init: boot_stat write failed
+45638: 14,4000,4517917,-;init: [libfstab] Using Android DT directory /proc/device-tree/firmware/android/
+45639: 14,4001,4521445,-;init: [libfstab] zramsize and zram_backingdev_size are automatically selected
+45640: 14,4002,4521641,-;init: [libfstab] Storage model: UFS, proc_name
+45641: 14,4003,4522575,-;init: [libfstab] storage_blocks: 119 lg: 6
+45642: 14,4004,4522600,-;init: [libfstab] SetNandswapSize(): storage_size: 128GB zramsize: 8192MB zram_backingdev_size: 2048MB
+45643: 14,4005,4522998,-;init: Skipping mount of system_ext, system is not dynamic.
+45644: 14,4006,4523008,-;init: Skipping mount of product, system is not dynamic.
+45645: 14,4007,4523028,-;init: Opening SELinux policy
+45646: 14,4008,4524887,-;init: No precompiled sepolicy at /vendor/etc/selinux/precompiled_sepolicy: No such file or directory
+45647: 14,4009,4524894,-;init: Compiling SELinux policy
+45648: 14,4010,4526551,-;init: Missing /system/etc/selinux/plat_sepolicy_genfs_202404.cil; skipping
+45971: PID1-STOP pid=1 status=0x117f event=0
+45988: SIGNAL_INFO signo=17 code=1 child_pid=748 child_status=0
+45990: 11,4118,6122774,-;init: /system/bin/secilc: linker: Warning: failed to find generated linker configuration from "/linkerconfig/ld.config.txt"
+45991: 11,4119,6122792,-;init: /system/bin/secilc: WARNING: linker: Warning: failed to find generated linker configuration from "/linkerconfig/ld.config.txt"
+45992: 14,4120,6124179,-;init: Loading SELinux policy
+45996: 7,4124,6137728,-;SELinux:  107 classes, 83452 rules
+45997: 7,4125,6145301,-;SELinux:  Completing initialization.
+45998: 7,4126,6145302,-;SELinux:  Setting up existing superblocks.
+45999: 3,4127,6145324,-;SELinux: __security_genfs_sid: genfs || cmp
+46000: 3,4128,6145333,-;SELinux: __security_genfs_sid: genfs || cmp
+46001: 3,4129,6154692,-;SELinux: __security_genfs_sid: genfs || cmp
+46002: 3,4130,6154699,-;SELinux: __security_genfs_sid: genfs || cmp
+46003: 3,4131,6154703,-;SELinux: __security_genfs_sid: genfs || cmp
+46010: PID1-STOP pid=1 status=0x4057f event=4
+46082: SIGNAL_INFO signo=5 code=1029
+50498: PID1-STOP pid=1 status=0x4057f event=4
+50515: SIGNAL_INFO signo=5 code=1029
+52232: 14,4013,4350286,-;init: init first stage started!
+52233: 14,4014,4350292,-;init: !@Boot: start init process
+52234: 14,4015,4350317,-;init: boot_stat write failed
+52235: 14,4016,4350328,-;init: boot_stat write failed
+52236: 14,4017,4351010,-;init: Using Android DT directory /proc/device-tree/firmware/android/
+52243: 14,4020,4385308,-;init: [libfs_mgr]superblock s_max_mnt_count:35,/dev/block/platform/11120000.ufs/by-name/SYSTEM
+52245: 14,4022,4387267,-;init: [libfs_mgr]__mount(source=/dev/block/platform/11120000.ufs/by-name/SYSTEM,target=/system,type=ext4)=0: Success
+52246: 14,4023,4387277,-;init: [libfs_mgr]__mount return 0(source=SYSTEM,target=/system,type=ext4,flags=1,options=): Success
+52247: 14,4024,4387488,-;init: Switching root to '/system'
+52248: 14,4025,4391737,-;init: [libfs_mgr]superblock s_max_mnt_count:37,/dev/block/platform/11120000.ufs/by-name/ODM
+52250: 14,4027,4392741,-;init: [libfs_mgr]__mount(source=/dev/block/platform/11120000.ufs/by-name/ODM,target=/odm,type=ext4)=0: Success
+52251: 14,4028,4392748,-;init: [libfs_mgr]__mount return 0(source=ODM,target=/odm,type=ext4,flags=1,options=): Success
+52252: 14,4029,4393291,-;init: [libfs_mgr]superblock s_max_mnt_count:25,/dev/block/platform/11120000.ufs/by-name/VENDOR
+52254: 14,4031,4395722,-;init: [libfs_mgr]__mount(source=/dev/block/platform/11120000.ufs/by-name/VENDOR,target=/vendor,type=ext4)=0: Success
+52255: 14,4032,4395730,-;init: [libfs_mgr]__mount return 0(source=VENDOR,target=/vendor,type=ext4,flags=1,options=): Success
+52256: 14,4033,4458829,-;init: Skipped setting INIT_AVB_VERSION (not in recovery mode)
+52257: 14,4034,4458862,-;init: boot_stat write failed
+52258: 14,4035,4538432,-;init: [libfstab] Using Android DT directory /proc/device-tree/firmware/android/
+52265: 14,4038,4542030,-;init: [libfstab] zramsize and zram_backingdev_size are automatically selected
+52266: 14,4039,4542251,-;init: [libfstab] Storage model: UFS, proc_name
+52273: 14,4042,4543200,-;init: [libfstab] storage_blocks: 119 lg: 6
+52274: 14,4043,4543224,-;init: [libfstab] SetNandswapSize(): storage_size: 128GB zramsize: 8192MB zram_backingdev_size: 2048MB
+52275: 14,4044,4543663,-;init: Skipping mount of system_ext, system is not dynamic.
+52276: 14,4045,4543673,-;init: Skipping mount of product, system is not dynamic.
+52277: 14,4046,4543692,-;init: Opening SELinux policy
+52278: 14,4047,4545617,-;init: No precompiled sepolicy at /vendor/etc/selinux/precompiled_sepolicy: No such file or directory
+52279: 14,4048,4545624,-;init: Compiling SELinux policy
+52280: 14,4049,4547420,-;init: Missing /system/etc/selinux/plat_sepolicy_genfs_202404.cil; skipping
+52585: PID1-STOP pid=1 status=0x117f event=0
+52602: SIGNAL_INFO signo=17 code=1 child_pid=748 child_status=0
+52604: 11,4149,6134895,-;init: /system/bin/secilc: linker: Warning: failed to find generated linker configuration from "/linkerconfig/ld.config.txt"
+52605: 11,4150,6134914,-;init: /system/bin/secilc: WARNING: linker: Warning: failed to find generated linker configuration from "/linkerconfig/ld.config.txt"
+52606: 14,4151,6136385,-;init: Loading SELinux policy
+52610: 7,4155,6151330,-;SELinux:  107 classes, 83452 rules
+52611: 7,4156,6158868,-;SELinux:  Completing initialization.
+52612: 7,4157,6158870,-;SELinux:  Setting up existing superblocks.
+52613: 3,4158,6158892,-;SELinux: __security_genfs_sid: genfs || cmp
+52614: 3,4159,6158900,-;SELinux: __security_genfs_sid: genfs || cmp
+52615: 3,4160,6168188,-;SELinux: __security_genfs_sid: genfs || cmp
+52616: 3,4161,6168195,-;SELinux: __security_genfs_sid: genfs || cmp
+52617: 3,4162,6168198,-;SELinux: __security_genfs_sid: genfs || cmp

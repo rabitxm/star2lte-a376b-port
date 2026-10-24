@@ -1,14 +1,16 @@
 From: Local M2 diagnostics
-Subject: [PATCH] Correct recorder wait-stop signal decoding and private proc snapshots
+Subject: [PATCH] Correct wait-stop handling and capture init child exit/proc state
 
-Reason: the old decoder injects signal 127, causing PTRACE_CONT errno 5 and
-leaving the tracee stopped. Runtime secilc compilation itself passes on both
-TWRP and pinned DS-ACK; probe10 silence is not proof of a policy compile hang.
-Files: diagnostics/bootlogger_pid1_probe11.c (candidate derived from probe10).
-Verification: static AArch64 build; actual SIGCHLD forwarding/exit and ptrace
-attach selftests PASS on TWRP4.9.118 and DS-ACK4.9.337. No PID1 boot tested.
-The private proc mount correction is compiled but not yet boot-validated.
-No standard ROM build or kernel/vendor/radio change, no image/device writes.
+Reason: probe10 passed stop-marker127 as a signal and ignored PTRACE_CONT
+errno5. Policy compilation passes on recovery and DS-ACK; a correct recorder
+is needed before attributing the bootloop to SELinux. Add SIGCHLD siginfo so
+compiler completion is observable, and mount private procfs for snapshots.
+Files: diagnostics/bootlogger_pid1_probe11.c (derived from retained probe10).
+Verification: AArch64 static build; signal-forward, ptrace attach, exec-error,
+private proc and cold namespace tests PASS on TWRP4.9.118 and DS-ACK4.9.337;
+parent PID1 mountinfo hashes unchanged. BOOT image audit preserves kernel,
+DTB and cmdline, original init as init.real, and every other CPIO entry.
+PID1 boot runtime remains pending at preparation time. No normal fork changes.
 
 --- a/diagnostics/bootlogger_pid1_probe10.c
 +++ b/diagnostics/bootlogger_pid1_probe11.c
@@ -36,7 +38,49 @@ No standard ROM build or kernel/vendor/radio change, no image/device writes.
      return open_file(path,
                       O_WRONLY | O_CREAT | O_APPEND, 0600);
  }
-@@ -174,6 +180,11 @@
+@@ -107,7 +113,13 @@
+ {
+     char buffer[2048];
+     long fd = open_file(path, O_RDONLY, 0);
+-    if (fd < 0) return 0;
++    if (fd < 0) {
++        char line[128]; long z=0;
++        const char *tag="PROC-READ-FAILED errno=";
++        copy_bytes(line+z,tag,string_length(tag));z+=string_length(tag);
++        z+=append_decimal(line+z,-fd);line[z++]='\n';write_all(cache,line,z);
++        return 0;
++    }
+     long total = 0;
+     while (total < limit) {
+         long want = sizeof(buffer);
+@@ -149,6 +161,26 @@
+     n += append_hex(line+n, event_msg); line[n++]='\n'; write_all(cache, line, n);
+     tag = "--- /proc/1/cmdline ---\n"; write_all(cache, tag, string_length(tag)); tracee_file(cache, "/proc/1/cmdline", 4096);
+     tag = "\n--- /proc/1/maps ---\n"; write_all(cache, tag, string_length(tag)); tracee_file(cache, "/proc/1/maps", 65536);
++    const char *extra="\n--- /proc/1/status ---\n";
++    write_all(cache,extra,string_length(extra));tracee_file(cache,"/proc/1/status",8192);
++    extra="\n--- /proc/1/wchan ---\n";
++    write_all(cache,extra,string_length(extra));tracee_file(cache,"/proc/1/wchan",512);
++    extra="\n--- /proc/1/task/1/children ---\n";
++    write_all(cache,extra,string_length(extra));tracee_file(cache,"/proc/1/task/1/children",1024);
++    write_all(cache,"\n",1);
++    unsigned long si_words[16]={0};
++    long si_rc=syscall6(117,0x4202,pid,0,(long)si_words,0,0); /* GETSIGINFO */
++    if (si_rc == 0) {
++        int *si=(int *)si_words;
++        n=0;tag="SIGNAL_INFO signo=";copy_bytes(line+n,tag,string_length(tag));n+=string_length(tag);
++        n+=append_decimal(line+n,si[0]);tag=" code=";copy_bytes(line+n,tag,string_length(tag));n+=string_length(tag);
++        if (si[2]<0) {line[n++]='-';n+=append_decimal(line+n,-(long)si[2]);} else n+=append_decimal(line+n,si[2]);
++        if (si[0] == 17) {
++            tag=" child_pid=";copy_bytes(line+n,tag,string_length(tag));n+=string_length(tag);n+=append_decimal(line+n,si[4]);
++            tag=" child_status=";copy_bytes(line+n,tag,string_length(tag));n+=string_length(tag);n+=append_decimal(line+n,si[6]);
++        }
++        line[n++]='\n';write_all(cache,line,n);
++    }
+     trace_regs(cache, pid);
+     long kmsg = open_file("/dev/kmsg", O_RDONLY | O_NONBLOCK, 0);
+     if (kmsg >= 0) {
+@@ -174,6 +206,11 @@
      namespace_step = 2;
      r = syscall6(40, 0, (long)"/", 0, (1UL << 18) | 16384, 0, 0);
      if (r < 0) return r; /* MS_PRIVATE | MS_REC */
@@ -48,7 +92,7 @@ No standard ROM build or kernel/vendor/radio change, no image/device writes.
      namespace_step = 3;
      r = syscall6(40, (long)"tmpfs", (long)"/dev", (long)"tmpfs", 2,
                   (long)"mode=0755,size=1m", 0);
-@@ -208,7 +219,7 @@
+@@ -208,7 +245,7 @@
      }
      cache = cache_open();
      if (cache >= 0) {
@@ -57,7 +101,7 @@ No standard ROM build or kernel/vendor/radio change, no image/device writes.
          write_all(cache, mark, string_length(mark));
          syscall6(SYS_fsync, cache, 0, 0, 0, 0, 0);
      }
-@@ -247,7 +258,7 @@
+@@ -247,7 +284,7 @@
          if (cache < 0) {
              cache = cache_open();
              if (cache >= 0) {
@@ -66,14 +110,16 @@ No standard ROM build or kernel/vendor/radio change, no image/device writes.
                  write_all(cache, mark, string_length(mark));
                  syscall6(SYS_fsync, cache, 0, 0, 0, 0, 0);
              }
-@@ -300,14 +311,23 @@
+@@ -300,14 +337,23 @@
              long pid = syscall6(260, 1, (long)&status, 0x40000001, 0, 0, 0); /* __WALL | WNOHANG */
              if (pid == 1 && (status & 0xff) == 0x7f) {
                  long event = (unsigned long)status >> 16;
 -                long sig = status & 0x7f;
+-                if (event == 4 || event == 6 || (event == 0 &&
+-                    (sig == 4 || sig == 6 || sig == 7 || sig == 11 || sig == 31))) {
 +                long sig = trace_stop_signal(status);
-                 if (event == 4 || event == 6 || (event == 0 &&
-                     (sig == 4 || sig == 6 || sig == 7 || sig == 11 || sig == 31))) {
++                /* Include SIGCHLD: record compiler exit before init reaps it. */
++                if (event == 4 || event == 6 || event == 0) {
                      trace_snapshot(cache, out, pid, status, event);
                      if (event == 6 || (event == 0 && (sig == 4 || sig == 6 || sig == 7 || sig == 11 || sig == 31)))
                          sleep_milliseconds(500);
@@ -92,7 +138,7 @@ No standard ROM build or kernel/vendor/radio change, no image/device writes.
              } else if (pid == 1) {
                  char line[] = "PID1-TERMINATED status=0x0000\n";
                  line[23]='0'+((status>>12)&15); line[24]='0'+((status>>8)&15);
-@@ -347,6 +367,37 @@
+@@ -347,6 +393,37 @@
      char **env = argv + argc + 1;
      long pid = syscall6(172, 0, 0, 0, 0, 0, 0);
      if (pid != 1) {
@@ -130,3 +176,13 @@ No standard ROM build or kernel/vendor/radio change, no image/device writes.
          if (argc == 2 && contains(argv[1], string_length(argv[1]), "--ptrace-selftest")) {
              int gate[2] = {-1, -1};
              if (syscall6(59, (long)gate, 0x80000, 0, 0, 0, 0) < 0) finish(40);
+@@ -443,6 +520,9 @@
+                 write_all(1, written, string_length(written));
+                 finish(0);
+             }
++            if (tracee_file(1,"/proc/1/status",8192) <= 0) finish(72);
++            const char *proc_ok="\nPROBE-PRIVATE-PROC-READ-PASS\n";
++            write_all(1,proc_ok,string_length(proc_ok));
+             const char *ok = "PROBE-PRIVATE-TMPFS-SYSFS-KMSG-OPEN-PASS\n";
+             write_all(1, ok, string_length(ok));
+             finish(0); /* No pmsg write in self-test. Mounts vanish at exit. */

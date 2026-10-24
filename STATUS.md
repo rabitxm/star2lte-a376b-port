@@ -300,3 +300,17 @@ causing reproducible PTRACE_CONT errno5; the apparent compile stall is unreliabl
 Probe11 correction source passes signal-forward/attach selftests on both kernels,
 but no probe11 BOOT has been built/flashed. M2 remains TWRP with baseline BOOT.
 Current collaboration brief: docs/HELP-WANTED.md; shareable evidence: support/evidence/.
+
+
+24/10/2026 — probe11 and passive probe12 completed. Probe11 fixes the wait-status
+bug and captures compiler exit0 plus kernel SELinux initialization; passive
+probe12 reproduces the loop without PID1 ptrace (14 starts, 11 load-policy
+markers, 10 superblock-init markers). No explicit fatal/panic or second-stage
+start is captured. Both BOOT rollbacks verify the pinned full-partition hash
+cc618abc...776ed01d; M2 is in TWRP, M1 stays booted, N untouched. EFS changed
+across boot/recovery, without an EFS write/restore; other measured protected
+hashes match. Logger permission/visibility across policy activation is the
+next instrumentation gate. Source and selected evidence are prepared for the
+GitHub assistance snapshot; images, firmware and raw logs stay local.
+Live API inspection now reports the repository as public; visibility is not
+changed by this update.

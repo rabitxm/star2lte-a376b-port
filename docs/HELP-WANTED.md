@@ -39,17 +39,38 @@ Do not modify EFS/CPEFS, modem or bootloader. G965N has not been flashed.
    self-test demonstrates the failure and correct resumption. Therefore the
    probe10 post-compile silence is not reliable evidence of a compiler hang.
    Its private namespace also had no procfs, explaining empty proc snapshots.
-6. Probe11 correction source fixes decoding, logs/detaches on resume failure,
-   and adds private read-only procfs. Actual AArch64 signal-forwarding and
-   attach self-tests pass on both recovery 4.9.118 and M1 DS-ACK 4.9.337.
-   **No probe11 BOOT has been built or tested.** It uses PTRACE_CONT and does
-   not implement syscall-level reboot trapping.
+6. Probe11 was then audited, written to BOOT and tested on M2. The user
+   observed a bootloop and returned the device to TWRP. Eight boot sequences
+   captured SIGCHLD with `child_status=0`, followed by `Loading SELinux policy`
+   and kernel `SELinux: Completing initialization` / `Setting up existing
+   superblocks` (107 classes, 83452 rules). No ptrace resume error, fatal,
+   panic, second-stage marker, or successful load-policy return was captured.
+   BOOT was restored to baseline and verified. See
+   `support/evidence/probe11-init-policy.txt` and `probe11-summary.json`.
+7. Proc snapshots worked for the first init.real exec but later paths returned
+   ENOENT after SwitchRoot. The exact pathname/visibility cause is unverified;
+   a future recorder should test an opened proc root FD. Recorder permissions
+   after SELinux enforcement are also unproven, so the last log is an
+   observation boundary rather than proof of the exact crash point.
+8. Passive probe12 completed on the same attempt50 system/kernel with no
+   PID1 ptrace. It captured 14 first-stage starts, 11 policy-load markers and
+   10 existing-superblock initialization markers. M2 still bootlooped. No
+   second-stage or explicit fatal/panic was captured, and BOOT was restored.
+   See `support/evidence/probe12-init-policy.txt` and `probe12-summary.json`.
+   Thus PID1 ptrace is not required to reproduce this loop/observation boundary.
+9. Both recorders ignore CACHE write/fsync errors and do not persist kmsg-read
+   failures. The pinned kernel revalidates open-file permissions after a policy
+   sequence change (`security/selinux/hooks.c`, `selinux_file_permission`).
+   Recorder loss of access is a hypothesis that must be tested, not an observed
+   AVC or proof that policy loading succeeds or fails.
 
 ## Useful next investigation
 
-Run a corrected recorder to obtain PID1 signal stops, proc snapshots, compiler
-child completion and the actual next init phase. Distinguish policy compilation
-from policy loading into the kernel and the later second-stage handoff. Do not
+First establish recorder visibility across policy activation: preserve a proc
+root FD across SwitchRoot, capture negative read/write/fsync results through a
+verified independent channel, and calibrate on M1 before another M2 BOOT test.
+Then obtain the actual next init phase or fatal. Compiler completion is already
+confirmed; successful return from kernel policy loading remains unconfirmed. Do not
 attribute the loop to the optional missing genfs CIL without a failure log.
 A future kernel backport candidate is retained as source under `patches/kernel/`,
 but it has not been applied or built and is not a validated remedy for M2.
