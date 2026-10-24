@@ -325,3 +325,37 @@ visibility hypothesis, not a captured AVC or proven bootloop cause. M1 DS-ACK
 has no pmsg node, unlike recovery. No live policy load, edit, enforcement
 change, device write or reboot was performed. See
 `diagnostics/offline-recorder-policy.md` and selected query evidence.
+
+
+24/10/2026 — probe13 M1 calibration PASS. The passive recorder now preallocates
+and mmap-writes a dedicated regular CACHE file, with checksum frames and checked
+msync/fsync. Actual namespace/detach/FD-close/error tests pass on recovery and
+DS-ACK. M1 boots completed1/enforcing and observes recorder u:r:kernel:s0;
+`KMSG_READ_ERROR=-13` and `VFS_WRITE_RC=-13` confirm runtime access loss for
+ordinary I/O. A one-time correction of the recorder-private kmsg inode label
+succeeds, kmsg reading resumes, and `init: init second stage started!` is saved.
+Mapped output survives recovery with msync0/fsync0, heartbeat68410ms and zero
+dropped frames. Thus the old recorder's visibility boundary is real on M1,
+not proof of a fatal at policy loading. M1 BOOT rolled back to baseline with
+full hash verification and returned to Android. M2 probe13 test is now in
+progress after fresh serial/model/hash checks; no M2 result is claimed yet.
+No kernel/vendor/radio/policy/normal-ROM change or data format. Local evidence:
+logs/20261024-probe13/; selected evidence: support/evidence/probe13-m1-*.
+
+
+24/10/2026 — probe13 completed; preceding in-progress entries are closed.
+M2 persisted30 checksum-valid boot slots, all reaching second-stage init.
+23 retain `Service boringssl_self_test64_vendor has 'reboot_on_failure' option
+and failed, shutting down system.` and22 retain `Got shutdown_command
+'reboot,boringssl-self-check-failed'`. This is an explicit reboot trigger;
+the old policy boundary was a recorder failure. Normal runtime APEX linker
+from installed M2 independently reproduces MADV_WIPEONFORK EINVAL/exit134 on
+both recovery and pinned DS-ACK. Bootstrap-only patch0096 leaves that runtime
+untouched. A37 init's linkerconfig path is in APEX, so missing system-bin
+linkerconfig alone is not an established cause of its exec ENOENT.
+Both BOOT rollbacks verify baseline cc618abc...776ed01d; M1 boots baseline,
+M2 remains in TWRP, N untouched. Protected hashes match during rollback; EFS
+changes across boot/recovery remain unverified with no EFS write/restore.
+No kernel/vendor/radio/policy/self-test change or ROM rebuild. Full report,
+limits and next implementation decision: docs/probe13-report.md. Selected
+counts, exact lines, source hashes and loader outputs are in support/evidence/.

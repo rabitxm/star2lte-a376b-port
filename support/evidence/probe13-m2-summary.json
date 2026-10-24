@@ -1,0 +1,28 @@
+{
+  "date": "2026-10-24",
+  "result": "diagnostic complete; M2 boot gate FAIL",
+  "boot_sequences": 30,
+  "second_stage_start_count": 30,
+  "boringssl_vendor_sigabrt_boots": 23,
+  "boringssl_reboot_on_failure_count": 23,
+  "shutdown_command_count": 22,
+  "linkerconfig_execution_error_count": 30,
+  "last_msync_rc_all_zero": true,
+  "last_fsync_rc_all_zero": true,
+  "dropped_frames": 0,
+  "filtered_kmsg_records": 8249,
+  "raw_mmap_sha256": "41394e2d964617c55ab00dc54b01489ffecd72c1e95e19f3f087c4350f88dff9",
+  "raw_mmap_bytes": 33558528,
+  "kernel_panic_captured": false,
+  "boot_rollback_sha256": "cc618abc72e8e568e56a8c643c906cff0d7b9143dfc77d86dc645f55776ed01d",
+  "protected_changed_during_rollback": [],
+  "protected_changed_across_boot": [
+    "EFS"
+  ],
+  "efs_write_or_restore_performed": false,
+  "m2_left_in_recovery": true,
+  "m1_baseline_boot_completed": true,
+  "runtime_apex_linker_on_pinned_dsack": "arc4random data MADV_WIPEONFORK failed: Invalid argument; exit134",
+  "bootstrap_overlay_does_not_replace_runtime_apex": true,
+  "kernel_vendor_radio_policy_or_selftest_changed": false
+}

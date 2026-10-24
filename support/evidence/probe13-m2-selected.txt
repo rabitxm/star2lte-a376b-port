@@ -1,0 +1,15 @@
+Selected original line numbers from decoded boot-0001, generation1.
+First boot among30 checksum-validated persisted boot records.
+
+7143: [ms=107] VFS_WRITE_RC=0
+10324: [ms=1769] 14,4162,3289630,-;init: Loading SELinux policy
+10350: [ms=1853] KMSG_READ_ERROR=-13
+10355: [ms=1853] PRIVATE_KMSG_RELABEL=0
+10361: [ms=1883] 14,4179,3407324,-;init: init second stage started!
+10363: [ms=1883] VFS_WRITE_RC=-13
+11038: [ms=2470] 11,4698,3996505,-;init: failed to execute linkerconfig: No such file or directory
+11132: [ms=2513] 14,4760,4032385,-;init: Service 'prng_seeder' (pid 940) received SIGABRT
+11136: [ms=2513] 14,4763,4034449,-;init: Service 'boringssl_self_test64_vendor' (pid 941) received SIGABRT waiting took 0.003000 seconds
+11140: [ms=2513] 11,4766,4034646,-;init: Service boringssl_self_test64_vendor has 'reboot_on_failure' option and failed, shutting down system.
+11142: [ms=2513] 14,4767,4035034,-;init: Got shutdown_command 'reboot,boringssl-self-check-failed' Calling HandlePowerctlMessage()
+11152: [ms=2513] 14,4772,4035320,-;init: ####Reboot start, reason: reboot,boringssl-self-check-failed, reboot_target: boringssl-self-check-failed

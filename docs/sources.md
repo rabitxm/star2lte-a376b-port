@@ -169,3 +169,14 @@ Product-feature provenance update0043/0045 (21/10/2026): the actual staged Biome
 
 
 Patch0053 model provenance: A376B vendor/etc/VslMesDetector/moire_detection.tflite SHA25688e001d4007446f82bd999d71d358b6f48ae976c0cd38128fcfc77a4ec9060c1 equals S22 legacy Midas file; copy still comes from locked A376B firmware. Named hs_segmenter info/model pairs remain together from that donor, with model_path validated. Wi-Fi0051–0052 retain donor classes and target HAL/blobs; no other framework or native Wi-Fi payload imported. Audit series53/47 replays with locked SHAs.
+
+
+24/10/2026 probe13 source/evidence provenance: native runtime linker was read
+from the actual installed M2 SYSTEM's com.android.runtime.apex. APEX SHA256
+`a4f643533716a6ef7823b6758cde2bdad70c1249ae16c84e1dca2ed91eb49b7f`,
+linker64 SHA256 `b22c6d701616a74a51872906c12aa327402b5c2075dc9c33a0f7f8859c38c512`.
+The exact vendor self-test ELF was copied only for a temporary loader-list
+check on recovery and pinned DS-ACK; both reproduce MADV_WIPEONFORK EINVAL /
+exit134. No proprietary payload is exported. Existing source lock, kernel,
+normal fork series and retained ROM artifacts are unchanged. See
+support/evidence/probe13-runtime-linker.json and docs/probe13-report.md.

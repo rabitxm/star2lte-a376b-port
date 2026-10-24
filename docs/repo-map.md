@@ -187,3 +187,14 @@ Optional diagnostic utility: `rom/scripts/internal/prepare_star2lte_boot_diagnos
 
 
 Patch0087 / explicit PID1 pmsg probe02: optional raw-syscall AArch64 monitor in `rom/platform/exynos9810/installer/bootlogger_pid1_probe.c`, prepare helper extended for cpio. Original init preserved as /init.real; probe keeps PID1 then execs original with argv/env, child copies selected kmsg errors to pmsg only, no FS mounts/partition access. TWRP fork/wait/exec/env self-test PASS, non-PID1 refusal13. Existing DS-ACK MagiskBoot repacks RAM files. Independent CPIO audit preserves all other data/metadata; kernel/DTB/cmdline unchanged. BOOT SHA c1b0f6902fc2fa621659483a4091dac890ebdc5040398bac71e58292dfa51926. Diagnostic only: timing/SELinux can affect capture; compare results cautiously. Plan: one verified G965F boot under current project authorization, capture then rollback baseline cc618abc72e8e568e56a8c643c906cff0d7b9143dfc77d86dc645f55776ed01d. Evidence `logs/20261022-m2-early-diag/pid1-probe-02/`.
+
+
+24/10/2026 diagnostic map: standalone probe13 recorder is
+`diagnostics/bootlogger_pid1_probe13.c`; the read-only checksum/slot decoder is
+`tools/decode_probe13.py`; final report is `docs/probe13-report.md`. These are
+outside the normal fork patch series/recipes. Installed SYSTEM runtime input:
+`system/apex/com.android.runtime.apex`, payload `bin/linker64` and
+`bin/linkerconfig`. A37 init references the APEX linkerconfig path. The vendor
+self-test rc is `vendor/etc/init/boringssl_self_test.rc`, executable
+`vendor/bin/boringssl_self_test64`, interpreter `/system/bin/linker64` pointing
+at the runtime APEX. Do not infer paths from the old S22 layout.

@@ -1,0 +1,22 @@
+{
+  "result": "PASS",
+  "m1_boot_completed": true,
+  "m1_enforcing": true,
+  "recorder_domain_observed": "u:r:kernel:s0",
+  "vfs_write_eacces_captured": true,
+  "kmsg_read_eacces_captured": true,
+  "private_kmsg_relabel_success_and_read_recovery": true,
+  "second_stage_marker_captured": true,
+  "mmap_checksum_verification": "PASS",
+  "last_msync_rc": 0,
+  "last_fsync_rc": 0,
+  "last_heartbeat_ms": 68410,
+  "dropped_frames": 0,
+  "raw_mmap_sha256": "0e01eaa54f39c07dc25711ab228eea113b7fa52f0e7f08d4fe369bdfeb9b72c3",
+  "raw_mmap_bytes": 33558528,
+  "pid1_proc_visibility_still_limited": true,
+  "boot_rollback_sha256": "cc618abc72e8e568e56a8c643c906cff0d7b9143dfc77d86dc645f55776ed01d",
+  "probe_boot_sha256": "62f81109e81147e47c9d2e9399e21ee8910e3ee7f7d71bcdee997240f9ab3ad1",
+  "normal_vfs_failure_is_runtime_observed_on_m1": true,
+  "m2_runtime_result": "30 second-stage starts and explicit boringssl-self-check-failed reboot; see probe13-m2-summary.json"
+}

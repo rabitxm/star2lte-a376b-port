@@ -28,7 +28,7 @@ hypothesis but does not establish the runtime monitor domain/enforcement.
 See `offline-recorder-policy.md`. M1 DS-ACK exposes no pmsg node; recovery
 pmsg is not an established independent channel for an Android boot.
 
-## Scope of a future probe13
+## Scope and implementation of probe13
 
 Only the opt-in diagnostic recorder and its ramdisk may change. Preserve the
 pinned kernel, DTB, cmdline, installed SYSTEM/VENDOR/ODM and data. Baseline BOOT
@@ -53,8 +53,50 @@ write raw CACHE sectors, or change vendor/radio as a recorder workaround.
 Verification required before deployment: static compile; actual AArch64 error
 and namespace selftests; parent mountinfo unchanged; full image/CPIO audit;
 serial/model/bootloader/hash/partition scope check; confirmed baseline image;
-full BOOT readback and rollback. No probe13 image has been built or flashed.
+full BOOT readback and rollback. The implementation and selftests below now
+exist; M1 calibration and M2 test/capture/rollback are complete. See
+`../docs/probe13-report.md` for the actual result.
 
 Files affected by this plan: this document only. Probe11/12 sources and raw
 results are retained for comparison. Implementation requires proving the
 independent persistence channel, not merely adding more print statements.
+
+
+## Implementation — 24 October 2026
+
+`bootlogger_pid1_probe13.c` retains a private proc directory FD and uses a
+preallocated regular CACHE mmap file (32 slots of 1MiB plus one reserved page).
+The parent still execs original init without tracing. Records carry length,
+monotonic time and checksum; all file offsets stay inside this dedicated file.
+The header records VFS write, kmsg read, msync and fsync results. No raw sector
+write is used. Old probe11/12 logs are retained. After 512KiB per boot, kmsg is
+filtered to init/SELinux/AVC/fatal/panic/reboot lines to reserve status space;
+filtered and dropped counts are explicit.
+
+If kmsg read returns EACCES/EPERM, the recorder logs it in the mmap channel and
+makes at most one attempt to set the correct kmsg_device label on its own
+private tmpfs kmsg inode. This does not edit policy, global enforcement or
+system device nodes. The result and labels are logged; a default header value
+of zero alone does not prove a relabel was attempted or successful.
+
+Verification completed before BOOT: static AArch64 compile; warm/cold private
+namespace tests on recovery and DS-ACK; proc-FD access after lazy detach;
+mapped persistence with the ordinary FD closed and EBADF recording; host
+checksum decode and deliberately corrupted-frame rejection; parent PID1
+mountinfo hashes unchanged. An initial selftest caught the generic O_DIRECTORY
+bit mismatch; it was corrected from the pinned arm64 UAPI definition before
+image preparation. An interrupted USB repack produced a DTB mismatch and was
+rejected without flashing. The subsequent image audit passes kernel/DTB/cmdline
+and CPIO preservation. Current calibration candidate SHA256:
+`62f81109e81147e47c9d2e9399e21ee8910e3ee7f7d71bcdee997240f9ab3ad1`.
+
+Reason/files/verification: recorder visibility across policy load; standalone
+C source plus read-only `tools/decode_probe13.py` and documentation only;
+actual tests, BOOT audits, M1 calibration and M2 capture/rollback completed.
+M2 reaches second-stage init and explicitly reboots on vendor BoringSSL
+SIGABRT. Both BOOTs are restored; see selected evidence and the report.
+
+Capture limit: after512KiB the kmsg selector retains init/SELinux/AVC/fatal/
+panic/reboot text. Some lower-case libc/linker/apexd messages are filtered;
+next instrumentation should include those error streams and immediate fatal
+sync. Zero dropped frames does not mean zero filtered kmsg records.

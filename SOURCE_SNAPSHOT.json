@@ -17,12 +17,12 @@
       "sha256": "b2785c1bf0b2f265309449166157e490b838f288937366cbd99e376821bdc3ea"
     },
     "README.md": {
-      "bytes": 4256,
-      "sha256": "6f5048f61bb771cf1bb52d93d37c92b3d9c0b7deba74a4dad0569544485ff4f3"
+      "bytes": 4473,
+      "sha256": "ba594fc9d6d7e4949e0d1570b6026ad7acfd2b79334182b31f2b4a25ff675ddb"
     },
     "STATUS.md": {
-      "bytes": 46833,
-      "sha256": "42f4aa14b209504a13c669ee44d2f8c4d6103615017f0325b2f331601c0dd648"
+      "bytes": 49125,
+      "sha256": "f472c408719abe54ffb7d46c460a42a4cd7102c53bc70e2141c7e7c377954bc8"
     },
     "sources.lock.json": {
       "bytes": 1589553,
@@ -37,8 +37,8 @@
       "sha256": "004158f7b10bf132de0adaf93a23513e511dcc23b9b1534fcda5bf451d540a8b"
     },
     "docs/HELP-WANTED.md": {
-      "bytes": 6441,
-      "sha256": "65b25e9c038a09f829eacf0c4ce9179fff5b0cac50520ae51c85d1480a8047e0"
+      "bytes": 5279,
+      "sha256": "15d7fa98a145458f7c5dbaff71d45b4ee38781a6878050a6581fc498469a21f8"
     },
     "docs/PLAN.md": {
       "bytes": 14390,
@@ -49,8 +49,8 @@
       "sha256": "9d52a5f8f609badafffaab40d410a02c357d3ef628dd22bdffcc836c2bd06d67"
     },
     "docs/bugs.md": {
-      "bytes": 60923,
-      "sha256": "8210cea30dcf47eee0a29ce9059d1f6b0ee0fe3c54ef727439438eab6926552a"
+      "bytes": 63215,
+      "sha256": "7974e9d478a28ecd38afcc4f7a02bcaa92abeb86a10b7372b785ebee644deac0"
     },
     "docs/build-environment.md": {
       "bytes": 4132,
@@ -85,8 +85,8 @@
       "sha256": "85abc2e781b852e97a85a6c0975bf37ecde3a6e3e829343740881a3eb4648600"
     },
     "docs/m2-build.md": {
-      "bytes": 93788,
-      "sha256": "6a58e55b48c71ca3e76c76baa54084298e77dcf1b654b3aae52ac8b4c440d873"
+      "bytes": 96080,
+      "sha256": "ba7b47cd9d4f5005c7f521818068f8d98865630c348fbe8537f42cfd5387579f"
     },
     "docs/m2-early-diagnostic-review.md": {
       "bytes": 3613,
@@ -101,20 +101,24 @@
       "sha256": "eae21e1595dfbc7c8455a75b94ade705c385eba6b13c410e656f1c1b04f0f765"
     },
     "docs/patch-matrix.md": {
-      "bytes": 51848,
-      "sha256": "727cfc72a825acb3712cd39a182502243eca492ef7a2c88e22081958d95679fc"
+      "bytes": 53028,
+      "sha256": "922a7058ad95e0b4fe1265555a349aa0cde6509d7d6cd0148a4330c54738acfb"
+    },
+    "docs/probe13-report.md": {
+      "bytes": 6487,
+      "sha256": "a13a72aa8f380803a2e71262fb3afa4849c6b757ab1ce976b80c73d8f9dcf58b"
     },
     "docs/release-retention.md": {
       "bytes": 3032,
       "sha256": "a5ec542aac5e5377d6d023bc00e204bc327b8c2616d8583feeb4f90e28572466"
     },
     "docs/repo-map.md": {
-      "bytes": 18930,
-      "sha256": "43cc4058076ad3a3ee6d6441ff84f236a03d58c58619fdafedc5fdb1a9c9add7"
+      "bytes": 19587,
+      "sha256": "9b6d6f93507e98c7c4f5973928aea88a5a8a717c4112c419429fa640f8a573e4"
     },
     "docs/sources.md": {
-      "bytes": 13218,
-      "sha256": "7b7eed388a04c09c34914dd6151b1c7fd470bd9ce401bfbf9243e30349385ad7"
+      "bytes": 13891,
+      "sha256": "465d0c828e8a39b14226fa8055ff3a61bb8fea709569225a1d9aa63a44b94d56"
     },
     "patches/fork/0001-host-path-quoting.patch": {
       "bytes": 5385,
@@ -513,8 +517,8 @@
       "sha256": "10a78800d22b76d70463b5c3496d74e2079cd5b5b1fbd2d3cd7a6086add18ff4"
     },
     "diagnostics/README.md": {
-      "bytes": 4006,
-      "sha256": "9720e2a99507b80c03ac2a8d500ba179105cd9b8ed729052dfd4624e429c5f04"
+      "bytes": 6058,
+      "sha256": "df7226c37ab6b6e548eabe093c531f9ceec86a7c247bda16f7508d385e3e9e2a"
     },
     "diagnostics/bootlogger_pid1_probe10.c": {
       "bytes": 23869,
@@ -528,6 +532,10 @@
       "bytes": 25961,
       "sha256": "a0c06689b3b8cb405570eb82dc9c86683b1ac0ddbffea2ce04d4beddfaca42cc"
     },
+    "diagnostics/bootlogger_pid1_probe13.c": {
+      "bytes": 13449,
+      "sha256": "099d7cbe645886266f7d1c4efb1349db245ec6f7602058ab1efa95d22c07685d"
+    },
     "diagnostics/offline-recorder-policy.md": {
       "bytes": 3214,
       "sha256": "55525dce993f4f7bbf1d1d4ae3baafc1c521c2580f214e4d8f9d1aaef8aa7df1"
@@ -537,12 +545,16 @@
       "sha256": "6f8efed3bd0a1fbe27f52cde5a25175e7cf0d3d559a5c2931128f0fb800cc627"
     },
     "diagnostics/probe13-plan.md": {
-      "bytes": 3557,
-      "sha256": "af7cac132a5a1a1e79462177927a261fd392a5f66ed82bc168e43d753eaf2a21"
+      "bytes": 6105,
+      "sha256": "2015dde986b8056dc9a03c9c33edb578fe591531a6f8d2534467fc8b22611c02"
     },
     "diagnostics/replay_secilc_in_chroot.sh": {
       "bytes": 2344,
       "sha256": "9fb6869e328bb8f940bca6fa31ff4b1f251e823af2a96583acbd3fd29d8fc2cb"
+    },
+    "tools/decode_probe13.py": {
+      "bytes": 3545,
+      "sha256": "58e15556e897949920fcfb108c88540afe111b97b5f96352e2e4b9c4e6475d2e"
     },
     "tools/export_github_handoff.py": {
       "bytes": 4516,
@@ -579,6 +591,26 @@
     "support/evidence/probe12-summary.json": {
       "bytes": 1110,
       "sha256": "ce8396b4486b1f01f7d40781333d72b05c3f6c11e963b2f0b94f70156ad750aa"
+    },
+    "support/evidence/probe13-m1-calibration.json": {
+      "bytes": 964,
+      "sha256": "912dd74ed45df95fba05f99c9bc5f815922adbdeb8c4dc99aef194fbe956305c"
+    },
+    "support/evidence/probe13-m1-selected.txt": {
+      "bytes": 577,
+      "sha256": "717fd7176a4d5bcd3b17da862d41fd1266b2d82518b22019fad5a060a06c2711"
+    },
+    "support/evidence/probe13-m2-selected.txt": {
+      "bytes": 1150,
+      "sha256": "6f3bb226f28a705fe03fd2ebaff0c5d8937676579d514fba598bb17c637f1238"
+    },
+    "support/evidence/probe13-m2-summary.json": {
+      "bytes": 1104,
+      "sha256": "1f41039c674a483c8936f1989b7e0d93f4779005d0ed18d708bcecb118f8a0a5"
+    },
+    "support/evidence/probe13-runtime-linker.json": {
+      "bytes": 1508,
+      "sha256": "06c4915f6eaf0f3edf2ff8739b6fe2dc4c57d0a7909ad403ffa5411fb8c04e67"
     },
     "support/evidence/recorder-policy-access.json": {
       "bytes": 6321,

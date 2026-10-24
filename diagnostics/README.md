@@ -67,3 +67,36 @@ value. An opened FD is not proof of access after SELinux policy changes:
 `selinux_file_permission()` in the pinned kernel revalidates access when the
 policy sequence changes. This is a source-derived limitation, not a captured
 AVC or confirmed explanation of the bootloop. See `probe13-plan.md`.
+
+
+## Probe13 mmap recorder — 24 October 2026
+
+`bootlogger_pid1_probe13.c` is the standalone passive follow-up. It keeps a
+proc directory FD, checks syscall errors, and preallocates a bounded regular
+CACHE mmap file. Frames contain length/time/checksum; `tools/decode_probe13.py`
+extracts them read-only. The private kmsg inode is relabeled once only after
+an observed EACCES; policy, enforcement, normal system nodes and kernel remain
+unchanged. See `probe13-plan.md` for scope and limits.
+
+Actual recovery and DS-ACK selftests pass (warm/cold proc-FD detach, mmap
+persistence after ordinary FD close, EBADF reporting, checksum verification
+and corrupt-frame rejection). M1 calibration then booted completed1/enforcing.
+It captures `KMSG_READ_ERROR=-13`, `VFS_WRITE_RC=-13`, successful private kmsg
+label correction, and `init: init second stage started!`. The mmap channel
+survives those denials and recovery, with msync0/fsync0 and heartbeat68410ms,
+zero dropped frames. Monitor domain `u:r:kernel:s0` is observed at runtime.
+M1 BOOT rollback verifies baseline and M1 has been rebooted as control.
+
+The opened proc FD retains self access, but PID1 paths still return ENOENT
+once policy is active. Retaining the FD does not override proc hidepid/MAC
+access checks; the pinned proc source explicitly returns ENOENT for denied
+hidepid2 lookup. The booted M1 control reports proc gid3009/hidepid2; the M2
+policy offline query denies kernel -> init process ptrace. These observations
+support the access-control explanation; the monitor namespace's own mount
+options at the original stop were not captured.
+M2 runtime test is now complete:30 second-stage starts,23 vendor BoringSSL
+SIGABRT/reboot-on-failure records and22 explicit shutdown commands. All slot
+checksums and final msync/fsync values pass; both BOOTs are restored. M2 still
+fails boot. See `../docs/probe13-report.md` and probe13-m2-summary.json.
+Selected evidence: `support/evidence/probe13-m1-calibration.json` and
+`probe13-m1-selected.txt`. No normal fork recipe or ROM package changed.

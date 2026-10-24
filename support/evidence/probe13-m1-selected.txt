@@ -1,0 +1,12 @@
+Selected original decoder line numbers from M1 calibration.
+Runtime normal VFS denial; mmap continues and survives recovery.
+
+7083: [ms=107] VFS_WRITE_RC=0
+7085: [ms=110] VFS_FSYNC_RC=0
+10172: [ms=1685] 14,4119,3197531,-;init: Loading SELinux policy
+10182: [ms=1705] 7,4124,3219539,-;SELinux:  Completing initialization.
+10184: [ms=1705] 7,4125,3219541,-;SELinux:  Setting up existing superblocks.
+10196: [ms=1776] KMSG_READ_ERROR=-13
+10201: [ms=1776] PRIVATE_KMSG_RELABEL=0
+10205: [ms=1776] VFS_WRITE_RC=-13
+10219: [ms=1819] 14,4136,3330299,-;init: init second stage started!

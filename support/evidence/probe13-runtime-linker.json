@@ -1,0 +1,16 @@
+{
+  "source": "installed M2 com.android.runtime.apex / apex_payload.img / bin/linker64",
+  "apex_sha256": "a4f643533716a6ef7823b6758cde2bdad70c1249ae16c84e1dca2ed91eb49b7f",
+  "runtime_linker_sha256": "b22c6d701616a74a51872906c12aa327402b5c2075dc9c33a0f7f8859c38c512",
+  "vendor_selftest_interpreter": "/system/bin/linker64",
+  "interpreter_symlink_target": "/apex/com.android.runtime/bin/linker64",
+  "m2_twrp_output": "arc4random data MADV_WIPEONFORK failed: Invalid argument\nlibc: arc4random data MADV_WIPEONFORK failed: Invalid argument\nAborted \nRUNTIME_LINKER_RC=134\n4.9.118-g36e6ddff22b9\n",
+  "m1_pinned_dsack_output": "arc4random data MADV_WIPEONFORK failed: Invalid argument\nAborted \nRUNTIME_LINKER_RC=134\n4.9.337-DS-ACK-V1.12-G965F-08.05.2026\n",
+  "installed_system_bin_linkerconfig_present": false,
+  "runtime_apex_bin_linkerconfig_present": true,
+  "no_live_policy_load_or_partition_write_during_runtime_check": true,
+  "temporary_ro_mounts_cleaned": true,
+  "limitation": "Loader abort reproduced before selftest main; cryptographic selftest itself has not been validated under a corrected runtime.",
+  "test_target": "byte-identical installed M2 vendor boringssl_self_test64, copied to temporary directory",
+  "a376b_init_linkerconfig_path_strings": "failed to execute linkerconfig\nmount(\"tmpfs\", \"/linkerconfig\", \"tmpfs\", MS_NOEXEC | MS_NOSUID | MS_NODEV, \"mode=0755,uid=0,gid=0\") failed.\n/apex/com.android.runtime/bin/linkerconfig\n/linkerconfig/default\n/linkerconfig\n"
+}

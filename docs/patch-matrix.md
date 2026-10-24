@@ -348,3 +348,21 @@ no fatal/panic or second-stage start captured. See probe12-summary.json.
 The existing probe11 correction diff now also records SIGCHLD details and
 proc-read failures; boot-tested source is retained. `probe13-plan.md` describes
 instrumentation acceptance gates only and has not produced another image.
+
+
+24/10/2026 — standalone probe13, outside the 88-patch fork series. Reason:
+verify recorder access across policy activation after probe12 reproduced the
+loop without tracing. Files: `diagnostics/bootlogger_pid1_probe13.c`,
+`tools/decode_probe13.py`, diagnostic docs and selected evidence. Uses an
+already-mapped/preallocated regular CACHE file, explicit read/write/fsync/
+msync outcomes and retained proc FD; no raw CACHE sectors or policy changes.
+Corrects only the recorder-private kmsg inode label after an observed read
+EACCES. Kernel/DTB/cmdline/non-init CPIO and normal fork recipes remain intact.
+Verification: actual recovery/DS-ACK namespace/detach/persistence/error tests,
+frame corruption rejection, image audit and M1 runtime calibration/BOOT
+rollback PASS. M1 confirms kernel-domain VFS read/write denial with surviving
+mapped output and successful second-stage boot. M2 test/capture/rollback are
+complete:30 second-stage starts,23 BoringSSL SIGABRT/reboot-on-failure records,
+22 explicit shutdown commands. Runtime APEX linker EINVAL/exit134 is reproduced
+on recovery and pinned DS-ACK. No normal ROM patch was changed. Detailed report:
+`docs/probe13-report.md`.

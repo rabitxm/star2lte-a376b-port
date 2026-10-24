@@ -6,17 +6,22 @@ This repository shares source patches, diagnostics and evidence for assistance.
 It does not contain a working Android 17 ROM or firmware images.
 
 **Current status — 24 October 2026:** M1 (S22/Android 16) boots on G965F.
-M2 (A37 A376BXXS5AZH4, Android 16 / SDK36.1 / OneUI80500) still bootloops.
-A37's native bootstrap linker has a reproduced MADV_WIPEONFORK incompatibility
-with the pinned kernel. The M1 bootstrap compatibility overlay in attempt50
-gets init through partition mounts and SELinux setup, but the boot gate remains
-failed. Actual A37 secilc compilation now passes on both TWRP and M1 DS-ACK,
-producing byte-identical policy. Corrected probe11 and passive probe12 both
-reach kernel SELinux initialization and still bootloop. Probe12 disables PID1
-ptrace and reproduces the same last persisted phase; no fatal/panic or
-second-stage marker has been captured. Both BOOT tests were rolled back to the
-pinned baseline. Recorder access after policy activation remains unverified. See [the assistance brief](docs/HELP-WANTED.md) for exact evidence,
-corrections and the next diagnostic question.
+M2 (A37 A376BXXS5AZH4, Android 16 / SDK36.1 / OneUI80500) still bootloops,
+but probe13 now captures the explicit restart trigger. All30 retained boots
+reach second-stage init;23 capture vendor BoringSSL self-test SIGABRT and its
+reboot-on-failure message,22 retain the shutdown command
+`reboot,boringssl-self-check-failed`. The earlier policy-load observation
+boundary was a recorder access failure, demonstrated on M1 and M2.
+
+The native A37 **runtime APEX linker**, in addition to its bootstrap linker,
+reproduces `arc4random data MADV_WIPEONFORK failed: Invalid argument` / exit134
+on the pinned DS-ACK kernel. Attempt50's M1 bootstrap overlay does not replace
+that runtime APEX. A separate linkerconfig execution error remains to be
+resolved; init A37 names the APEX path, so the absence of a system-bin symlink
+alone is not a demonstrated cause. No self-test was bypassed or kernel changed.
+Both diagnostic BOOT images are rolled back: M1 is booted, M2 is in TWRP.
+See [probe13 results](docs/probe13-report.md) and
+[the assistance brief](docs/HELP-WANTED.md) for evidence and remaining limits.
 
 ## Source reproduction
 
