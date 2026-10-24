@@ -1,0 +1,525 @@
+From: Source handoff audit
+Subject: [PATCH] Record existing diagnostic/profile and battery-health source omitted from series
+
+Reason: replay of the 87-patch source series omits five files already present
+in the tested local fork, including the profiles needed by attempt50. Export
+the existing implementation verbatim so external collaborators can reconstruct
+the actual checkout. No code in the local fork is changed by recording this patch.
+Files: platform/exynos9810/installer/bootlogger_pid1_probe.c;
+scripts/internal/prepare_star2lte_boot_diagnostic.py; two M2 init-debug/pstore
+profiles; unica/mods/batteryhealth/customize.sh.
+Verification: replay the complete 88-patch series against pinned upstream and
+compare all 68 modified/added fork files, allowing only documented serial aliases
+in the share export. Battery-health delta is the existing donor classes5 guard;
+diagnostic helpers remain opt-in and normal kernel/vendor/radio are unchanged.
+No rebuild/flash or new runtime behavior is introduced in this handoff audit.
+
+diff --git a/platform/exynos9810/installer/bootlogger_pid1_probe.c b/platform/exynos9810/installer/bootlogger_pid1_probe.c
+--- /dev/null
++++ b/platform/exynos9810/installer/bootlogger_pid1_probe.c
+@@ -0,0 +1,325 @@
++/* Optional M2 early diagnostic; never bundled by normal builds.
++ * Keep PID1 and exec original init with argv/env unchanged. A child copies
++ * selected kernel errors to pmsg and a dedicated CACHE file. It never
++ * formats a partition. Private tmpfs/sysfs/CACHE mounts do not affect PID1.
++ * Verification: TWRP fork/wait/exec and mount-namespace self-tests.
++ */
++#define EXYNOS9810_BOOTLOGGER_WRAPPER
++#include "bootlogger.c"
++
++static int contains(const char *s, long n, const char *needle)
++{
++    size_t z = string_length(needle);
++    for (long i = 0; i + (long)z <= n; ++i) {
++        size_t j = 0;
++        while (j < z && s[i + j] == needle[j]) ++j;
++        if (j == z) return 1;
++    }
++    return 0;
++}
++
++static void finish(long code)
++{
++    syscall6(94, code, 0, 0, 0, 0, 0); /* exit_group */
++    for (;;) {}
++}
++
++static long sysfs_device(const char *path)
++{
++    /* Dynamic majors differ between kernels; read the running kernel. */
++    long fd = open_file(path, O_RDONLY, 0);
++    if (fd < 0) return -1;
++    char text[32];
++    long n = syscall6(SYS_read, fd, (long)text, 31, 0, 0, 0);
++    syscall6(SYS_close, fd, 0, 0, 0, 0, 0);
++    unsigned long major = 0, minor = 0;
++    long i = 0;
++    if (n < 3) return -1;
++    while (i < n && text[i] >= '0' && text[i] <= '9')
++        major = major * 10 + text[i++] - '0';
++    if (i >= n || text[i++] != ':') return -1;
++    while (i < n && text[i] >= '0' && text[i] <= '9')
++        minor = minor * 10 + text[i++] - '0';
++    if (!major || major > 4095 || minor > 1048575) return -1;
++    return (minor & 255) | (major << 8) | ((minor & ~255UL) << 12);
++}
++
++static long pmsg_open(void)
++{
++    long fd = open_file("/dev/pmsg0", O_WRONLY | O_NONBLOCK, 0);
++    if (fd >= 0) return fd;
++    long dev = sysfs_device("/sys/class/pmsg/pmsg0/dev");
++    if (dev < 0) return dev;
++    syscall6(33, AT_FDCWD, (long)"/dev/m2-pmsg-probe", 020600, dev, 0, 0);
++    return open_file("/dev/m2-pmsg-probe", O_WRONLY | O_NONBLOCK, 0);
++}
++
++static long cache_open(void)
++{
++    /* Child-private /dev mountpoint; only the dedicated CACHE file persists. */
++    long dev = sysfs_device("/sys/class/block/sda21/dev");
++    if (dev < 0) return dev;
++    long r = syscall6(33, AT_FDCWD, (long)"/dev/m2-cache-block", 060600, dev, 0, 0);
++    if (r < 0 && r != -17) return r;
++    r = syscall6(34, AT_FDCWD, (long)"/dev/m2-cache", 0700, 0, 0, 0);
++    if (r < 0 && r != -17) return r;
++    r = syscall6(40, (long)"/dev/m2-cache-block", (long)"/dev/m2-cache",
++                 (long)"ext4", 2 | 4 | 1024, (long)"errors=remount-ro", 0);
++    const char *mounted = "/dev/m2-cache";
++    if (r == -16) {
++        /* Already mounted by Android. Never write into an unmounted tmpfs. */
++        mounted = "/cache";
++    } else if (r < 0) return r;
++    unsigned long statbuf[32] = {0};
++    r = syscall6(43, (long)mounted, (long)statbuf, 0, 0, 0, 0);
++    if (r < 0) return r;
++    if (statbuf[0] != 0xef53) return -22; /* EXT4_SUPER_MAGIC */
++    const char *path = (mounted[1] == 'c')
++        ? "/cache/m2-early-boot-probe09.log"
++        : "/dev/m2-cache/m2-early-boot-probe09.log";
++    return open_file(path,
++                     O_WRONLY | O_CREAT | O_APPEND, 0600);
++}
++
++static long namespace_step;
++static char cache_batch[32768];
++
++static long append_decimal(char *dst, long value)
++{
++    char reversed[24];
++    long count = 0;
++    do { reversed[count++] = '0' + value % 10; value /= 10; } while (value && count < 24);
++    for (long i = 0; i < count; ++i) dst[i] = reversed[count - i - 1];
++    return count;
++}
++
++static long monotonic_milliseconds(void)
++{
++    struct timespec now;
++    if (syscall6(113, 1, (long)&now, 0, 0, 0, 0) < 0) return -1;
++    return now.tv_sec * 1000 + now.tv_nsec / 1000000;
++}
++static long monitor_namespace(int cold_sysfs)
++{
++    /* Child-only mount namespace. PID1's mount table is never changed. */
++    namespace_step = 1;
++    long r = syscall6(97, 0x20000, 0, 0, 0, 0, 0); /* unshare(CLONE_NEWNS) */
++    if (r < 0) return r;
++    namespace_step = 2;
++    r = syscall6(40, 0, (long)"/", 0, (1UL << 18) | 16384, 0, 0);
++    if (r < 0) return r; /* MS_PRIVATE | MS_REC */
++    namespace_step = 3;
++    r = syscall6(40, (long)"tmpfs", (long)"/dev", (long)"tmpfs", 2,
++                 (long)"mode=0755,size=1m", 0);
++    if (r < 0) return r;
++    namespace_step = 4;
++    if (cold_sysfs) {
++        r = syscall6(39, (long)"/sys", 2, 0, 0, 0, 0); /* umount2 MNT_DETACH */
++        if (r < 0) return r;
++    }
++    r = syscall6(40, (long)"sysfs", (long)"/sys", (long)"sysfs", 0, 0, 0);
++    if (r < 0 && r != -16) return r; /* EBUSY: inherited sysfs mount */
++    /* pmsg is optional on the pinned system kernel; CACHE block sysfs is not. */
++    long sysfd = open_file("/sys/class/block/sda21/dev", O_RDONLY, 0);
++    if (sysfd < 0) return sysfd;
++    syscall6(SYS_close, sysfd, 0, 0, 0, 0, 0);
++    syscall6(33, AT_FDCWD, (long)"/dev/kmsg", 020600, (1 << 8) | 11, 0, 0);
++    return 0;
++}
++
++static void monitor(long exec_pipe)
++{
++    char buf[4096], pending[8192];
++    long used = 0, in = -1, out = -1, cache = -1;
++    long batched = 0, records = 0, cache_bytes = 0;
++    long start = monotonic_milliseconds(), last_sync = start;
++    long exec_result = 0, exec_reported = 0;
++    for (long tick = 0; tick < 6000; ++tick) {
++        if (exec_pipe >= 0 && !exec_result) {
++            long result;
++            long n = syscall6(SYS_read, exec_pipe, (long)&result, sizeof(result), 0, 0, 0);
++            if (n == sizeof(result) && result < 0) exec_result = result;
++            else if (n == 0) exec_result = 1; /* CLOEXEC closed writer. */
++        }
++        if (cache < 0) {
++            cache = cache_open();
++            if (cache >= 0) {
++                const char *mark = "\nM2-PID1-PROBE-v7: exec-report monitor ready\n";
++                write_all(cache, mark, string_length(mark));
++                syscall6(SYS_fsync, cache, 0, 0, 0, 0, 0);
++            }
++        }
++        if (cache >= 0 && exec_result && !exec_reported) {
++            char msg[128];
++            const char *tag = exec_result < 0 ? "M2-INIT-EXEC-FAILED errno=" : "M2-INIT-EXEC-PIPE-EOF cloexec_or_parent_exit=";
++            long n = string_length(tag);
++            copy_bytes(msg, tag, n);
++            n += append_decimal(msg + n, exec_result < 0 ? -exec_result : exec_result);
++            msg[n++] = '\n';
++            write_all(cache, msg, n);
++            syscall6(SYS_fsync, cache, 0, 0, 0, 0, 0);
++            exec_reported = 1;
++        }
++        if (out < 0) {
++            out = pmsg_open();
++            if (out >= 0) {
++                const char *mark = "\nM2-PID1-PROBE-v2: private monitor ready\n";
++                write_all(out, mark, string_length(mark));
++                if (used) write_all(out, pending, used);
++                used = 0;
++            }
++        }
++        if (in < 0) in = open_file("/dev/kmsg", O_RDONLY | O_NONBLOCK, 0);
++        if (in >= 0) {
++            for (int batch = 0; batch < 256; ++batch) {
++                long n = syscall6(SYS_read, in, (long)buf, sizeof(buf), 0, 0, 0);
++                if (n == -32) continue; /* EPIPE: ring overrun, next read recovers */
++                if (n <= 0) break;
++                ++records;
++                if (out >= 0) write_all(out, buf, n);
++                if (cache >= 0 && cache_bytes < 8 * 1024 * 1024) {
++                    if (batched + n > (long)sizeof(cache_batch)) {
++                        write_all(cache, cache_batch, batched);
++                        cache_bytes += batched;
++                        batched = 0;
++                    }
++                    copy_bytes(cache_batch + batched, buf, n);
++                    batched += n;
++                }
++                else {
++                    if (used + n > (long)sizeof(pending)) used = 0;
++                    copy_bytes(pending + used, buf, n); used += n;
++                }
++            }
++        }
++        long now = monotonic_milliseconds();
++        if (cache >= 0 && now >= 0 && (last_sync < 0 || now - last_sync >= 100)) {
++            if (batched) {
++                write_all(cache, cache_batch, batched);
++                cache_bytes += batched;
++                batched = 0;
++            }
++            char beat[96];
++            long n = 0;
++            const char *tag = "M2-PROBE-HEARTBEAT ms=";
++            copy_bytes(beat, tag, string_length(tag)); n += string_length(tag);
++            n += append_decimal(beat + n, now - start);
++            tag = " records="; copy_bytes(beat + n, tag, string_length(tag)); n += string_length(tag);
++            n += append_decimal(beat + n, records);
++            beat[n++] = '\n';
++            write_all(cache, beat, n);
++            syscall6(SYS_fsync, cache, 0, 0, 0, 0, 0);
++            last_sync = now;
++        }
++        sleep_milliseconds(10);
++    }
++    finish(0);
++}
++
++void probe_start(unsigned long *stack)
++{
++    unsigned long argc = stack[0];
++    char **argv = (char **)(stack + 1);
++    char **env = argv + argc + 1;
++    long pid = syscall6(172, 0, 0, 0, 0, 0, 0);
++    if (pid != 1) {
++        if (argc == 2 && contains(argv[1], string_length(argv[1]), "--exec-report-test")) {
++            int channel[2];
++            if (syscall6(59, (long)channel, 0x80000, 0, 0, 0, 0) < 0) finish(30);
++            long child = syscall6(220, 17, 0, 0, 0, 0, 0);
++            if (child < 0) finish(31);
++            if (!child) {
++                syscall6(SYS_close, channel[1], 0, 0, 0, 0, 0);
++                long err = 0;
++                long n = syscall6(SYS_read, channel[0], (long)&err, sizeof(err), 0, 0, 0);
++                finish(n == sizeof(err) && err == -2 ? 0 : 32);
++            }
++            syscall6(SYS_close, channel[0], 0, 0, 0, 0, 0);
++            long err = syscall6(221, (long)"/__m2_probe_nonexistent_init__", (long)argv, (long)env, 0, 0, 0);
++            write_all(channel[1], (const char *)&err, sizeof(err));
++            int status = -1;
++            if (syscall6(260, child, (long)&status, 0, 0, 0, 0) != child || status) finish(33);
++            const char *ok = "PROBE-EXEC-ENOENT-PIPE-PASS\n";
++            write_all(1, ok, string_length(ok));
++            finish(0);
++        }
++        if (argc == 2 && (contains(argv[1], string_length(argv[1]), "--namespace-test") ||
++                          contains(argv[1], string_length(argv[1]), "--namespace-cold-test") ||
++                          contains(argv[1], string_length(argv[1]), "--pmsg-write-test") ||
++                          contains(argv[1], string_length(argv[1]), "--cache-write-test"))) {
++            int cold = contains(argv[1], string_length(argv[1]), "--namespace-cold-test");
++            int write_test = contains(argv[1], string_length(argv[1]), "--pmsg-write-test");
++            int cache_test = contains(argv[1], string_length(argv[1]), "--cache-write-test");
++            long r = monitor_namespace(cold);
++            if (r < 0) {
++                char msg[] = "NAMESPACE stage=0 errno=000\n";
++                msg[16] = '0' + namespace_step;
++                long err = -r;
++                msg[26] = '0' + err % 10;
++                msg[25] = '0' + (err / 10) % 10;
++                msg[24] = '0' + (err / 100) % 10;
++                write_all(1, msg, sizeof(msg) - 1);
++                finish(20);
++            }
++            long in = open_file("/dev/kmsg", O_RDONLY | O_NONBLOCK, 0);
++            long out = pmsg_open();
++            if (in < 0 || (write_test && out < 0)) finish(21);
++            if (cache_test) {
++                long cache = cache_open();
++                if (cache < 0) finish(24);
++                const char *mark = "M2-CACHE-RAM-SELFTEST-20261022-PROBE05\n";
++                if (write_all(cache, mark, string_length(mark)) < 0) finish(25);
++                syscall6(SYS_fsync, cache, 0, 0, 0, 0, 0);
++                syscall6(SYS_close, cache, 0, 0, 0, 0, 0);
++                const char *written = "PROBE-CACHE-WRITE-PASS\n";
++                write_all(1, written, string_length(written));
++                finish(0);
++            }
++            if (write_test) {
++                const char *mark = "M2-PMSG-RAM-SELFTEST-20261022-PROBE04\n";
++                if (write_all(out, mark, string_length(mark)) < 0) finish(23);
++                syscall6(SYS_close, out, 0, 0, 0, 0, 0);
++                const char *written = "PROBE-PMSG-WRITE-PASS\n";
++                write_all(1, written, string_length(written));
++                finish(0);
++            }
++            const char *ok = "PROBE-PRIVATE-TMPFS-SYSFS-KMSG-OPEN-PASS\n";
++            write_all(1, ok, string_length(ok));
++            finish(0); /* No pmsg write in self-test. Mounts vanish at exit. */
++        }
++        if (argc == 2 && contains(argv[1], string_length(argv[1]), "--self-test")) {
++            long child = syscall6(220, 17, 0, 0, 0, 0, 0);
++            if (child < 0) finish(10);
++            if (!child) finish(0);
++            int status = -1;
++            if (syscall6(260, child, (long)&status, 0, 0, 0, 0) != child || status) finish(11);
++            char *test[] = {"/sbin/sh", "-c", "test \"$M2_PROBE_TEST\" = env-preserved && echo PROBE-FORK-WAIT-EXEC-ENV-PASS", 0};
++            syscall6(221, (long)test[0], (long)test, (long)env, 0, 0, 0);
++            finish(12);
++        }
++        finish(13); /* never execute init from a non-PID1 invocation */
++    }
++    int exec_pipe[2] = {-1, -1};
++    syscall6(59, (long)exec_pipe, 0x80000 | O_NONBLOCK, 0, 0, 0, 0); /* pipe2 CLOEXEC */
++    long child = syscall6(220, 17, 0, 0, 0, 0, 0);
++    if (!child) {
++        if (exec_pipe[1] >= 0) syscall6(SYS_close, exec_pipe[1], 0, 0, 0, 0, 0);
++        if (monitor_namespace(0) < 0) finish(22);
++        monitor(exec_pipe[0]);
++    }
++    if (exec_pipe[0] >= 0) syscall6(SYS_close, exec_pipe[0], 0, 0, 0, 0, 0);
++    /* Even clone failure must not prevent original init. No wait in PID1. */
++    long exec_error = syscall6(221, (long)"/init.real", (long)argv, (long)env, 0, 0, 0);
++    if (exec_pipe[1] >= 0 && child > 0) {
++        write_all(exec_pipe[1], (const char *)&exec_error, sizeof(exec_error));
++        sleep_milliseconds(1000); /* Failure only: allow child to persist errno. */
++    }
++    long out = pmsg_open();
++    if (out >= 0) {
++        const char *err = "\nM2-PID1-PROBE-v2: exec /init.real FAILED\n";
++        write_all(out, err, string_length(err));
++    }
++    finish(127);
++}
++
++__asm__(".global _start\n_start:\nmov x0, sp\nbl probe_start\n");
+diff --git a/scripts/internal/prepare_star2lte_boot_diagnostic.py b/scripts/internal/prepare_star2lte_boot_diagnostic.py
+--- /dev/null
++++ b/scripts/internal/prepare_star2lte_boot_diagnostic.py
+@@ -0,0 +1,135 @@
++#!/usr/bin/env python3
++"""Prepare a pinned G965F M2 command-line diagnostic, never flash a device.
++
++Reason: repeated M2 resets leave no Android fatal log. Preserve the known-good
++M1/DS-ACK payload; only request verbose logging and init fatal diagnostics.
++Verification: exact base hash/header, byte-identical kernel/ramdisk/DTB/tail,
++and every changed byte confined to the legacy 512-byte command-line field.
++"""
++import argparse
++import hashlib
++import json
++from pathlib import Path
++import struct
++
++BASE = 'cc618abc72e8e568e56a8c643c906cff0d7b9143dfc77d86dc645f55776ed01d'
++PARAMS = ('loglevel=7 ignore_loglevel '
++          'androidboot.init_fatal_reboot_target=recovery '
++          'androidboot.init_fatal_panic=true')
++
++
++def digest(data):
++    return hashlib.sha256(data).hexdigest()
++
++
++def prepare_probe_ramdisk(source, probe, output):
++    """Prepare raw cpio for existing MagiskBoot; do not pack/flash a kernel."""
++    boot = source.read_bytes()
++    if digest(boot) != BASE:
++        raise ValueError('Probe requires the same pinned BOOT capture')
++    ks, _, rs, _, _, _, _, page, _, _ = struct.unpack_from('<10I', boot, 8)
++    start = page + (ks + page - 1) // page * page
++    raw = boot[start:start + rs]
++    pos, records, names = 0, [], []
++    while pos + 110 <= len(raw):
++        head = raw[pos:pos + 110]
++        if head[:6] != b'070701':
++            raise ValueError('Expected raw newc ramdisk')
++        vals = [int(head[6 + i * 8:14 + i * 8], 16) for i in range(13)]
++        size, ns = vals[6], vals[11]
++        name = raw[pos + 110:pos + 110 + ns - 1].decode('ascii')
++        data_start = (pos + 110 + ns + 3) // 4 * 4
++        end = (data_start + size + 3) // 4 * 4
++        if end > len(raw):
++            raise ValueError('Truncated cpio')
++        records.append((name, vals, raw[data_start:data_start + size]))
++        names.append(name)
++        pos = end
++        if name == 'TRAILER!!!':
++            break
++    if names.count('init') != 1 or 'init.real' in names or names[-1] != 'TRAILER!!!':
++        raise ValueError('Unexpected init/archive inventory')
++    payload = probe.read_bytes()
++    if payload[:5] != b'\x7fELF\x02' or struct.unpack_from('<H', payload, 18)[0] != 183:
++        raise ValueError('Probe must be ELF64 AArch64')
++    original = next(r for r in records if r[0] == 'init')
++    inode = max(r[1][0] for r in records) + 1
++    def entry(name, vals, data):
++        vals = list(vals)
++        vals[6], vals[11] = len(data), len(name) + 1
++        result = b'070701' + ''.join(f'{v:08x}' for v in vals).encode() + name.encode() + b'\0'
++        result += b'\0' * (-len(result) % 4)
++        result += data
++        return result + b'\0' * (-len(result) % 4)
++    result = b''
++    for name, vals, data in records:
++        if name == 'init':
++            result += entry('init.real', vals, data)
++            v = list(vals); v[0] = inode
++            result += entry('init', v, payload)
++        else:
++            result += entry(name, vals, data)
++    result += b'\0' * (-len(result) % 512)
++    with output.open('xb') as handle:
++        handle.write(result)
++    output.chmod(0o600)
++    return {'base_sha256': BASE, 'ramdisk_sha256': digest(result),
++            'original_init_sha256': digest(original[2]), 'probe_sha256': digest(payload),
++            'change': 'rename original init to init.real, install explicit PID1 probe as init',
++            'other_cpio_entries_unchanged': True, 'device_write_performed': False}
++
++
++def prepare(source, output):
++    old = source.read_bytes()
++    if digest(old) != BASE or len(old) != 57671680 or old[:8] != b'ANDROID!':
++        raise ValueError('Input must be the pinned full G965F BOOT capture')
++    ks, _, rs, _, ss, _, _, page, ds, _ = struct.unpack_from('<10I', old, 8)
++    if (ks, rs, ss, page, ds) != (37605888, 2081280, 0, 2048, 309248):
++        raise ValueError('Unexpected Samsung legacy boot layout')
++    field = old[64:576]
++    cmd, padding = field.split(b'\0', 1)
++    if cmd != b'androidboot.selinux=enforcing' or any(padding):
++        raise ValueError('Unexpected command line or nonempty padding')
++    new_cmd = cmd + b' ' + PARAMS.encode('ascii')
++    if len(new_cmd) >= 512:
++        raise ValueError('Command line exceeds legacy field')
++    new = old[:64] + new_cmd.ljust(512, b'\0') + old[576:]
++    assert old[:64] == new[:64] and old[576:] == new[576:]
++    align = lambda n: (n + page - 1) // page * page
++    offsets = {'kernel': (page, ks),
++               'ramdisk': (page + align(ks), rs),
++               'dtb': (page + align(ks) + align(rs), ds)}
++    parts = {}
++    for name, (start, size) in offsets.items():
++        assert old[start:start + size] == new[start:start + size]
++        parts[name] = digest(new[start:start + size])
++    report = {'purpose': 'M2 early init fatal diagnostic; runtime effectiveness unverified',
++              'model': 'SM-G965F', 'serial': 'M2_G965F_SERIAL',
++              'bootloader': 'G965FXXUHFVG6', 'base_sha256': BASE,
++              'diagnostic_sha256': digest(new), 'bytes': len(new),
++              'cmdline_before': cmd.decode(), 'cmdline_after': new_cmd.decode(),
++              'changed_field': 'legacy boot header bytes 64..575 only',
++              'payload_sha256': parts, 'kernel_ramdisk_dtb_tail_unchanged': True,
++              'device_write_performed': False,
++              'limitation': 'fatal-panic support is observed in A37 init, not old ramdisk init; '
++                            'pstore survival and recovery target must be verified on device'}
++    output.mkdir(mode=0o700, parents=False, exist_ok=False)
++    for name, data in [('diagnostic-boot.img', new), ('rollback-boot.img', old),
++                       ('manifest.json', (json.dumps(report, indent=2) + '\n').encode())]:
++        with (output / name).open('xb') as handle:
++            handle.write(data)
++        (output / name).chmod(0o600)
++    return report
++
++
++if __name__ == '__main__':
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument('--source', type=Path, required=True)
++    parser.add_argument('--output', type=Path, required=True)
++    parser.add_argument('--probe', type=Path, help='prepare raw probe cpio for existing MagiskBoot')
++    args = parser.parse_args()
++    if args.probe:
++        report = prepare_probe_ramdisk(args.source, args.probe, args.output)
++    else:
++        report = prepare(args.source, args.output)
++    print(json.dumps(report, indent=2))
+diff --git a/target/star2lte/profiles/m2-g965f-a376b-android16-no-ksu-init-debug.sh b/target/star2lte/profiles/m2-g965f-a376b-android16-no-ksu-init-debug.sh
+--- /dev/null
++++ b/target/star2lte/profiles/m2-g965f-a376b-android16-no-ksu-init-debug.sh
+@@ -0,0 +1,10 @@
++# Diagnostic M2 profile: calibrated init and system-boot logging on CACHE.
++# Reason: attempt47 still bootloops with no Android ADB or useful fatal log.
++# Files affected by this choice: BOOT ramdisk diagnostics and CACHE log files;
++# donor images, Hybrid Vendor VNDK33, RIL/blob set and selected DS-ACK stay pinned.
++# Verify compiled debug hook flags and CACHE milestones against the known-booting
++# M1 calibration before any M2 reboot. This is not a release profile.
++source "$(dirname -- "${BASH_SOURCE[0]}")/m2-g965f-a376b-android16-no-ksu.sh" || return 1
++export ROM_MILESTONE="M2"
++export EXYNOS9810_ENABLE_INIT_DEBUG="true"
++export EXYNOS9810_ENABLE_SYSTEM_BOOT_DEBUG="true"
+diff --git a/target/star2lte/profiles/m2-g965f-a376b-android16-no-ksu-pstore-trace.sh b/target/star2lte/profiles/m2-g965f-a376b-android16-no-ksu-pstore-trace.sh
+--- /dev/null
++++ b/target/star2lte/profiles/m2-g965f-a376b-android16-no-ksu-pstore-trace.sh
+@@ -0,0 +1,8 @@
++# Attempt49 diagnostic profile: add existing vendor init phase markers.
++# Reason: attempt48 bootloop left no CACHE logger files or attributable Android log.
++# Files/runtime affected: final vendor init rc writes phase markers to /dev/kmsg;
++# no kernel, donor, Hybrid Vendor VNDK33, RIL/blob, or DS-ACK changes.
++# Verify trace rc survives finalization and markers appear in pstore/last_kmsg.
++source "$(dirname -- "${BASH_SOURCE[0]}")/m2-g965f-a376b-android16-no-ksu-init-debug.sh" || return 1
++export ROM_MILESTONE="M2"
++export EXYNOS9810_ENABLE_VENDOR_BOOT_TRACE="true"
+diff --git a/unica/mods/batteryhealth/customize.sh b/unica/mods/batteryhealth/customize.sh
+--- a/unica/mods/batteryhealth/customize.sh
++++ b/unica/mods/batteryhealth/customize.sh
+@@ -1,7 +1,10 @@
+ # Exynos9810: expose Samsung battery health information in Settings.
+ # This only changes availability checks; the stock health service remains intact.
+ 
+-if [ ! -f "$APKTOOL_DIR/system/priv-app/SecSettings/SecSettings.apk/smali_classes4/com/samsung/android/settings/deviceinfo/batteryinfo/BatteryRegulatoryPreferenceController.smali" ]; then
++# A376B moved these exact descriptors to classes5; SMALI_PATCH resolves their
++# unique class locations and still rejects missing methods or ambiguity.
++if [ "${ROM_SOURCE_CONFIG:-}" != "essi_a376b_android16" ] && \
++        [ ! -f "$APKTOOL_DIR/system/priv-app/SecSettings/SecSettings.apk/smali_classes4/com/samsung/android/settings/deviceinfo/batteryinfo/BatteryRegulatoryPreferenceController.smali" ]; then
+     LOGE "Battery health controller is missing from SecSettings.apk"
+     exit 1
+ fi

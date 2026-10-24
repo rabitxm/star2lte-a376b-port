@@ -1,0 +1,24 @@
+From: Codex local compatibility adaptation
+Subject: [PATCH] Port AZH4 CoreRune dynamic resolution flag
+
+Reason: `attempt18.txt:1087-1097` shows the upstream resolution patch does not match A376B CoreRune. AZH4 currently assigns FW_DYNAMIC_RESOLUTION_CONTROL=false while the star2lte target config enables it and floating_feature.xml lists WQHD,FHD,HD. The old patch's two VRR resolution flags are already false. At the real product_feature patch call site, replace only the dynamic-resolution assignment with true (v3) for exact A376B16.
+Files: unica/patches/product_feature/customize.sh.
+Verification: confirm exact caller and target feature settings, `bash -n`, clean build20 and inspect final CoreRune smali/APK for dynamic=true and VRR=false/false.
+
+---
+--- a/unica/patches/product_feature/customize.sh
++++ b/unica/patches/product_feature/customize.sh
+@@ -214,6 +214,13 @@
+         if [ "$TARGET_PLATFORM_SDK_VERSION" -ge "36" ]; then
+             APPLY_PATCH "system" "system/framework/framework.jar" \
+                 "$MODPATH/resolution/framework.jar/0001-Enable-FW_SUPPORT_MULTI_RESOLUTION.patch"
++        elif [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++            LOGW "Porting CoreRune dynamic-resolution flag to A376B target; AZH4 VRR resolution flags are already false"
++            SMALI_PATCH "system" "system/framework/framework.jar" \
++                "smali_classes6/com/samsung/android/rune/CoreRune.smali" "replace" \
++                "<clinit>()V" \
++                "sput-boolean v4, Lcom/samsung/android/rune/CoreRune;->FW_DYNAMIC_RESOLUTION_CONTROL:Z" \
++                "sput-boolean v3, Lcom/samsung/android/rune/CoreRune;->FW_DYNAMIC_RESOLUTION_CONTROL:Z"
+         else
+             APPLY_PATCH "system" "system/framework/framework.jar" \
+                 "$MODPATH/resolution/framework.jar/0001-Enable-FW_DYNAMIC_RESOLUTION_CONTROL.patch"

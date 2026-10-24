@@ -1,0 +1,44 @@
+From: Codex local regression repair
+Subject: [PATCH] Isolate threshold loop and methodless replaceall validation
+
+Reason: attempt24.txt stops at product_feature/customize.sh:619: METHOD=getMainInstance leaked from the patch0044 threshold loop into SMALI_PATCH replaceall. replaceall takes no method argument and may edit class fields. Rename/unset the loop selector and restrict the helper method-existence check to operations that actually take METHOD. File existence, donor descriptor resolution and substitution checks remain strict.
+Files: unica/patches/product_feature/customize.sh; scripts/utils/smali_utils.sh.
+Verification: actual helper fixture edits a field-only class despite unrelated caller METHOD; missing real method remains rejected. Continue actual AZH4 recipe preflight, shell syntax, source replay and clean build. Rollback0050.
+
+---
+--- a/unica/patches/product_feature/customize.sh
++++ b/unica/patches/product_feature/customize.sh
+@@ -512,15 +512,16 @@
+     if [[ "$SOURCE_LCD_CONFIG_SEAMLESS_BRT" != "none" ]] && [[ "$SOURCE_LCD_CONFIG_SEAMLESS_LUX" != "none" ]] && \
+             [[ "$TARGET_LCD_CONFIG_SEAMLESS_BRT" == "none" ]] && [[ "$TARGET_LCD_CONFIG_SEAMLESS_LUX" == "none" ]]; then
+         if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
+-            for METHOD in "$REFRESH_RATE_CONFIG_DUMP_METHOD" \
++            for A376B_HFR_THRESHOLD_METHOD in "$REFRESH_RATE_CONFIG_DUMP_METHOD" \
+                     "getMainInstance()Lcom/samsung/android/hardware/display/RefreshRateConfig;"; do
+                 SMALI_PATCH "system" "system/framework/framework.jar" \
+                     "smali_classes6/com/samsung/android/hardware/display/RefreshRateConfig.smali" "replace" \
+-                    "$METHOD" "$SOURCE_LCD_CONFIG_SEAMLESS_BRT" ""
++                    "$A376B_HFR_THRESHOLD_METHOD" "$SOURCE_LCD_CONFIG_SEAMLESS_BRT" ""
+                 SMALI_PATCH "system" "system/framework/framework.jar" \
+                     "smali_classes6/com/samsung/android/hardware/display/RefreshRateConfig.smali" "replace" \
+-                    "$METHOD" "$SOURCE_LCD_CONFIG_SEAMLESS_LUX" ""
++                    "$A376B_HFR_THRESHOLD_METHOD" "$SOURCE_LCD_CONFIG_SEAMLESS_LUX" ""
+             done
++            unset A376B_HFR_THRESHOLD_METHOD
+         else
+             APPLY_PATCH "system" "system/framework/framework.jar" \
+                 "$MODPATH/hfr/framework.jar/0001-Remove-brightness-threshold-values.patch"
+--- a/scripts/utils/smali_utils.sh
++++ b/scripts/utils/smali_utils.sh
+@@ -131,7 +131,10 @@
+     fi
+ 
+     # Check if provided method is method and exists inside smali
+-    if ! grep "^\.method.*" "$FILE_PATH/$SMALI" | grep -q -F -- "$METHOD" "$FILE_PATH/$SMALI"; then
++    # replaceall edits a whole class (including fields), and has no METHOD
++    # argument. Never use an unrelated caller variable as its method selector.
++    if [[ "$OPERATION" != "replaceall" ]] && \
++            ! grep "^\.method.*" "$FILE_PATH/$SMALI" | grep -q -F -- "$METHOD" "$FILE_PATH/$SMALI"; then
+         LOGE "Method \"$METHOD\" not found in /$PARTITION/$FILE/$SMALI"
+ 
+         local MATCHES

@@ -1,0 +1,31 @@
+From: Codex local compatibility adaptation
+Subject: [PATCH] Guard absent A376B HDM constructor patch target
+
+Reason: `attempt16.txt:1043` reports failed replacement of source API literal 36 in `HdmVendorController.<init>()V`. The decoded AZH4 class has no constructor method; the first two HDM substitutions succeeded. Skip only this inapplicable method edit for exact A376B16 and retain all other source-to-target shipping API substitutions.
+Files: unica/patches/product_feature/customize.sh.
+Verification: inspect decoded class for absent constructor, `bash -n`, and clean build17.
+
+---
+--- a/unica/patches/product_feature/customize.sh
++++ b/unica/patches/product_feature/customize.sh
+@@ -36,11 +36,15 @@
+         "isSupported(Landroid/content/Context;)Z" \
+         "$SOURCE_PRODUCT_SHIPPING_API_LEVEL" \
+         "$TARGET_PRODUCT_SHIPPING_API_LEVEL"
+-    SMALI_PATCH "system" "system/framework/services.jar" \
+-        "smali/com/android/server/enterprise/hdm/HdmVendorController.smali" "replace" \
+-        "<init>()V" \
+-        "$SOURCE_PRODUCT_SHIPPING_API_LEVEL" \
+-        "$TARGET_PRODUCT_SHIPPING_API_LEVEL"
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++        LOGW "A376B AZH4 HdmVendorController has no <init>()V method; skipping only its inapplicable shipping-API substitution"
++    else
++        SMALI_PATCH "system" "system/framework/services.jar" \
++            "smali/com/android/server/enterprise/hdm/HdmVendorController.smali" "replace" \
++            "<init>()V" \
++            "$SOURCE_PRODUCT_SHIPPING_API_LEVEL" \
++            "$TARGET_PRODUCT_SHIPPING_API_LEVEL"
++    fi
+     SMALI_PATCH "system" "system/framework/services.jar" \
+         "smali/com/android/server/knox/dar/ddar/ta/TAProxy.smali" "replace" \
+         "updateServiceHolder(Z)V" \

@@ -1,0 +1,69 @@
+From: Codex local A376B compatibility adaptation
+Subject: [PATCH] Scope S22-only final workarounds and recognize Rubin38
+
+Reason: final-tail78b.txt:346,350-351 finds changed DressRoom object-capture,
+IPService VizManager and Rubin38 layout. Prior runtime evidence belongs to S22,
+not AZH4: do not transplant its classifier-disable or derived database-password
+workarounds onto unrelated donor classes. Keep A376B implementations/encryption
+and require runtime logs before adapting these fixes. The package-presence gate
+must check actual RubinVersion38 instead of RubinVersion37 on this donor.
+Files: unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh.
+Verification: exact source guards, actual package paths inspected, diagnostic
+helpers/package gate, shell/replay and clean build. Optional wallpaper/classifier/
+personalization behavior remains unverified on M2; no runtime success claim.
+
+---
+--- a/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
+@@ -5513,6 +5513,10 @@
+ 
+ _EXYNOS9810_FINAL_FIX_WALLPAPER_OBJECTCAPTURE()
+ {
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++        LOGW "AZH4 uses a different object-capture implementation; retaining donor behavior pending M2 runtime logs"
++        return 0
++    fi
+     # Preserve the complete S22 One UI 8 wallpaper stack. Its optional ArcSoft
+     # subject segmentation advertises support but cannot initialize on the
+     # Exynos9810 compute stack, so DressRoom waits forever at "Applying". Make
+@@ -5618,6 +5622,10 @@
+ 
+ _EXYNOS9810_FINAL_PATCH_ONEUI8_IPSERVICE()
+ {
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++        LOGW "AZH4 IPService differs from the S22 VizManager; retaining donor classifier pending M2 runtime logs"
++        return 0
++    fi
+     # Keep the S22 One UI 8 IPService, but disable its incompatible legacy
+     # gallery-classifier initialization. On Exynos9810 the S22 Java/JNI pair
+     # jumps through an invalid native entry while processing a newly applied
+@@ -5676,6 +5684,10 @@
+ 
+ _EXYNOS9810_FINAL_PATCH_PERSONALIZATION_DATABASE_KEYS()
+ {
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++        LOGW "AZH4 Rubin38 key management differs; retaining donor database encryption pending M2 runtime logs"
++        return 0
++    fi
+     # Rubin and the current full Smart Suggestions package encrypt their Room
+     # databases through AndroidKeyStore. The legacy Exynos9810 keymaster cannot
+     # upgrade those S22-era key blobs: Rubin receives an empty password and
+@@ -6156,13 +6168,17 @@
+ _EXYNOS9810_FINAL_VERIFY_WALLPAPER_AND_BRIEF_STACK()
+ {
+     local REL
++    local RUBIN_PACKAGE="RubinVersion37"
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++        RUBIN_PACKAGE="RubinVersion38"
++    fi
+ 
+     LOG "- Verifying One UI 8 wallpaper and Now Brief packages"
+     for REL in \
+         system/priv-app/DressRoom/DressRoom.apk \
+         system/priv-app/IPService/IPService.apk \
+         system/priv-app/Moments/Moments.apk \
+-        system/priv-app/RubinVersion37/RubinVersion37.apk \
++        "system/priv-app/$RUBIN_PACKAGE/$RUBIN_PACKAGE.apk" \
+         system/priv-app/SamsungSmartSuggestions/SamsungSmartSuggestions.apk \
+         system/priv-app/SpriteWallpaper/SpriteWallpaper.apk; do
+         [ -f "$WORK_DIR/system/$REL" ] || {

@@ -1,0 +1,35 @@
+From: Codex local compatibility adaptation
+Subject: [PATCH] Adapt GlobalPostProcMgr encoder register for A376B
+
+Reason: attempt12 reports at `unica/patches/legacy/customize.sh:719` that the expected `const v3, 0x7f420888` is absent in GlobalPostProcMgr. The actual decoded AZH4 EncoderFilter.configCodec contains `const v4, 0x7f420888` at line 1908 and uses v4 for the value subsequently passed to Message.get. Change that exact donor operand to the same target-compatible color format used by the existing encoder patches.
+Files: unica/patches/legacy/customize.sh.
+Verification: inspect exact AZH4 method/constant, donor-only v4 patch and compiled APK rebuild; leave v3 upstream path unchanged for other donors.
+
+---
+--- a/unica/patches/legacy/customize.sh
++++ b/unica/patches/legacy/customize.sh
+@@ -716,11 +716,19 @@
+             fi
+         fi
+         if [ -f "$WORK_DIR/system/system/priv-app/GlobalPostProcMgr/GlobalPostProcMgr.apk" ]; then
+-            SMALI_PATCH "system" "system/priv-app/GlobalPostProcMgr/GlobalPostProcMgr.apk" \
+-                "smali/com/samsung/android/sum/core/filter/EncoderFilter.smali" "replace" \
+-                'configCodec(Lcom/samsung/android/sum/core/message/Message;)V' \
+-                'const v3, 0x7f420888' \
+-                'const v3, 0x7f000789'
++            if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++                SMALI_PATCH "system" "system/priv-app/GlobalPostProcMgr/GlobalPostProcMgr.apk" \
++                    "smali/com/samsung/android/sum/core/filter/EncoderFilter.smali" "replace" \
++                    'configCodec(Lcom/samsung/android/sum/core/message/Message;)V' \
++                    'const v4, 0x7f420888' \
++                    'const v4, 0x7f000789'
++            else
++                SMALI_PATCH "system" "system/priv-app/GlobalPostProcMgr/GlobalPostProcMgr.apk" \
++                    "smali/com/samsung/android/sum/core/filter/EncoderFilter.smali" "replace" \
++                    'configCodec(Lcom/samsung/android/sum/core/message/Message;)V' \
++                    'const v3, 0x7f420888' \
++                    'const v3, 0x7f000789'
++            fi
+         fi
+         SMALI_PATCH "system" "system/priv-app/SamsungCamera/SamsungCamera.apk" \
+             "smali_classes3/com/samsung/android/sum/core/filter/EncoderFilter.smali" "replace" \

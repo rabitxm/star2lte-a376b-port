@@ -1,0 +1,115 @@
+From: Codex local A376B compatibility adaptation
+Subject: [PATCH] Adapt AZH4 brightness thresholds and refresh configuration
+
+Reason: product-tail-lcd.txt fails the S22 hard-coded brightness threshold diff; AZH4 uses 89,91 / 260,2500 and dumpProductFeature rather than the old dump signature. VrrManager now owns mHfrMode, initialized in its constructor. Clear donor thresholds in the actual initializer/dump, set existing target HFR mode 0 / default 60, and retain strict helper substitution checks. Keep other donor code paths unchanged.
+Files: unica/patches/product_feature/customize.sh.
+Verification: actual donor recipe slices pass through all HFR edits; VrrManager constructor and keyguard lambda inspected by descriptor/body, no synthetic-ID guess. Clean full build and APK assembly remain required. Runtime panel refresh behavior needs logs.
+
+---
+--- a/unica/patches/product_feature/customize.sh
++++ b/unica/patches/product_feature/customize.sh
+@@ -503,12 +503,28 @@
+ # SEC_PRODUCT_FEATURE_LCD_CONFIG_SEAMLESS_LUX
+ #
+ # Apply before SEC_PRODUCT_FEATURE_LCD_CONFIG_HFR_* to avoid conflicts
++REFRESH_RATE_CONFIG_DUMP_METHOD="dump(Ljava/io/PrintWriter;Ljava/lang/String;Z)V"
++if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++    REFRESH_RATE_CONFIG_DUMP_METHOD="dumpProductFeature(Ljava/io/PrintWriter;Ljava/lang/String;Z)V"
++fi
+ if [[ "$SOURCE_LCD_CONFIG_SEAMLESS_BRT" != "$TARGET_LCD_CONFIG_SEAMLESS_BRT" ]] || \
+         [[ "$SOURCE_LCD_CONFIG_SEAMLESS_LUX" != "$TARGET_LCD_CONFIG_SEAMLESS_LUX" ]]; then
+     if [[ "$SOURCE_LCD_CONFIG_SEAMLESS_BRT" != "none" ]] && [[ "$SOURCE_LCD_CONFIG_SEAMLESS_LUX" != "none" ]] && \
+             [[ "$TARGET_LCD_CONFIG_SEAMLESS_BRT" == "none" ]] && [[ "$TARGET_LCD_CONFIG_SEAMLESS_LUX" == "none" ]]; then
+-        APPLY_PATCH "system" "system/framework/framework.jar" \
+-            "$MODPATH/hfr/framework.jar/0001-Remove-brightness-threshold-values.patch"
++        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++            for METHOD in "$REFRESH_RATE_CONFIG_DUMP_METHOD" \
++                    "getMainInstance()Lcom/samsung/android/hardware/display/RefreshRateConfig;"; do
++                SMALI_PATCH "system" "system/framework/framework.jar" \
++                    "smali_classes6/com/samsung/android/hardware/display/RefreshRateConfig.smali" "replace" \
++                    "$METHOD" "$SOURCE_LCD_CONFIG_SEAMLESS_BRT" ""
++                SMALI_PATCH "system" "system/framework/framework.jar" \
++                    "smali_classes6/com/samsung/android/hardware/display/RefreshRateConfig.smali" "replace" \
++                    "$METHOD" "$SOURCE_LCD_CONFIG_SEAMLESS_LUX" ""
++            done
++        else
++            APPLY_PATCH "system" "system/framework/framework.jar" \
++                "$MODPATH/hfr/framework.jar/0001-Remove-brightness-threshold-values.patch"
++        fi
+     elif [[ "$SOURCE_LCD_CONFIG_SEAMLESS_BRT" != "none" ]] && [[ "$SOURCE_LCD_CONFIG_SEAMLESS_LUX" != "none" ]] && \
+             [[ "$TARGET_LCD_CONFIG_SEAMLESS_BRT" != "none" ]] && [[ "$TARGET_LCD_CONFIG_SEAMLESS_LUX" != "none" ]]; then
+         SMALI_PATCH "system" "system/framework/framework.jar" \
+@@ -544,7 +560,7 @@
+ 
+     SMALI_PATCH "system" "system/framework/framework.jar" \
+         "smali_classes6/com/samsung/android/hardware/display/RefreshRateConfig.smali" "replace" \
+-        "dump(Ljava/io/PrintWriter;Ljava/lang/String;Z)V" \
++        "$REFRESH_RATE_CONFIG_DUMP_METHOD" \
+         "HFR_DEFAULT_REFRESH_RATE: $SOURCE_LCD_CONFIG_HFR_DEFAULT_REFRESH_RATE" \
+         "HFR_DEFAULT_REFRESH_RATE: $TARGET_LCD_CONFIG_HFR_DEFAULT_REFRESH_RATE"
+     SMALI_PATCH "system" "system/priv-app/SecSettings/SecSettings.apk" \
+@@ -568,11 +584,17 @@
+         "<clinit>()V" \
+         "$SOURCE_LCD_CONFIG_HFR_MODE" \
+         "$TARGET_LCD_CONFIG_HFR_MODE"
+-    SMALI_PATCH "system" "system/framework/framework.jar" \
+-        "smali_classes6/com/samsung/android/hardware/display/RefreshRateConfig.smali" "replace" \
+-        "dump(Ljava/io/PrintWriter;Ljava/lang/String;Z)V" \
+-        "HFR_MODE: $SOURCE_LCD_CONFIG_HFR_MODE" \
+-        "HFR_MODE: $TARGET_LCD_CONFIG_HFR_MODE"
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++        SMALI_PATCH "system" "system/framework/framework.jar" \
++            "smali_classes6/com/samsung/android/hardware/display/RefreshRateConfig.smali" "replace" \
++            "$REFRESH_RATE_CONFIG_DUMP_METHOD" "$SOURCE_LCD_CONFIG_HFR_MODE" "$TARGET_LCD_CONFIG_HFR_MODE"
++    else
++        SMALI_PATCH "system" "system/framework/framework.jar" \
++            "smali_classes6/com/samsung/android/hardware/display/RefreshRateConfig.smali" "replace" \
++            "$REFRESH_RATE_CONFIG_DUMP_METHOD" \
++            "HFR_MODE: $SOURCE_LCD_CONFIG_HFR_MODE" \
++            "HFR_MODE: $TARGET_LCD_CONFIG_HFR_MODE"
++    fi
+     SMALI_PATCH "system" "system/framework/framework.jar" \
+         "smali_classes6/com/samsung/android/hardware/display/RefreshRateConfig.smali" "replace" \
+         "getMainInstance()Lcom/samsung/android/hardware/display/RefreshRateConfig;" \
+@@ -583,9 +605,15 @@
+         "<clinit>()V" \
+         "$SOURCE_LCD_CONFIG_HFR_MODE" \
+         "$TARGET_LCD_CONFIG_HFR_MODE"
++    HFR_GAME_MANAGER_CLASS="smali/com/samsung/android/game/GameManagerService.smali"
++    HFR_GAME_MANAGER_METHOD="isVariableRefreshRateSupported()Ljava/lang/String;"
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++        HFR_GAME_MANAGER_CLASS="smali/com/samsung/android/game/VrrManager.smali"
++        HFR_GAME_MANAGER_METHOD="<init>(Landroid/hardware/display/DisplayManager;Lcom/samsung/android/game/ActionLogger;Ljava/util/Map;Ljava/util/List;)V"
++    fi
+     SMALI_PATCH "system" "system/framework/gamemanager.jar" \
+-        "smali/com/samsung/android/game/GameManagerService.smali" "replace" \
+-        "isVariableRefreshRateSupported()Ljava/lang/String;" \
++        "$HFR_GAME_MANAGER_CLASS" "replace" \
++        "$HFR_GAME_MANAGER_METHOD" \
+         "$SOURCE_LCD_CONFIG_HFR_MODE" \
+         "$TARGET_LCD_CONFIG_HFR_MODE"
+     SMALI_PATCH "system" "system/framework/secinputdev-service.jar" \
+@@ -637,11 +665,18 @@
+     fi
+ 
+     if [[ "$SOURCE_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE" != "none" ]]; then
+-        SMALI_PATCH "system" "system/framework/framework.jar" \
+-            "smali_classes6/com/samsung/android/hardware/display/RefreshRateConfig.smali" "replace" \
+-            "dump(Ljava/io/PrintWriter;Ljava/lang/String;Z)V" \
+-            "HFR_SUPPORTED_REFRESH_RATE: $SOURCE_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE" \
+-            "HFR_SUPPORTED_REFRESH_RATE: ${TARGET_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE//none/}"
++        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++            SMALI_PATCH "system" "system/framework/framework.jar" \
++                "smali_classes6/com/samsung/android/hardware/display/RefreshRateConfig.smali" "replace" \
++                "$REFRESH_RATE_CONFIG_DUMP_METHOD" "$SOURCE_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE" \
++                "${TARGET_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE//none/}"
++        else
++            SMALI_PATCH "system" "system/framework/framework.jar" \
++                "smali_classes6/com/samsung/android/hardware/display/RefreshRateConfig.smali" "replace" \
++                "$REFRESH_RATE_CONFIG_DUMP_METHOD" \
++                "HFR_SUPPORTED_REFRESH_RATE: $SOURCE_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE" \
++                "HFR_SUPPORTED_REFRESH_RATE: ${TARGET_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE//none/}"
++        fi
+         SMALI_PATCH "system" "system/framework/framework.jar" \
+             "smali_classes6/com/samsung/android/hardware/display/RefreshRateConfig.smali" "replace" \
+             "getMainInstance()Lcom/samsung/android/hardware/display/RefreshRateConfig;" \

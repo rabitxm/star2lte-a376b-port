@@ -1,0 +1,194 @@
+From: Codex local A376B compatibility adaptation
+Subject: [PATCH] 0048-m2-face-omission-finalization-audit
+
+Reason: User explicitly selected omitting Face Unlock. Late vendor restoration/finalization and the release verifier still required/claimed Face HAL and built-in bridge. Skip only Face restoration/checks for the reviewed M2 A376B16 star2lte profile; clean/audit Face VINTF/init after all restores and before packaging. Reset profile flags to prevent M1/M2 shell leakage. Keep FaceManager feature XML and all ADB/kernel/radio/other release checks.
+Files: unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh; scripts/internal/verify_exynos9810_release_defaults.py; scripts/internal/verify_face_omission.py; scripts/make_rom.sh; target/star2lte/profiles/m1-g965f-no-ksu.sh.
+Verification: Face manifest/init restored fixtures rejected, unrelated radio preserved, actual incomplete staged tree omission preflight PASS, M2-to-M1 profile reset PASS, syntax and patch replay. Whole-ROM compiled ADB/release checks still required.
+
+---
+--- a/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
+@@ -6449,6 +6449,7 @@
+ 
+ _EXYNOS9810_FINAL_RESTORE_FACE_HIDL_ABI()
+ {
++    [ "${EXYNOS9810_FACE_UNLOCK_DISABLED:-false}" != "true" ] || return 0
+     [[ "$TARGET_CODENAME" =~ ^(starlte|star2lte|crownlte)$ ]] || return 0
+ 
+     # The HIDL daemon requires the legacy IFaceService vtable, not merely
+@@ -6486,6 +6487,7 @@
+ 
+ _EXYNOS9810_FINAL_SELECT_HIDL_FACE_VINTF()
+ {
++    [ "${EXYNOS9810_FACE_UNLOCK_DISABLED:-false}" != "true" ] || return 0
+     [[ "$TARGET_CODENAME" =~ ^(starlte|star2lte|crownlte)$ ]] || return 0
+ 
+     # An N770F vendor restore late in the pipeline can restore IFace/default
+@@ -6546,6 +6548,9 @@
+ 
+     LOG "- Verifying Exynos9810 user-reported bug fixes"
+ 
++    if [ "${EXYNOS9810_FACE_UNLOCK_DISABLED:-false}" = "true" ]; then
++        python3 "$SRC_DIR/scripts/internal/verify_face_omission.py" verify "$WORK_DIR" || return 1
++    else
+     [ -f "$FACE_MANIFEST" ] || {
+         LOGE "Exynos9810 face HAL VINTF fragment is missing"
+         return 1
+@@ -6592,6 +6597,7 @@
+         LOGE "Exynos9810 face HIDL executable has no SELinux HAL exec label"
+         return 1
+     }
++    fi
+ 
+     [ -f "$RADIO_MANIFEST" ] || {
+         LOGE "Coherent Exynos9810 IRadio 1.6 manifest is missing"
+@@ -7148,6 +7154,9 @@
+ _EXYNOS9810_FINAL_RESTORE_BASE_MDF_STACK || return 1
+ _EXYNOS9810_FINAL_RESTORE_FACE_HIDL_ABI || return 1
+ _EXYNOS9810_FINAL_SELECT_HIDL_FACE_VINTF || return 1
++if [ "${EXYNOS9810_FACE_UNLOCK_DISABLED:-false}" = "true" ]; then
++    python3 "$SRC_DIR/scripts/internal/verify_face_omission.py" apply "$WORK_DIR" || return 1
++fi
+ _EXYNOS9810_FINAL_VERIFY_REPORTED_BUG_FIXES || return 1
+ 
+ # Release builds select the shared native Face bridge for all three 9810
+--- a/scripts/internal/verify_exynos9810_release_defaults.py
++++ b/scripts/internal/verify_exynos9810_release_defaults.py
+@@ -35,11 +35,21 @@
+ def verify(work: Path, target: str) -> None:
+     if target not in ("starlte","star2lte","crownlte"): raise RuntimeError("Unsupported target")
+     system=work/"system/system"
+-    with zipfile.ZipFile(system/"framework/services.jar") as z:
+-        if z.read("classes3.dex") != load_release_bridge():
+-            raise RuntimeError("Staged face bridge differs from verified source release")
++    face_disabled = os.environ.get("EXYNOS9810_FACE_UNLOCK_DISABLED", "false") == "true"
++    if face_disabled:
++        if (target, os.environ.get("ROM_SOURCE_CONFIG"), os.environ.get("ROM_MILESTONE")) != ("star2lte", "essi_a376b_android16", "M2"):
++            raise RuntimeError("Unreviewed Face omission profile")
++        from verify_face_omission import verify as verify_face_omission
++        verify_face_omission(work)
++    else:
++        with zipfile.ZipFile(system/"framework/services.jar") as z:
++            if z.read("classes3.dex") != load_release_bridge():
++                raise RuntimeError("Staged face bridge differs from verified source release")
+     props=(system/"build.prop").read_text().splitlines()
+-    for prop in ["ro.un1ca.faceunlockfix.builtin=1","persist.sys.unica.pif=true","persist.sys.pif.version=20261011"]:
++    required_props = ["persist.sys.unica.pif=true", "persist.sys.pif.version=20261011"]
++    if not face_disabled:
++        required_props.append("ro.un1ca.faceunlockfix.builtin=1")
++    for prop in required_props:
+         if prop not in props: raise RuntimeError("Required release default absent: "+prop)
+     verify_kernelsu_runtime(system, os.environ.get("EXYNOS9810_ENABLE_KERNELSU_RUNTIME", "true"))
+     import importlib.util
+@@ -69,7 +79,8 @@
+     spec=importlib.util.spec_from_file_location("factory_live_default",checker)
+     module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+     module.verify(system/"framework/services.jar")
+-    print("PASS "+target+": source-matched face removal/prompt bridge, selected KernelSU runtime profile, Blue Infinity, Bixby and PIF defaults")
++    face_status = "selected Face omission" if face_disabled else "source-matched face removal/prompt bridge"
++    print("PASS "+target+": "+face_status+", selected KernelSU runtime profile, Blue Infinity, Bixby and PIF defaults")
+ if __name__=="__main__":
+     p=argparse.ArgumentParser(description=__doc__);p.add_argument("--work-dir",type=Path,required=True);p.add_argument("--target",required=True)
+     a=p.parse_args();verify(a.work_dir,a.target)
+--- a/scripts/make_rom.sh
++++ b/scripts/make_rom.sh
+@@ -12,6 +12,14 @@
+             if [ "${EXYNOS9810_FACE_UNLOCK_DISABLED:-false}" != "true" ]; then
+                 export EXYNOS9810_FACEUNLOCKFIX_EXPERIMENTAL_BUILD=true
+                 export EXYNOS9810_FACEUNLOCKFIX_BUILTIN=true
++            else
++                [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] && \
++                    [ "$TARGET_CODENAME" = "star2lte" ] && [ "${ROM_MILESTONE:-}" = "M2" ] || {
++                    LOGE "Face omission is reviewed only for M2 A376B16 star2lte"
++                    exit 1
++                }
++                export EXYNOS9810_FACEUNLOCKFIX_EXPERIMENTAL_BUILD=false
++                export EXYNOS9810_FACEUNLOCKFIX_BUILTIN=false
+             fi
+             ;;
+     esac
+--- a/target/star2lte/profiles/m1-g965f-no-ksu.sh
++++ b/target/star2lte/profiles/m1-g965f-no-ksu.sh
+@@ -3,6 +3,9 @@
+ # duhansysl OneUI7 enforcing prebuilt without KernelSU; no kernel is rebuilt.
+ _STAR2LTE_M1_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)"
+ export ROM_MILESTONE="M1"
++export EXYNOS9810_FACE_UNLOCK_DISABLED="false"
++export EXYNOS9810_FACEUNLOCKFIX_EXPERIMENTAL_BUILD="false"
++export EXYNOS9810_FACEUNLOCKFIX_BUILTIN="false"
+ export STAR2LTE_M2_FIXED_RESOLUTION="false"
+ export UN1CA_DONOR_CONFIG="essi"
+ export STAR2LTE_BUILD_MODEL="SM-G965F"
+--- /dev/null
++++ b/scripts/internal/verify_face_omission.py
+@@ -0,0 +1,70 @@
++#!/usr/bin/env python3
++"""Apply/audit the explicitly selected M2 Face Unlock omission on staged files."""
++from pathlib import Path
++from xml.etree import ElementTree as ET
++import argparse
++import re
++
++NAMES = {"android.hardware.biometrics.face", "vendor.samsung.hardware.biometrics.face"}
++HAL = re.compile(r"(?s)<hal\b[^>]*>.*?</hal>")
++
++
++def manifests(work):
++    for partition in ("vendor", "odm", "system/system", "system/system/system_ext", "system/product"):
++        directory = work / partition / "etc/vintf"
++        if directory.exists():
++            yield from directory.rglob("*.xml")
++
++
++def face_init(work):
++    for partition in ("vendor", "odm", "system/system", "system/system/system_ext", "system/product"):
++        directory = work / partition / "etc/init"
++        if directory.exists():
++            for path in directory.rglob("*.rc"):
++                if re.search(r"(?m)^\s*service\s+[^\n]*(?:biometrics\.face|faceunlockfix)", path.read_text()):
++                    yield path
++
++
++def verify(work):
++    for path in manifests(work):
++        for hal in ET.parse(path).getroot().iter("hal"):
++            if hal.findtext("name") in NAMES:
++                raise RuntimeError("Omitted Face HAL restored in " + str(path.relative_to(work)))
++    active = list(face_init(work))
++    if active:
++        raise RuntimeError("Omitted Face init restored: " + str(active[0].relative_to(work)))
++    props = (work / "system/system/build.prop").read_text().splitlines()
++    if "ro.un1ca.faceunlockfix.builtin=1" in props:
++        raise RuntimeError("Omitted Face bridge is still claimed built-in")
++    if not (work / "system/system/etc/permissions/android.hardware.biometrics.face.xml").is_file():
++        raise RuntimeError("Keep framework FaceManager feature XML for SystemUI initialization")
++    print("PASS selected Face omission: no face HAL/init/built-in claim; framework FaceManager feature retained")
++
++
++def apply(work):
++    for path in manifests(work):
++        original = path.read_text()
++        def keep(match):
++            return "" if ET.fromstring(match.group()).findtext("name") in NAMES else match.group()
++        changed = HAL.sub(keep, original)
++        ET.fromstring(changed)
++        if changed != original:
++            path.write_text(changed)
++    for path in face_init(work):
++        # Known Face init fragments contain no unrelated service. Reject a
++        # future combined fragment rather than removing unrelated services.
++        services = re.findall(r"(?m)^\s*service\s+([^\n]+)", path.read_text())
++        if any(not re.search(r"biometrics\.face|faceunlockfix", line) for line in services):
++            raise RuntimeError("Mixed Face init requires review: " + str(path))
++        path.unlink()
++    props = work / "system/system/build.prop"
++    props.write_text(re.sub(r"(?m)^ro\.un1ca\.faceunlockfix\.builtin=.*\n?", "", props.read_text()))
++    verify(work)
++
++
++if __name__ == "__main__":
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("operation", choices=("apply", "verify"))
++    parser.add_argument("work", type=Path)
++    args = parser.parse_args()
++    (apply if args.operation == "apply" else verify)(args.work)

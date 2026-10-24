@@ -1,0 +1,47 @@
+Reason: A376B AZH4 Android16/OneUI8.5 source preflight stopped with Unknown Samsung AdbService lifecycle. Reviewed onBootPhase has six locals, an AdbService receiver and the USB state in p1 rather than S22 v0. Read the stored setting using the matching state register while retaining strict unknown-layout rejection.
+Affected: unica/patches/exynos9810_device_stack/exynos9810_finalization/adb_defaults.py.
+Verify: Real M1 and A376B classes, idempotence, unknown locals/anchor rejection, assembled class fixtures and compiled verifier PASS; unpatched A376B compiled lifecycle rejected. Fixtures use DEX039/API32 for the reviewed instructions only; full donor services DEX041 rebuild and runtime remain separate gates. Evidence adb-reviewed-fixtures.json under logs/20261021-m2-inputs.
+Rollback: reverse patch and stop A376B builds at the original donor guard; keep M1 archived/running bytes unchanged. No kernel, hardware blob, UI switch or device modifications.
+
+--- a/unica/patches/exynos9810_device_stack/exynos9810_finalization/adb_defaults.py
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/adb_defaults.py
+@@ -84,10 +84,19 @@
+ def patch_lifecycle(text):
+     match = method(text, "onBootPhase(I)V")
+     body = match.group()
+-    if body.count(LIFECYCLE_ANCHOR) != 1 or ".locals 6" not in body:
++    # Reviewed layouts: S22 One UI 8 uses v0; A376B AZH4 One UI 8.5 uses p1.
++    # Both have six locals and p0 is the AdbService before the state write.
++    anchors = [(register, f"    iput-boolean {register}, p0, Lcom/android/server/adb/AdbService;->mIsAdbUsbEnabled:Z")
++               for register in ("v0", "p1")]
++    found = [(register, anchor) for register, anchor in anchors if body.count(anchor) == 1]
++    if len(found) != 1 or sum(body.count(anchor) for _, anchor in anchors) != 1 or ".locals 6" not in body:
+         raise RuntimeError("Unknown Samsung AdbService lifecycle; review donor before building")
+-    if LIFECYCLE_READ not in body:
+-        body = body.replace(LIFECYCLE_ANCHOR, LIFECYCLE_READ + LIFECYCLE_ANCHOR)
++    register, anchor = found[0]
++    if "->mAdbService:Lcom/android/server/adb/AdbService;" not in body[:body.index(anchor)]:
++        raise RuntimeError("Unknown AdbService lifecycle receiver; review donor before building")
++    read = LIFECYCLE_READ.replace("v4, v0}", f"v4, {register}}}").replace("move-result v0", f"move-result {register}")
++    if read not in body:
++        body = body.replace(anchor, read + anchor)
+     return text[:match.start()] + body + text[match.end():]
+ 
+ 
+@@ -171,9 +180,14 @@
+             raise RuntimeError("Unexpected seed SQL count: " + table)
+     text = disassemble_class(system / "framework/services.jar", LIFECYCLE, tools)
+     body = method(text, "onBootPhase(I)V").group()
+-    needle = 'const-string(?:/jumbo)? v4, "adb_enabled"\\s+invoke-static \\{v1, v4, v0\\}, Landroid/provider/Settings\\$Global;->getInt'
+-    if not re.search(needle, body):
++    needle = 'const-string(?:/jumbo)? v4, "adb_enabled"\\s+invoke-static \\{v1, v4, (v0|p1)\\}, Landroid/provider/Settings\\$Global;->getInt'
++    read = re.search(needle, body)
++    if read is None:
+         raise RuntimeError("Missing compiled stored USB-debugging choice read")
++    register = read.group(1)
++    anchor = f"iput-boolean {register}, p0, Lcom/android/server/adb/AdbService;->mIsAdbUsbEnabled:Z"
++    if body.count(anchor) != 1 or f"move-result {register}" not in body[read.end():body.index(anchor)]:
++        raise RuntimeError("Compiled USB-debugging choice uses an unreviewed state register")
+     if body.index("->getInt(") > body.index("->mIsAdbUsbEnabled:Z"):
+         raise RuntimeError("USB choice read occurs after state initialization")
+     print("PASS compiled ADB defaults, no-auth properties and stored-choice lifecycle")

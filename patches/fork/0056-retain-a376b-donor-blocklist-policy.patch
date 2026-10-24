@@ -1,0 +1,29 @@
+From: Codex local A376B compatibility adaptation
+Subject: [PATCH] Keep AZH4 package blocklist behavior in M2
+
+Reason: mods2-preflight.txt:75,136 shows the fork's legacy blocklist patch fails
+against AZH4 PackageBlockListPolicy and PmLifecycleImpl. The old patch replaces
+LDU state and deletes lifecycle observers. Keep donor PackageManager behavior
+for this exact M2 profile until an AZH4 port can preserve its policy contract.
+Files: scripts/internal/apply_modules.sh.
+Verification: M2-only module dispatch fixture, non-M2 unchanged fixture, module
+preflight, shell syntax and sequential patch replay. Optional legacy UN1CA
+blocklist customization is absent on M2. Revert0056.
+
+---
+--- a/scripts/internal/apply_modules.sh
++++ b/scripts/internal/apply_modules.sh
+@@ -13,6 +13,15 @@ APPLY_MODULE()
+     local MODNAME
+     local MODAUTH
+ 
++    # AZH4 changed the PackageBlockListPolicy and its lifecycle wiring. The
++    # fork's legacy blocklist patch removes that donor behavior, so retain the
++    # donor implementation for this M2 profile until an exact port is reviewed.
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] && \
++            [[ "$MODPATH" == */mods/blocklist ]]; then
++        LOGW "Skipping optional legacy Package Blocklist mod for A376B Android 16; AZH4 policy layout differs"
++        return 0
++    fi
++
+     if [ ! -d "$MODPATH" ]; then

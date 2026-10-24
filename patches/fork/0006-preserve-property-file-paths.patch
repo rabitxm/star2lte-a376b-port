@@ -1,0 +1,35 @@
+Reason: m1-build-attempt2.txt:58 reports Work dir needs to be set up; GET_PROP splits unquoted absolute paths on workspace spaces and returns an empty framework tag despite a populated build.prop.
+Affected: scripts/utils/common_utils.sh (GET_PROP).
+Verify: partition lookup, explicit file, precedence, fallback, omitted partition, missing property/file, actual M1 framework tag (eight cases); bash -n and git diff --check. Evidence get-prop-path-checks.json.
+Rollback: reverse this patch and regenerate work_dir; earlier input copies can contain empty properties from the old reader. No firmware or kernel modification.
+
+diff --git a/scripts/utils/common_utils.sh b/scripts/utils/common_utils.sh
+index dcc5e72..2bbd93c 100644
+--- a/scripts/utils/common_utils.sh
++++ b/scripts/utils/common_utils.sh
+@@ -545,12 +545,12 @@ EVAL()
+ # Returns the supplied prop value, partition/file can be omitted.
+ GET_PROP()
+ {
+-    local FILES
++    local FILES=()
+     if [[ "$1" == *".prop" ]]; then
+-        FILES="$1"
++        FILES=("$1")
+         shift
+     else
+-        FILES="$(_GET_PROP_FILES_PATH "$1")"
++        mapfile -t FILES < <(_GET_PROP_FILES_PATH "$1")
+         if IS_VALID_PARTITION_NAME "$1"; then
+             shift
+         fi
+@@ -559,8 +559,7 @@ GET_PROP()
+     _CHECK_NON_EMPTY_PARAM "PROP" "$1" || return 1
+ 
+     local PROP="$1"
+-    # shellcheck disable=SC2086
+-    cat $FILES 2> /dev/null | sed -n "s/^$PROP=//p" | head -n 1
++    cat -- "${FILES[@]}" 2> /dev/null | sed -n "s/^$PROP=//p" | head -n 1
+ }
+ 
+ # IS_SPARSE_IMAGE <file>

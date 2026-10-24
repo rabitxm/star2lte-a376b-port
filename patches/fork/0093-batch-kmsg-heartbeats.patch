@@ -1,0 +1,116 @@
+From: Codex M2 early-boot diagnostic
+Subject: [PATCH] Batch kmsg writes and timestamp CACHE heartbeats
+
+Reason: probe07 fsyncs every /dev/kmsg record, and its final record on M1
+was only 1.4 s despite successful boot. A timestamp near the end of that
+file could not be interpreted as reset time. Probe08 batches up to 32 KiB,
+fsyncs every ~100 ms, caps per-boot kmsg at 8 MiB, and writes a heartbeat
+with monotonic elapsed milliseconds and read-record count.
+
+Files: rom/platform/exynos9810/installer/bootlogger_pid1_probe.c.
+Diagnostic-only source; no kernel, vendor, radio or normal ROM image changes.
+
+Verification: static AArch64 compile, pinned base BOOT repack, target hash
+readback. M1 G965F M1_G965F_SERIAL booted with probe08, CACHE heartbeat
+reached ms=1761 (beyond probe07's final ~1.4 s) and system reported
+sys.boot_completed=1. M2 result and both BOOT rollbacks are recorded in
+logs/20261023-probe08/ after postboot recovery capture.
+
+--- a/platform/exynos9810/installer/bootlogger_pid1_probe.c
++++ b/platform/exynos9810/installer/bootlogger_pid1_probe.c
+@@ -75,13 +75,30 @@
+     if (r < 0) return r;
+     if (statbuf[0] != 0xef53) return -22; /* EXT4_SUPER_MAGIC */
+     const char *path = (mounted[1] == 'c')
+-        ? "/cache/m2-early-boot-probe07.log"
+-        : "/dev/m2-cache/m2-early-boot-probe07.log";
++        ? "/cache/m2-early-boot-probe08.log"
++        : "/dev/m2-cache/m2-early-boot-probe08.log";
+     return open_file(path,
+                      O_WRONLY | O_CREAT | O_APPEND, 0600);
+ }
+ 
+ static long namespace_step;
++static char cache_batch[32768];
++
++static long append_decimal(char *dst, long value)
++{
++    char reversed[24];
++    long count = 0;
++    do { reversed[count++] = '0' + value % 10; value /= 10; } while (value && count < 24);
++    for (long i = 0; i < count; ++i) dst[i] = reversed[count - i - 1];
++    return count;
++}
++
++static long monotonic_milliseconds(void)
++{
++    struct timespec now;
++    if (syscall6(113, 1, (long)&now, 0, 0, 0, 0) < 0) return -1;
++    return now.tv_sec * 1000 + now.tv_nsec / 1000000;
++}
+ static long monitor_namespace(int cold_sysfs)
+ {
+     /* Child-only mount namespace. PID1's mount table is never changed. */
+@@ -114,11 +131,13 @@
+ {
+     char buf[4096], pending[8192];
+     long used = 0, in = -1, out = -1, cache = -1;
++    long batched = 0, records = 0, cache_bytes = 0;
++    long start = monotonic_milliseconds(), last_sync = start;
+     for (long tick = 0; tick < 6000; ++tick) {
+         if (cache < 0) {
+             cache = cache_open();
+             if (cache >= 0) {
+-                const char *mark = "\nM2-PID1-PROBE-v5: monitor ready\n";
++                const char *mark = "\nM2-PID1-PROBE-v6: batched monitor ready\n";
+                 write_all(cache, mark, string_length(mark));
+                 syscall6(SYS_fsync, cache, 0, 0, 0, 0, 0);
+             }
+@@ -138,10 +157,16 @@
+                 long n = syscall6(SYS_read, in, (long)buf, sizeof(buf), 0, 0, 0);
+                 if (n == -32) continue; /* EPIPE: ring overrun, next read recovers */
+                 if (n <= 0) break;
++                ++records;
+                 if (out >= 0) write_all(out, buf, n);
+-                if (cache >= 0) {
+-                    write_all(cache, buf, n);
+-                    syscall6(SYS_fsync, cache, 0, 0, 0, 0, 0);
++                if (cache >= 0 && cache_bytes < 8 * 1024 * 1024) {
++                    if (batched + n > (long)sizeof(cache_batch)) {
++                        write_all(cache, cache_batch, batched);
++                        cache_bytes += batched;
++                        batched = 0;
++                    }
++                    copy_bytes(cache_batch + batched, buf, n);
++                    batched += n;
+                 }
+                 else {
+                     if (used + n > (long)sizeof(pending)) used = 0;
+@@ -149,10 +174,24 @@
+                 }
+             }
+         }
+-        if (cache >= 0 && tick % 10 == 0) {
+-            const char *beat = "M2-PROBE-HEARTBEAT\n";
+-            write_all(cache, beat, string_length(beat));
++        long now = monotonic_milliseconds();
++        if (cache >= 0 && now >= 0 && (last_sync < 0 || now - last_sync >= 100)) {
++            if (batched) {
++                write_all(cache, cache_batch, batched);
++                cache_bytes += batched;
++                batched = 0;
++            }
++            char beat[96];
++            long n = 0;
++            const char *tag = "M2-PROBE-HEARTBEAT ms=";
++            copy_bytes(beat, tag, string_length(tag)); n += string_length(tag);
++            n += append_decimal(beat + n, now - start);
++            tag = " records="; copy_bytes(beat + n, tag, string_length(tag)); n += string_length(tag);
++            n += append_decimal(beat + n, records);
++            beat[n++] = '\n';
++            write_all(cache, beat, n);
+             syscall6(SYS_fsync, cache, 0, 0, 0, 0, 0);
++            last_sync = now;
+         }
+         sleep_milliseconds(10);
+     }

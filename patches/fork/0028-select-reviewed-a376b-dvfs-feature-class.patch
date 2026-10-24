@@ -1,0 +1,21 @@
+Reason: M2 attempt5 failed at attempt5.txt:941 with `Smali not found: .../SamsungDeviceHealthManagerService.apk/smali/U1/w.smali`. Decoding A376B AZH4 shows its matching com/sec/android/sdhms/util/Feature class is obfuscated to smali/o5/w.smali; its <clinit>()V contains the same configurable SIOP filename fallback and source identifier. Use this mapping only for the exact LOCAL A376B SDK36 donor, preserving upstream mapping elsewhere. Affected: unica/patches/dvfs/customize.sh. Verify: actual decoded AZH4 class/method/string inspected; fixture confirms exact donor selects o5/w and nonmatching input retains U1/w; shell syntax and patch replay. Evidence dvfs-obfuscation-review.json. Rollback: reverse patch and stop at the original class guard. No kernel, vendor blobs, radio, or device changes.  --- a/unica/patches/dvfs/customize.sh
++++ b/unica/patches/dvfs/customize.sh
+@@ -63,9 +63,16 @@
+         EVAL "cp -a \"$MODPATH/assets/siop_default.xml\" \"$APKTOOL_DIR/system/priv-app/SamsungDeviceHealthManagerService/SamsungDeviceHealthManagerService.apk/assets/ssrm_default.xml\""
+     fi
+ 
+-    # com/sec/android/sdhms/util/Feature
++    # com/sec/android/sdhms/util/Feature. A376B AZH4 is obfuscated as o5/w;
++    # use this reviewed mapping only for that donor/SDK and keep the fork path for others.
++    if [[ "$SOURCE_FIRMWARE" == "SM-A376B/XXV/LOCAL" ]] && \
++            [[ "$SOURCE_PLATFORM_SDK_VERSION" == "36" ]]; then
++        _SDHMS_FEATURE_SMALI="smali/o5/w.smali"
++    else
++        _SDHMS_FEATURE_SMALI="smali/U1/w.smali"
++    fi
+     SMALI_PATCH "system" "system/priv-app/SamsungDeviceHealthManagerService/SamsungDeviceHealthManagerService.apk" \
+-        "smali/U1/w.smali" "replace" \
++        "$_SDHMS_FEATURE_SMALI" "replace" \
+         "<clinit>()V" \
+         "$SOURCE_DVFSAPP_CONFIG_SSRM_POLICY_FILENAME" \
+         "$TARGET_DVFSAPP_CONFIG_SSRM_POLICY_FILENAME"

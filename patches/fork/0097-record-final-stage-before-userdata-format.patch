@@ -1,0 +1,47 @@
+From: Codex release retention
+Subject: [PATCH] Record final sideload stage before USERDATA format
+
+Reason: The final split ZIP can be read from USERDATA, but the updater formats
+USERDATA before the old tail records completion. Move the final-stage marker to
+immediately before the unique USERDATA-format boundary; intermediate-stage
+markers remain after their own payload writes. This preserves restart state
+without relying on a ZIP that the final stage itself erases.
+
+Files: scripts/internal/split_legacy_sideload.py. Verification: replay the
+existing fixture/build audit for final-stage ordering and install all ZIP32
+stages through RC=0, checking `next=done` and fresh USERDATA UUID. This repairs
+patch replay of the already-used retention behavior; it does not change ROM
+images or installer partition scope.
+
+--- a/scripts/internal/split_legacy_sideload.py
++++ b/scripts/internal/split_legacy_sideload.py
+@@ -102,15 +102,25 @@
+         script += (f'block_image_update("{device}", package_extract_file("system.transfer.list"), '
+                    '"system.new.dat.br", "system.patch.dat") ||\n'
+                    '    abort("E1001: Failed to apply legacy system part.");\n')
++        script += (f'package_extract_file("legacy_next.prop", "{state}") ||\n'
++                   '    abort("E9810: Cannot record completed legacy part.");\n')
+     else:
+         script += ('package_extract_dir("exynos9810", "/tmp/exynos9810");\n'
+                    'run_program("/sbin/chmod", "-R", "0755", "/tmp/exynos9810") == 0 ||\n'
+                    '    abort("E9810: Cannot prepare final legacy installer.");\n'
+                    'run_program("/sbin/sh", "/tmp/exynos9810/preflight.sh", "star2lte") == 0 ||\n'
+-                   '    abort("E9810: Legacy final layout is not ready.");\n' + tail)
+-    script += (f'package_extract_file("legacy_next.prop", "{state}") ||\n'
+-               '    abort("E9810: Cannot record completed legacy part.");\n'
+-               'set_progress(1.000000);\n')
++                   '    abort("E9810: Legacy final layout is not ready.");\n')
++        format_marker = 'ui_print("Formatting cache, omr, preload and data...");'
++        if tail.count(format_marker) != 1:
++            raise ValueError("Final stage must have one post-install format boundary")
++        state_write = (f'package_extract_file("legacy_next.prop", "{state}") ||\n'
++                       '    abort("E9810: Cannot record completed legacy part.");\n')
++        # The final stage ZIP can itself live on USERDATA. Record its completion
++        # state before the installer unmounts/formats USERDATA, so no later
++        # package_extract_file call needs to read from the erased filesystem.
++        before_format, after_format = tail.split(format_marker, 1)
++        script += before_format + state_write + format_marker + after_format
++    script += 'set_progress(1.000000);\n'
+     if index < count:
+         script += 'ui_print("Part complete. Stay in recovery and install the next numbered part.");\n'
+     return script

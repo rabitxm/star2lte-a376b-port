@@ -1,0 +1,223 @@
+Reason: user requires complete M1/M2/M4/M5 ROM packages to be retained without overwrite. Existing make_rom.sh deletes all matching UN1CA ZIPs and stale target-files; signing and legacy stages write directly to caller paths.
+Affected: scripts/make_rom.sh, scripts/build_flashable_zip.sh, scripts/internal/create_target_files_zip.sh, scripts/internal/build_full_ota_zip.sh, scripts/internal/split_legacy_sideload.py, scripts/utils/build_utils.sh, target/star2lte/profiles/m1-g965f-no-ksu.sh.
+Verify: shell/Python syntax; host fixtures execute actual packaging block for M1/M2/M2/M4/M5 with tiny stand-in image builders; existing/symlink/racing publishes preserve finished bytes; actual 7z excludes its staging archive; legacy collision fails before work; replay all patches. No full M2 ROM can be built before verified A376B Android16 donor is supplied.
+Rollback: reverse patch, but retain the independent M1 archive in inputs/rom-releases and do not run old wildcard-delete packaging against needed outputs. No kernel/blob/phone changes.
+
+--- a/scripts/make_rom.sh
++++ b/scripts/make_rom.sh
+@@ -440,19 +440,24 @@
+     fi
+     ZIP_FILE_NAME+="-target_files.zip"
+ 
+-    if [ -f "$OUT_DIR/$ZIP_FILE_NAME" ]; then
+-        LOGW "Removing stale target-files zip after ROM rebuild: ${OUT_DIR//$SRC_DIR\//}/$ZIP_FILE_NAME"
+-        rm -f "$OUT_DIR/$ZIP_FILE_NAME"
+-    fi
+-
+-    if $BUILD_FLASHABLE_ZIP; then
+-        # Remove old flashable outputs before generating a new image set.
+-        find "$OUT_DIR" -maxdepth 1 -type f -name "UN1CA_*_$TARGET_CODENAME*.zip" -delete
+-    fi
+-
+-    if [ ! -f "$OUT_DIR/$ZIP_FILE_NAME" ]; then
++    # Every package run has its own directory. Never delete prior ROMs.
++    case "${ROM_MILESTONE:-unclassified}" in
++        M1|M2|M4|M5|unclassified) ;;
++        *) LOGE "Invalid ROM_MILESTONE; choose M1/M2/M4/M5"; exit 1 ;;
++    esac
++    mkdir -p "$OUT_DIR/releases/${ROM_MILESTONE:-unclassified}"
++    ARTIFACT_DIR="$(mktemp -d "$OUT_DIR/releases/${ROM_MILESTONE:-unclassified}/${TARGET_CODENAME}-${ROM_BUILD_TIMESTAMP}-XXXXXX")" || exit 1
++    export ROM_ARTIFACT_OUTPUT_DIR="$ARTIFACT_DIR"
++    LOG "Keeping this package run in ${ARTIFACT_DIR//$SRC_DIR\//}"
++    cp "$OUT_DIR/config.sh" "$ARTIFACT_DIR/build-config.sh" || exit 1
++    for BUILD_MARKER in .completed .modules_applied; do
++        [ ! -f "$WORK_DIR/$BUILD_MARKER" ] || cp "$WORK_DIR/$BUILD_MARKER" "$ARTIFACT_DIR/$BUILD_MARKER.source-hash" || exit 1
++    done
++    printf '%s\n' "${ROM_MILESTONE:-unclassified}" > "$ARTIFACT_DIR/milestone.txt"
++
++    if [ ! -f "$ARTIFACT_DIR/$ZIP_FILE_NAME" ]; then
+         LOG_STEP_IN true "Creating target-files zip"
+-        "$SRC_DIR/scripts/internal/create_target_files_zip.sh" "$OUT_DIR/$ZIP_FILE_NAME" || exit 1
++        "$SRC_DIR/scripts/internal/create_target_files_zip.sh" "$ARTIFACT_DIR/$ZIP_FILE_NAME" || exit 1
+         LOG_STEP_OUT
+     else
+         LOGW "File already exists: ${OUT_DIR//$SRC_DIR\//}/$ZIP_FILE_NAME"
+@@ -460,9 +465,12 @@
+ 
+     if $BUILD_FLASHABLE_ZIP; then
+         LOG_STEP_IN true "Creating flashable zip"
+-        "$SRC_DIR/scripts/build_flashable_zip.sh" "$OUT_DIR/$ZIP_FILE_NAME" || exit 1
+-        LOG_STEP_OUT
+-    fi
++        "$SRC_DIR/scripts/build_flashable_zip.sh" "$ARTIFACT_DIR/$ZIP_FILE_NAME" || exit 1
++        LOG_STEP_OUT
++    fi
++    (cd "$ARTIFACT_DIR" && sha256sum -- *.zip > SHA256SUMS) || exit 1
++    chmod a-w "$ARTIFACT_DIR"/*.zip "$ARTIFACT_DIR/SHA256SUMS" || exit 1
++    touch "$ARTIFACT_DIR/.complete"
+ fi
+ 
+ exit 0
+--- a/scripts/build_flashable_zip.sh
++++ b/scripts/build_flashable_zip.sh
+@@ -73,13 +73,19 @@
+         fi
+     fi
+ 
++    if [ ! "$OUTPUT_FILE" ] && $LEGACY_SIDELOAD; then
++        # Keep numbered packages beside their full ROM, within the same run.
++        OUTPUT_FILE="$TARGET_ZIP"
++        return 0
++    fi
++
+     if [ ! "$OUTPUT_FILE" ]; then
+         local TARGET_BUILD_INFO
+ 
+         EVAL "unzip -p \"$TARGET_ZIP\" \"build_info.txt\"" || exit 1
+         TARGET_BUILD_INFO="$(unzip -p "$TARGET_ZIP" "build_info.txt")"
+ 
+-        OUTPUT_FILE="$OUT_DIR/UN1CA_"
++        OUTPUT_FILE="${ROM_ARTIFACT_OUTPUT_DIR:-$OUT_DIR}/UN1CA_"
+         OUTPUT_FILE+="$(grep "^version" <<< "$TARGET_BUILD_INFO" | cut -d "=" -f 2 -s)"
+         OUTPUT_FILE+="_"
+         OUTPUT_FILE+="$(date -d "@$(grep "^timestamp" <<< "$TARGET_BUILD_INFO" | cut -d "=" -f 2 -s)" "+%Y%m%d")"
+@@ -112,6 +118,11 @@
+ 
+ PREPARE_SCRIPT "$@"
+ 
++if ! $LEGACY_SIDELOAD && { [ -e "$OUTPUT_FILE" ] || [ -L "$OUTPUT_FILE" ]; }; then
++    LOGE "Refusing to overwrite existing ROM: $OUTPUT_FILE"
++    exit 1
++fi
++
+ trap 'PRINT_BUILD_OUTCOME' EXIT
+ trap 'echo' INT
+ 
+--- a/scripts/internal/create_target_files_zip.sh
++++ b/scripts/internal/create_target_files_zip.sh
+@@ -112,6 +112,10 @@
+ fi
+ 
+ OUTPUT_FILE="$1"
++if [ -e "$OUTPUT_FILE" ] || [ -L "$OUTPUT_FILE" ]; then
++    LOGE "Refusing to overwrite existing target-files: $OUTPUT_FILE"
++    exit 1
++fi
+ 
+ if [ "${TARGET_PLATFORM:-}" = "exynos9810" ]; then
+     if [ -f "$WORK_DIR/.build_in_progress" ]; then
+@@ -184,7 +188,8 @@
+ GENERATE_BUILD_INFO
+ 
+ LOG "- Creating zip"
+-rm -f "$OUTPUT_FILE"
+-EVAL "cd \"$TMP_DIR\" && 7z a -tzip -mx=3 -mmt=$(nproc) -mtc=off -mtm=off \"$OUTPUT_FILE\" -r *" || exit 1
++EVAL "cd \"$TMP_DIR\" && 7z a -tzip -mx=3 -mmt=$(nproc) -mtc=off -mtm=off \"$TMP_DIR/target-files.zip\" -r *" || exit 1
++
++PUBLISH_BUILD_ARTIFACT "$TMP_DIR/target-files.zip" "$OUTPUT_FILE" || exit 1
+ 
+ exit 0
+--- a/scripts/internal/build_full_ota_zip.sh
++++ b/scripts/internal/build_full_ota_zip.sh
+@@ -218,6 +218,10 @@
+ 
+ TARGET_ZIP="$1"
+ OUTPUT_FILE="$2"
++if [ -e "$OUTPUT_FILE" ] || [ -L "$OUTPUT_FILE" ]; then
++    LOGE "Refusing to overwrite existing ROM: $OUTPUT_FILE"
++    exit 1
++fi
+ 
+ if ! unzip -l "$TARGET_ZIP" | grep -q "build_info.txt" || unzip -l "$TARGET_ZIP" | grep -q "META-INF"; then
+     LOGE "File not valid: ${TARGET_ZIP//$SRC_DIR\//}"
+@@ -303,10 +307,11 @@
+ 
+ if ! $DEBUG || $ROM_IS_OFFICIAL; then
+     LOG "- Signing zip"
+-    EVAL "signapk -w \"$PUBLIC_KEY_PATH\" \"$PRIVATE_KEY_PATH\" \"$TMP_DIR/rom.zip\" \"$OUTPUT_FILE\"" || exit 1
++    EVAL "signapk -w \"$PUBLIC_KEY_PATH\" \"$PRIVATE_KEY_PATH\" \"$TMP_DIR/rom.zip\" \"$TMP_DIR/rom-signed.zip\"" || exit 1
++    PUBLISH_BUILD_ARTIFACT "$TMP_DIR/rom-signed.zip" "$OUTPUT_FILE" || exit 1
+     rm -f "$TMP_DIR/rom.zip"
+ else
+-    mv -f "$TMP_DIR/rom.zip" "$OUTPUT_FILE"
++    PUBLISH_BUILD_ARTIFACT "$TMP_DIR/rom.zip" "$OUTPUT_FILE" || exit 1
+ fi
+ 
+ exit 0
+--- a/scripts/internal/split_legacy_sideload.py
++++ b/scripts/internal/split_legacy_sideload.py
+@@ -198,6 +198,11 @@
+             raise ValueError("Incremental system payload cannot be split by this mode")
+         parts = plan_ranges(ranges)
+         count = len(parts) + 1
++        report = output.with_name(output.stem + "-legacy-manifest.json")
++        destinations = [output.with_name(output.stem + f"-legacy-{i:02}-of-{count:02}.zip") for i in range(1, count + 1)]
++        for existing in [report, *destinations]:
++            if existing.exists() or existing.is_symlink():
++                raise FileExistsError("Refusing to overwrite legacy artifact: " + str(existing))
+         ident = hashlib.sha256((source_sha + json.dumps(parts)).encode()).hexdigest()
+         prefix = full_script[:full_script.index('ui_print("Patching system image unconditionally...");')]
+         tail = full_script[full_script.index('ui_print("Patching vendor image unconditionally...");'):]
+@@ -264,7 +269,9 @@
+                     stage.writestr("system.transfer.list", transfer_text(header, parts[index - 1]))
+                     stage.writestr("system.patch.dat", b"")
+                     stage.write(chunks[index - 1]["file"], "system.new.dat.br")
+-            subprocess.run(["signapk", "-w", str(cert), str(key), str(unsigned), str(destination)], check=True)
++            subprocess.run(["signapk", "-w", str(cert), str(key), str(unsigned), str(temp / "signed.zip")], check=True)
++            os.link(temp / "signed.zip", destination)
++            (temp / "signed.zip").unlink()
+             if destination.stat().st_size >= LIMIT:
+                 raise ValueError("Signed legacy stage exceeds 2 GiB")
+             with zipfile.ZipFile(destination) as check:
+@@ -287,11 +294,14 @@
+             verify_signature(destination, cert, temp)
+             metadata.update(path=str(destination), bytes=destination.stat().st_size,
+                             sha256=digest(destination), crc="PASS", signature="PASS", zip32="PASS")
++            destination.chmod(0o444)
+             manifest["stages"].append(metadata)
+             print(f"Verified signed legacy stage {index}/{count}: {destination.stat().st_size} bytes", flush=True)
+         manifest["status"] = "PASS"
+         report = output.with_name(output.stem + "-legacy-manifest.json")
+-        report.write_text(json.dumps(manifest, indent=2) + "\n")
++        with report.open("x") as stream:
++            stream.write(json.dumps(manifest, indent=2) + "\n")
++        report.chmod(0o444)
+         print("Legacy manifest: " + str(report), flush=True)
+ 
+ 
+--- a/scripts/utils/build_utils.sh
++++ b/scripts/utils/build_utils.sh
+@@ -91,3 +91,23 @@
+     LOG_STEP_OUT
+ fi
+ # ]
++
++# Publish completed staging bytes without replacing any previous artifact.
++PUBLISH_BUILD_ARTIFACT()
++{
++    python3 - "$1" "$2" <<'PY_PUBLISH'
++import errno, os, shutil, sys
++from pathlib import Path
++source, destination = map(Path, sys.argv[1:])
++try:
++    os.link(source, destination)
++except OSError as exc:
++    if exc.errno != errno.EXDEV:
++        raise
++    with source.open("rb") as src, destination.open("xb") as dst:
++        shutil.copyfileobj(src, dst, 8 * 1024 * 1024)
++        dst.flush()
++        os.fsync(dst.fileno())
++source.unlink()
++PY_PUBLISH
++}
+--- a/target/star2lte/profiles/m1-g965f-no-ksu.sh
++++ b/target/star2lte/profiles/m1-g965f-no-ksu.sh
+@@ -2,6 +2,7 @@
+ # M1 keeps the S22 donor and Hybrid Vendor. The user selected the original
+ # duhansysl OneUI7 enforcing prebuilt without KernelSU; no kernel is rebuilt.
+ _STAR2LTE_M1_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)"
++export ROM_MILESTONE="M1"
+ export STAR2LTE_BUILD_MODEL="SM-G965F"
+ export EXYNOS9810_TARGET_OS_FILE_SYSTEM_TYPE="ext4"
+ export EXYNOS9810_BUILD_KERNELSU_RUNTIME="false"

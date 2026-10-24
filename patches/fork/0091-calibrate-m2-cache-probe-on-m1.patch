@@ -1,0 +1,85 @@
+From: Codex M2 early-boot diagnostic
+Subject: [PATCH] Calibrate optional CACHE recorder on booting M1
+
+Reason: probe05 produced no runtime marker even on known-booting M1. Live
+self-test showed `NAMESPACE stage=4 errno=002`: DS-ACK system kernel lacks
+`/sys/class/pmsg/pmsg0/dev`. The old monitor exited before opening CACHE.
+A second self-test reported success but its marker was not visible from
+Android because mount returned EBUSY and it wrote to private tmpfs.
+
+Files: rom/platform/exynos9810/installer/bootlogger_pid1_probe.c.
+The optional diagnostic now checks the CACHE sysfs block node, tolerates
+missing pmsg, verifies an ext4 target before writing, and uses Android's
+already mounted /cache if the private mount returns EBUSY. Normal ROM
+builds never bundle this probe. No kernel, vendor or radio change.
+
+Verification: static AArch64 link; M1 runtime namespace and CACHE self-tests
+returned PASS and marker was visible at /cache. Rebuilt the prior probe05
+BOOT byte-for-byte to validate the offline repacker. Probe06 BOOT component
+audit preserved kernel/DTB/cmdline/footer; full BOOT readback passed. M1
+booted (`sys.boot_completed=1`) with probe06, and CACHE contains
+`M2-PID1-PROBE-v4: persistent cache monitor ready` plus init kernel lines.
+M2 result is documented separately after postboot capture.
+
+--- a/platform/exynos9810/installer/bootlogger_pid1_probe.c
++++ b/platform/exynos9810/installer/bootlogger_pid1_probe.c
+@@ -65,8 +65,19 @@
+     if (r < 0 && r != -17) return r;
+     r = syscall6(40, (long)"/dev/m2-cache-block", (long)"/dev/m2-cache",
+                  (long)"ext4", 2 | 4 | 1024, (long)"errors=remount-ro", 0);
+-    if (r < 0 && r != -16) return r;
+-    return open_file("/dev/m2-cache/m2-early-boot-probe05.log",
++    const char *mounted = "/dev/m2-cache";
++    if (r == -16) {
++        /* Already mounted by Android. Never write into an unmounted tmpfs. */
++        mounted = "/cache";
++    } else if (r < 0) return r;
++    unsigned long statbuf[32] = {0};
++    r = syscall6(43, (long)mounted, (long)statbuf, 0, 0, 0, 0);
++    if (r < 0) return r;
++    if (statbuf[0] != 0xef53) return -22; /* EXT4_SUPER_MAGIC */
++    const char *path = (mounted[1] == 'c')
++        ? "/cache/m2-early-boot-probe06.log"
++        : "/dev/m2-cache/m2-early-boot-probe06.log";
++    return open_file(path,
+                      O_WRONLY | O_CREAT | O_APPEND, 0600);
+ }
+ 
+@@ -91,8 +102,8 @@
+     }
+     r = syscall6(40, (long)"sysfs", (long)"/sys", (long)"sysfs", 0, 0, 0);
+     if (r < 0 && r != -16) return r; /* EBUSY: inherited sysfs mount */
+-    /* A mount error is tolerable only if this is the real pmsg sysfs. */
+-    long sysfd = open_file("/sys/class/pmsg/pmsg0/dev", O_RDONLY, 0);
++    /* pmsg is optional on the pinned system kernel; CACHE block sysfs is not. */
++    long sysfd = open_file("/sys/class/block/sda21/dev", O_RDONLY, 0);
+     if (sysfd < 0) return sysfd;
+     syscall6(SYS_close, sysfd, 0, 0, 0, 0, 0);
+     syscall6(33, AT_FDCWD, (long)"/dev/kmsg", 020600, (1 << 8) | 11, 0, 0);
+@@ -107,7 +118,7 @@
+         if (cache < 0) {
+             cache = cache_open();
+             if (cache >= 0) {
+-                const char *mark = "\nM2-PID1-PROBE-v3: persistent cache monitor ready\n";
++                const char *mark = "\nM2-PID1-PROBE-v4: persistent cache monitor ready\n";
+                 write_all(cache, mark, string_length(mark));
+                 syscall6(SYS_fsync, cache, 0, 0, 0, 0, 0);
+             }
+@@ -174,7 +185,7 @@
+             }
+             long in = open_file("/dev/kmsg", O_RDONLY | O_NONBLOCK, 0);
+             long out = pmsg_open();
+-            if (in < 0 || out < 0) finish(21);
++            if (in < 0 || (write_test && out < 0)) finish(21);
+             if (cache_test) {
+                 long cache = cache_open();
+                 if (cache < 0) finish(24);
+@@ -194,7 +205,7 @@
+                 write_all(1, written, string_length(written));
+                 finish(0);
+             }
+-            const char *ok = "PROBE-PRIVATE-TMPFS-SYSFS-KMSG-PMSG-OPEN-PASS\n";
++            const char *ok = "PROBE-PRIVATE-TMPFS-SYSFS-KMSG-OPEN-PASS\n";
+             write_all(1, ok, string_length(ok));
+             finish(0); /* No pmsg write in self-test. Mounts vanish at exit. */
+         }

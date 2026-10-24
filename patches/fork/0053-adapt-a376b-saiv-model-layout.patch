@@ -1,0 +1,70 @@
+From: Codex local A376B compatibility adaptation
+Subject: [PATCH] Adapt A376B SAIV model layout without foreign model substitution
+
+Reason: remaining-modules-preflight.txt:5 lacks legacy midas/moire_detection path; saiv-preflight.txt:12 lacks hs_segmenter.info. AZH4 moved the identical moire model to VslMesDetector (SHA256 matches the old S22 model), while its Midas config still references the old relative path. Copy verified A376B bytes to that path through the existing helper and set explicit parent metadata. AZH4 PhotoEditor has two named info/model pairs rather than the old generic pair; validate both model_path references and copy the intact donor directory. No model renaming or cross-donor neural payload substitution.
+Files: unica/patches/saiv/customize.sh.
+Verification: source/destination moire SHA256 88e001d4007446f82bd999d71d358b6f48ae976c0cd38128fcfc77a4ec9060c1, donor model_path validation, actual SAIV recipe preflight, metadata check, shell syntax and source replay. Runtime Gallery/PhotoEditor features require logs; revert0053.
+
+---
+--- a/unica/patches/saiv/customize.sh
++++ b/unica/patches/saiv/customize.sh
+@@ -35,7 +35,26 @@
+ 
+ # SEC_PRODUCT_FEATURE_SAIV_CONFIG_MIDAS
+ if [ ! -f "$WORK_DIR/vendor/etc/midas/moire_detection/moire_detection.tflite" ]; then
+-    ADD_TO_WORK_DIR "$SOURCE_FIRMWARE" "vendor" "etc/midas/moire_detection/moire_detection.tflite" 0 0 644 "u:object_r:vendor_configs_file:s0"
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++        # AZH4 moved this same model to VslMesDetector; the Midas config
++        # still references the old relative path. Verify the reviewed bytes.
++        A376B_MOIRE_MODEL="$FW_DIR/$SOURCE_FIRMWARE_PATH/vendor/etc/VslMesDetector/moire_detection.tflite"
++        A376B_MOIRE_HASH="$(sha256sum "$A376B_MOIRE_MODEL")" || return 1
++        [ "${A376B_MOIRE_HASH%% *}" = "88e001d4007446f82bd999d71d358b6f48ae976c0cd38128fcfc77a4ec9060c1" ] || {
++            ABORT "Unreviewed A376B relocated moire model"
++            return 1
++        }
++        mkdir -p "$WORK_DIR/tmp" || return 1
++        A376B_MOIRE_STAGE="$(mktemp -d "$WORK_DIR/tmp/a376b-moire.XXXXXX")" || return 1
++        mkdir -p "$A376B_MOIRE_STAGE/vendor/etc/midas/moire_detection" || return 1
++        cp -f "$A376B_MOIRE_MODEL" "$A376B_MOIRE_STAGE/vendor/etc/midas/moire_detection/moire_detection.tflite" || return 1
++        SET_METADATA "vendor" "etc/midas/moire_detection" 0 2000 755 "u:object_r:vendor_configs_file:s0" || return 1
++        ADD_TO_WORK_DIR "$A376B_MOIRE_STAGE" "vendor" "etc/midas/moire_detection/moire_detection.tflite" 0 0 644 "u:object_r:vendor_configs_file:s0" || return 1
++        rm -rf "$A376B_MOIRE_STAGE"
++        unset A376B_MOIRE_MODEL A376B_MOIRE_HASH A376B_MOIRE_STAGE
++    else
++        ADD_TO_WORK_DIR "$SOURCE_FIRMWARE" "vendor" "etc/midas/moire_detection/moire_detection.tflite" 0 0 644 "u:object_r:vendor_configs_file:s0"
++    fi
+ fi
+ if [ ! "$(find "$WORK_DIR/vendor/etc/midas" -maxdepth 1 -type f -name "SRIBMQA_aiFiQA*" 2> /dev/null)" ]; then
+     ADD_TO_WORK_DIR "$SOURCE_FIRMWARE" "vendor" "etc/midas/SRIBMQA_aiFiQA_V100_FP32.tflite" 0 0 644 "u:object_r:vendor_configs_file:s0"
+@@ -90,8 +109,29 @@
+         if [ -d "$WORK_DIR/vendor/etc/saiv/image_understanding/db/hs_segmenter" ]; then
+             DELETE_FROM_WORK_DIR "vendor" "etc/saiv/image_understanding/db/hs_segmenter"
+         fi
+-        ADD_TO_WORK_DIR "$SOURCE_FIRMWARE" "vendor" "etc/saiv/image_understanding/db/hs_segmenter/hs_segmenter.info" 0 0 644 "u:object_r:vendor_configs_file:s0"
+-        ADD_TO_WORK_DIR "$SOURCE_FIRMWARE" "vendor" "etc/saiv/image_understanding/db/hs_segmenter/hs_segmenter.tflite" 0 0 644 "u:object_r:vendor_configs_file:s0"
++        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++            # AZH4 ships HumanSeg + BGPclassifier info/model pairs, with
++            # absolute model_path values. Preserve the donor names and pairs.
++            python3 - "$FW_DIR/$SOURCE_FIRMWARE_PATH" <<'PY' || return 1
++import json
++import sys
++from pathlib import Path
++firmware = Path(sys.argv[1])
++directory = firmware / "vendor/etc/saiv/image_understanding/db/hs_segmenter"
++infos = list(directory.glob("*.info"))
++if len(infos) != 2:
++    raise SystemExit("Unreviewed A376B hs_segmenter info set")
++for info in infos:
++    model = json.loads(info.read_text()).get("model_path", "")
++    if not model.startswith("/vendor/etc/saiv/image_understanding/db/hs_segmenter/") or not (firmware / model.lstrip("/")).is_file():
++        raise SystemExit("A376B hs_segmenter model pair missing: " + info.name)
++print("PASS A376B hs_segmenter donor info/model pairs")
++PY
++            ADD_TO_WORK_DIR "$SOURCE_FIRMWARE" "vendor" "etc/saiv/image_understanding/db/hs_segmenter" 0 0 755 "u:object_r:vendor_configs_file:s0"
++        else
++            ADD_TO_WORK_DIR "$SOURCE_FIRMWARE" "vendor" "etc/saiv/image_understanding/db/hs_segmenter/hs_segmenter.info" 0 0 644 "u:object_r:vendor_configs_file:s0"
++            ADD_TO_WORK_DIR "$SOURCE_FIRMWARE" "vendor" "etc/saiv/image_understanding/db/hs_segmenter/hs_segmenter.tflite" 0 0 644 "u:object_r:vendor_configs_file:s0"
++        fi
+     fi
+ else
+     if [ -d "$WORK_DIR/vendor/etc/saiv/image_understanding/db/hs_segmenter" ]; then

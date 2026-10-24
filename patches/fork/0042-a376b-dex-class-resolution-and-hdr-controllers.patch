@@ -1,0 +1,65 @@
+From: Codex local A376B compatibility adaptation
+Subject: [PATCH] Resolve moved A376B classes and enable target HDR controllers
+
+Reason: attempt23.txt stops at missing SPF handling for A376B HDR false -> star2lte HDR true. AZH4 retains both VideoEnhancer and BrightenUpVideo controller implementations but compiles getAvailabilityStatus to constant 3; restore availability for the target DisplaySolution/mDNIe stack. Independent donor review also shows unchanged class descriptors moved among DEX folders. Allow only a unique exact descriptor match on A376B16 when the expected DEX path is absent; keep all method/value checks and reject ambiguity.
+Files: scripts/utils/smali_utils.sh; unica/patches/product_feature/customize.sh.
+Verification: donor controller inspection, actual SMALI_PATCH helper fixtures (unique/ambiguous/missing/other donor), APK assembly and product-feature tail preflight. HDR behavior requires runtime hardware logs. ADB rules and kernel remain unchanged.
+
+---
+--- a/scripts/utils/smali_utils.sh
++++ b/scripts/utils/smali_utils.sh
+@@ -72,6 +72,28 @@
+ 
+     local FILE_PATH="$APKTOOL_DIR/$PARTITION/${FILE//system\//}"
+ 
++    # AZH4 redistributed unchanged class descriptors across DEX files. Resolve
++    # only the same fully-qualified class, never a basename or synthetic ID.
++    if [ ! -f "$FILE_PATH/$SMALI" ] && \
++            [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++        local CLASS_PATH="${SMALI#*/}"
++        local CANDIDATE
++        local MATCHED=()
++        for CANDIDATE in "$FILE_PATH"/smali*/"$CLASS_PATH"; do
++            [ -f "$CANDIDATE" ] || continue
++            if head -n 1 "$CANDIDATE" | grep -qF "L${CLASS_PATH%.smali};"; then
++                MATCHED+=("$CANDIDATE")
++            fi
++        done
++        if [ "${#MATCHED[@]}" -gt 1 ]; then
++            LOGE "Ambiguous A376B DEX class location: $CLASS_PATH"
++            return 1
++        elif [ "${#MATCHED[@]}" -eq 1 ]; then
++            SMALI="${MATCHED[0]#"$FILE_PATH/"}"
++            LOG "- Resolved A376B DEX class location: $SMALI"
++        fi
++    fi
++
+     # Check if provided smali exists
+     if [ ! -f "$FILE_PATH/$SMALI" ]; then
+         LOGE "Smali not found: \"/$PARTITION/$FILE/$SMALI\""
+--- a/unica/patches/product_feature/customize.sh
++++ b/unica/patches/product_feature/customize.sh
+@@ -294,8 +294,21 @@
+     fi
+ else
+     if $TARGET_COMMON_SUPPORT_HDR_EFFECT; then
+-        # TODO handle this condition
+-        LOG_MISSING_PATCHES "SOURCE_COMMON_SUPPORT_HDR_EFFECT" "TARGET_COMMON_SUPPORT_HDR_EFFECT"
++        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++            # Both complete AZH4 controllers remain in the donor but their
++            # availability methods are compiled to UNSUPPORTED_ON_DEVICE.
++            # The target mDNIe/DisplaySolution stack supplies the hardware.
++            SET_FLOATING_FEATURE_CONFIG "SEC_FLOATING_FEATURE_COMMON_SUPPORT_HDR_EFFECT" "TRUE"
++            for CONTROLLER in VideoEnhancerPreferenceController SecBrightenUpVideoPreferenceController; do
++                SMALI_PATCH "system" "system/priv-app/SecSettings/SecSettings.apk" \
++                    "smali_classes2/com/samsung/android/settings/usefulfeature/videoenhancer/$CONTROLLER.smali" "return" \
++                    "getAvailabilityStatus()I" "0"
++            done
++            unset CONTROLLER
++        else
++            # TODO handle this condition
++            LOG_MISSING_PATCHES "SOURCE_COMMON_SUPPORT_HDR_EFFECT" "TARGET_COMMON_SUPPORT_HDR_EFFECT"
++        fi
+     fi
+ fi
+ 

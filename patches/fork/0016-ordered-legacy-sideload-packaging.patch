@@ -1,0 +1,353 @@
+Reason: live TWRP sideload wraps the 5479600816-byte ZIP to1184633520 (exactly2^32 difference), rejects before updater. Preserve recovery and images by extending the existing flashable packaging entry with ordered classic-ZIP stages below2GiB.
+Affected: scripts/build_flashable_zip.sh optional --legacy-sideload mode; scripts/internal/split_legacy_sideload.py helper. Normal full/incremental paths unchanged.
+Verify: full source verifier remains mandatory; reject non-new/stashed/overlap/out-of-bounds transfers; preserve source header and ordered range/data mapping; per-chunk Brotli raw SHA round-trip, copied entry size/CRC identity, each output ZIP32/size/CRC and pinned-certificate CMS verification. Live existing ARM64 updater RAM fixture proves wrong-order abort/no-write and partial fragmented transfers reconstruct exact bytes. Evidence flash-01/legacy-transfer-tests.json; final generated manifest and runtime stage logs.
+Rollback: reverse patch and use the unchanged full ZIP only with a compatible recovery/transport. No new build system, image/kernel changes or recovery replacement. Intermediate packages never write BOOT/format data; final part retains original install tail and requires chain ID/order.
+
+--- a/scripts/build_flashable_zip.sh
++++ b/scripts/build_flashable_zip.sh
+@@ -6,6 +6,7 @@
+ source "$SRC_DIR/scripts/utils/build_utils.sh" || exit 1
+ 
+ INCREMENTAL=false
++LEGACY_SIDELOAD=false
+ SOURCE_ZIP=""
+ TARGET_ZIP=""
+ OUTPUT_FILE=""
+@@ -40,6 +41,8 @@
+         if [[ "$1" == "--incremental" ]] || [[ "$1" == "-i" ]]; then
+             INCREMENTAL=true
+             shift; SOURCE_ZIP="$1"
++        elif [[ "$1" == "--legacy-sideload" ]]; then
++            LEGACY_SIDELOAD=true
+         elif [[ "$1" == "--output" ]] || [[ "$1" == "-o" ]]; then
+             shift; OUTPUT_FILE="$1"
+             if [[ "$OUTPUT_FILE" != *".zip" ]]; then
+@@ -102,6 +105,7 @@
+ {
+     echo "Usage: build_flashable_zip [options] <file>" >&2
+     echo " -i, --incremental : Generate an incremental zip using the given target-files zip as source" >&2
++    echo " --legacy-sideload : Split an existing verified full flashable zip into ordered signed packages below 2 GiB" >&2
+     echo " -o, --output : Specify the output zip path, defaults to $OUT_DIR" >&2
+ }
+ # ]
+@@ -111,6 +115,18 @@
+ trap 'PRINT_BUILD_OUTCOME' EXIT
+ trap 'echo' INT
+ 
++if $LEGACY_SIDELOAD; then
++    if $INCREMENTAL || [ "$TARGET_PLATFORM" != "exynos9810" ]; then
++        LOGE "Legacy sideload mode requires a full Exynos9810 flashable zip"
++        exit 1
++    fi
++    "$SRC_DIR/scripts/internal/verify_exynos9810_flashable.sh" \
++        "$TARGET_ZIP" "$TARGET_OS_FILE_SYSTEM_TYPE" || exit 1
++    python3 "$SRC_DIR/scripts/internal/split_legacy_sideload.py" \
++        "$TARGET_ZIP" "$OUTPUT_FILE" || exit 1
++    exit 0
++fi
++
+ if $INCREMENTAL; then
+     "$SRC_DIR/scripts/internal/build_incremental_ota_zip.sh" "$SOURCE_ZIP" "$TARGET_ZIP" "$OUTPUT_FILE" || exit 1
+ else
+--- /dev/null
++++ b/scripts/internal/split_legacy_sideload.py
+@@ -0,0 +1,299 @@
++#!/usr/bin/env python3
++"""Split a verified full Exynos9810 OTA into ordered classic-ZIP stages.
++
++This is an optional packaging mode of build_flashable_zip.sh. It does not
++build images or kernels. Only full, stash-free, new-only system transfers are
++accepted. Intermediate packages never install BOOT or format USERDATA.
++"""
++import concurrent.futures
++import hashlib
++import json
++import os
++from pathlib import Path
++import shutil
++import subprocess
++import sys
++import tempfile
++import zipfile
++
++BLOCK = 4096
++CHUNK_BLOCKS = 393216  # 1.5 GiB raw; every signed ZIP must remain below 2 GiB.
++LIMIT = 2**31 - 1
++UPDATER = "META-INF/com/google/android/updater-script"
++STATE = "/tmp/un1ca-legacy-stage.prop"
++
++
++def digest(path):
++    h = hashlib.sha256()
++    with Path(path).open("rb") as f:
++        for b in iter(lambda: f.read(8 * 1024 * 1024), b""):
++            h.update(b)
++    return h.hexdigest()
++
++
++def parse_transfer(text):
++    lines = text.splitlines()
++    if lines[0] != "4" or lines[2:4] != ["0", "0"]:
++        raise ValueError("Only full v4, stash-free transfers are supported")
++    ranges = []
++    total = int(lines[1])
++    for line in lines[4:]:
++        op, encoded = line.split()
++        nums = [int(x) for x in encoded.split(",")]
++        if op != "new" or nums[0] != len(nums) - 1 or nums[0] % 2:
++            raise ValueError("Legacy split refuses non-new or malformed commands")
++        for a, b in zip(nums[1::2], nums[2::2]):
++            if not 0 <= a < b <= total:
++                raise ValueError("Transfer range exceeds partition")
++            ranges.append((a, b))
++    ordered = sorted(ranges)
++    if any(a[1] > b[0] for a, b in zip(ordered, ordered[1:])):
++        raise ValueError("Overlapping new ranges are not supported")
++    return lines[:4], ranges
++
++
++def normalize(ranges):
++    out = []
++    for a, b in ranges:
++        if out and out[-1][1] == a:
++            out[-1] = (out[-1][0], b)
++        else:
++            out.append((a, b))
++    return out
++
++
++def plan_ranges(ranges, capacity=CHUNK_BLOCKS):
++    if capacity < 1:
++        raise ValueError("Invalid chunk capacity")
++    parts, current, used = [], [], 0
++    for a, b in ranges:
++        while a < b:
++            n = min(b - a, capacity - used)
++            current.append((a, a + n))
++            used += n
++            a += n
++            if used == capacity:
++                parts.append(current)
++                current, used = [], 0
++    if current:
++        parts.append(current)
++    if normalize([r for part in parts for r in part]) != normalize(ranges):
++        raise ValueError("Splitting changed range/data order")
++    return parts
++
++
++def transfer_text(header, ranges):
++    # Preserve the original partition-block header, not a guessed write count.
++    return "\n".join(header + [f"new 2,{a},{b}" for a, b in ranges]) + "\n"
++
++
++def stage_script(model, prefix, tail, device, ident, index, count, state=STATE):
++    guard = ""
++    if index > 1:
++        guard = (f'file_getprop("{state}", "id") == "{ident}" && '
++                 f'file_getprop("{state}", "next") == "{index}" ||\n'
++                 '    abort("E9810: Wrong legacy part/order; restart from part 01 after recovery reboot.");\n')
++    if index == 1:
++        script = prefix
++    else:
++        script = model + "\n" + guard
++    script += f'ui_print("UN1CA legacy sideload part {index}/{count}; do not reboot between parts.");\n'
++    if index < count:
++        script += (f'block_image_update("{device}", package_extract_file("system.transfer.list"), '
++                   '"system.new.dat.br", "system.patch.dat") ||\n'
++                   '    abort("E1001: Failed to apply legacy system part.");\n')
++    else:
++        script += ('package_extract_dir("exynos9810", "/tmp/exynos9810");\n'
++                   'run_program("/sbin/chmod", "-R", "0755", "/tmp/exynos9810") == 0 ||\n'
++                   '    abort("E9810: Cannot prepare final legacy installer.");\n'
++                   'run_program("/sbin/sh", "/tmp/exynos9810/preflight.sh", "star2lte") == 0 ||\n'
++                   '    abort("E9810: Legacy final layout is not ready.");\n' + tail)
++    script += (f'package_extract_file("legacy_next.prop", "{state}") ||\n'
++               '    abort("E9810: Cannot record completed legacy part.");\n'
++               'set_progress(1.000000);\n')
++    if index < count:
++        script += 'ui_print("Part complete. Stay in recovery and install the next numbered part.");\n'
++    return script
++
++
++def hash_pipe(command):
++    proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
++    h, size = hashlib.sha256(), 0
++    for b in iter(lambda: proc.stdout.read(8 * 1024 * 1024), b""):
++        h.update(b)
++        size += len(b)
++    error = proc.stderr.read()
++    if proc.wait() != 0:
++        raise RuntimeError(error.decode(errors="replace"))
++    return h.hexdigest(), size
++
++
++def compress_chunk(raw, expected):
++    br = raw.with_suffix(".br")
++    subprocess.run(["brotli", "--quality=6", "--output=" + str(br), str(raw)], check=True)
++    check, size = hash_pipe(["brotli", "-d", "-c", str(br)])
++    if check != expected or size != raw.stat().st_size:
++        raise ValueError("Brotli round-trip changed chunk data")
++    raw.unlink()
++    return {"file": str(br), "raw_sha256": check, "raw_bytes": size,
++            "brotli_sha256": digest(br), "brotli_bytes": br.stat().st_size}
++
++
++def copy_entry(source, destination, name):
++    info = source.getinfo(name)
++    new = zipfile.ZipInfo(name, info.date_time)
++    new.external_attr = info.external_attr
++    new.compress_type = zipfile.ZIP_STORED
++    new.file_size = info.file_size
++    # Do not copy ZIP64 offset extra fields from the large source archive.
++    with source.open(name) as src, destination.open(new, "w", force_zip64=False) as dst:
++        shutil.copyfileobj(src, dst, 8 * 1024 * 1024)
++
++
++def verify_signature(path, cert, temporary):
++    size = path.stat().st_size
++    with path.open("rb") as f:
++        f.seek(-6, 2)
++        footer = f.read(6)
++        start, comment = int.from_bytes(footer[:2], "little"), int.from_bytes(footer[4:], "little")
++        if footer[2:4] != b"\xff\xff" or not 6 < start <= comment:
++            raise ValueError("Missing OTA whole-file signature")
++        f.seek(-comment - 22, 2)
++        tail = f.read()
++        if tail[:4] != b"PK\x05\x06" or b"PK\x06\x07" in tail:
++            raise ValueError("Legacy stage must have classic EOCD")
++        signature = temporary / "signature.der"
++        signature.write_bytes(tail[-start:-6])
++    proc = subprocess.Popen(["openssl", "cms", "-verify", "-binary", "-inform", "DER",
++                             "-in", str(signature), "-content", "/dev/stdin", "-nointern",
++                             "-certfile", str(cert), "-noverify", "-out", "/dev/null"],
++                            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
++    with path.open("rb") as f:
++        remaining = size - comment - 2
++        while remaining:
++            b = f.read(min(8 * 1024 * 1024, remaining))
++            if not b:
++                raise EOFError("Truncated signed stage")
++            proc.stdin.write(b)
++            remaining -= len(b)
++    proc.stdin.close()
++    error = proc.stderr.read()
++    if proc.wait() != 0:
++        raise RuntimeError(error.decode(errors="replace"))
++
++
++def build(source, output):
++    root = Path(os.environ["SRC_DIR"])
++    certificate = root / "security" / ("unica_ota" if os.environ.get("ROM_IS_OFFICIAL") == "true" else "aosp_testkey")
++    cert, key = certificate.with_suffix(".x509.pem"), certificate.with_suffix(".pk8")
++    for tool in ["brotli", "signapk", "openssl"]:
++        if not shutil.which(tool):
++            raise RuntimeError(f"Legacy mode requires {tool}")
++    source_sha = digest(source)
++    with tempfile.TemporaryDirectory(prefix="legacy-sideload-", dir=output.parent) as td, zipfile.ZipFile(source) as original:
++        temp = Path(td)
++        full_script = original.read(UPDATER).decode()
++        header, ranges = parse_transfer(original.read("system.transfer.list").decode())
++        if original.getinfo("system.patch.dat").file_size:
++            raise ValueError("Incremental system payload cannot be split by this mode")
++        parts = plan_ranges(ranges)
++        count = len(parts) + 1
++        ident = hashlib.sha256((source_sha + json.dumps(parts)).encode()).hexdigest()
++        prefix = full_script[:full_script.index('ui_print("Patching system image unconditionally...");')]
++        tail = full_script[full_script.index('ui_print("Patching vendor image unconditionally...");'):]
++        model = full_script.splitlines()[0]
++        if '"SM-G965F"' not in model or 'ro.product.device' in model.split("abort")[0]:
++            raise ValueError("Legacy mode requires the strict M1 F model guard")
++        device = "/dev/block/platform/11120000.ufs/by-name/SYSTEM"
++        source_br = temp / "source.br"
++        with original.open("system.new.dat.br") as src, source_br.open("wb") as dst:
++            shutil.copyfileobj(src, dst, 8 * 1024 * 1024)
++        decoder = subprocess.Popen(["brotli", "-d", "-c", str(source_br)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
++        stream_hash = hashlib.sha256()
++        futures = []
++        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
++            for i, part in enumerate(parts, 1):
++                raw = temp / f"system-{i:02}.dat"
++                expected = sum(b - a for a, b in part) * BLOCK
++                h = hashlib.sha256()
++                with raw.open("wb") as dst:
++                    remaining = expected
++                    while remaining:
++                        data = decoder.stdout.read(min(8 * 1024 * 1024, remaining))
++                        if not data:
++                            raise EOFError("Source new.dat shorter than transfer ranges")
++                        dst.write(data)
++                        h.update(data)
++                        stream_hash.update(data)
++                        remaining -= len(data)
++                futures.append(pool.submit(compress_chunk, raw, h.hexdigest()))
++                print(f"Split system stream {i}/{len(parts)}", flush=True)
++            if decoder.stdout.read(1) or decoder.wait() != 0:
++                raise ValueError("Source new.dat exceeds ranges or failed Brotli decode")
++            chunks = [f.result() for f in futures]
++        manifest = {"source": str(source), "source_sha256": source_sha, "plan_id": ident,
++                    "system_stream_sha256": stream_hash.hexdigest(), "header": header,
++                    "system_raw_bytes": sum(c["raw_bytes"] for c in chunks),
++                    "stage_count": count, "stages": [], "boot_tested": False}
++        common = [n for n in original.namelist() if n.startswith("META-INF/") and not n.endswith("/")
++                  and n not in [UPDATER, "META-INF/com/android/otacert"]] + ["build_info.txt"]
++        system_names = {"system.new.dat.br", "system.transfer.list", "system.patch.dat"}
++        for index in range(1, count + 1):
++            final = index == count
++            role = "final" if final else ("first-system" if index == 1 else "system")
++            script = stage_script(model, prefix, tail, device, ident, index, count)
++            metadata = {"id": ident, "index": index, "count": count, "role": role,
++                        "source_sha256": source_sha, "ranges": parts[index - 1] if not final else []}
++            if not final:
++                metadata.update({k: v for k, v in chunks[index - 1].items() if k != "file"})
++            names = set(common)
++            if final:
++                names.update(n for n in original.namelist() if not n.endswith("/")
++                             and n not in system_names | {UPDATER, "META-INF/com/android/otacert"})
++            elif index == 1:
++                names.update(n for n in original.namelist() if n.startswith("exynos9810/") and not n.endswith("/"))
++            unsigned = temp / "unsigned.zip"
++            destination = output.with_name(output.stem + f"-legacy-{index:02}-of-{count:02}.zip")
++            with zipfile.ZipFile(unsigned, "w", allowZip64=False) as stage:
++                for name in sorted(names):
++                    copy_entry(original, stage, name)
++                stage.writestr(UPDATER, script)
++                stage.writestr("legacy_stage.json", json.dumps(metadata, sort_keys=True))
++                stage.writestr("legacy_next.prop", f"id={ident}\nnext={'done' if final else index + 1}\n")
++                if not final:
++                    stage.writestr("system.transfer.list", transfer_text(header, parts[index - 1]))
++                    stage.writestr("system.patch.dat", b"")
++                    stage.write(chunks[index - 1]["file"], "system.new.dat.br")
++            subprocess.run(["signapk", "-w", str(cert), str(key), str(unsigned), str(destination)], check=True)
++            if destination.stat().st_size >= LIMIT:
++                raise ValueError("Signed legacy stage exceeds 2 GiB")
++            with zipfile.ZipFile(destination) as check:
++                if check.testzip() is not None or check.read(UPDATER).decode() != script:
++                    raise ValueError("Stage CRC/script mismatch")
++                for name in names:
++                    if (check.getinfo(name).CRC, check.getinfo(name).file_size) != (original.getinfo(name).CRC, original.getinfo(name).file_size):
++                        raise ValueError("Copied source payload changed")
++                for item in check.infolist():
++                    if item.file_size >= LIMIT or item.header_offset >= LIMIT or item.extract_version >= 45:
++                        raise ValueError("ZIP64/large entry is forbidden in legacy mode")
++                if not final:
++                    _, back = parse_transfer(check.read("system.transfer.list").decode())
++                    if back != parts[index - 1] or "/by-name/BOOT" in script or "post_install" in script:
++                        raise ValueError("Intermediate stage changed data order or writes BOOT/data")
++                    if "boot.img" in check.namelist():
++                        raise ValueError("Intermediate stage contains a BOOT image")
++                if index > 1 and script.index("Wrong legacy part/order") > script.index("block_image_update"):
++                    raise ValueError("Stage guard must precede image writes")
++            verify_signature(destination, cert, temp)
++            metadata.update(path=str(destination), bytes=destination.stat().st_size,
++                            sha256=digest(destination), crc="PASS", signature="PASS", zip32="PASS")
++            manifest["stages"].append(metadata)
++            print(f"Verified signed legacy stage {index}/{count}: {destination.stat().st_size} bytes", flush=True)
++        manifest["status"] = "PASS"
++        report = output.with_name(output.stem + "-legacy-manifest.json")
++        report.write_text(json.dumps(manifest, indent=2) + "\n")
++        print("Legacy manifest: " + str(report), flush=True)
++
++
++if __name__ == "__main__":
++    build(Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve())

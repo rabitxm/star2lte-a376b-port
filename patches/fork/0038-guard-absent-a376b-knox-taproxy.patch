@@ -1,0 +1,31 @@
+From: Codex local compatibility adaptation
+Subject: [PATCH] Guard absent A376B Knox TAProxy patch target
+
+Reason: `attempt17.txt:1045` reports TAProxy.smali missing from services.jar. AZH4 source has no Knox DAR TAProxy class, so the upstream product-shipping API replacement cannot apply. Skip only this absent class edit for the exact A376B16 profile; retain MAINLINE_API_LEVEL edits and other substitutions.
+Files: unica/patches/product_feature/customize.sh.
+Verification: extracted class inventory, shell syntax and clean build18.
+
+---
+--- a/unica/patches/product_feature/customize.sh
++++ b/unica/patches/product_feature/customize.sh
+@@ -45,11 +45,15 @@
+             "$SOURCE_PRODUCT_SHIPPING_API_LEVEL" \
+             "$TARGET_PRODUCT_SHIPPING_API_LEVEL"
+     fi
+-    SMALI_PATCH "system" "system/framework/services.jar" \
+-        "smali/com/android/server/knox/dar/ddar/ta/TAProxy.smali" "replace" \
+-        "updateServiceHolder(Z)V" \
+-        "$SOURCE_PRODUCT_SHIPPING_API_LEVEL" \
+-        "$TARGET_PRODUCT_SHIPPING_API_LEVEL"
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++        LOGW "A376B AZH4 services.jar has no Knox TAProxy class; skipping its inapplicable shipping-API substitution"
++    else
++        SMALI_PATCH "system" "system/framework/services.jar" \
++            "smali/com/android/server/knox/dar/ddar/ta/TAProxy.smali" "replace" \
++            "updateServiceHolder(Z)V" \
++            "$SOURCE_PRODUCT_SHIPPING_API_LEVEL" \
++            "$TARGET_PRODUCT_SHIPPING_API_LEVEL"
++    fi
+     SMALI_PATCH "system" "system/framework/services.jar" \
+         "smali/com/android/server/SystemServer.smali" "replace" \
+         "startOtherServices(Lcom/android/server/utils/TimingsTraceAndSlog;)V" \

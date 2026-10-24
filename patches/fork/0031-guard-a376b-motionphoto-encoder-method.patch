@@ -1,0 +1,26 @@
+From: Codex local compatibility adaptation
+Subject: [PATCH] Guard absent A376B MotionPhoto encoder method
+
+Reason: attempt10.txt:1000 shows AZH4 MotionPhoto does not contain the legacy configVideoEncoderParameters method. For the exact reviewed A376B16 source profile, keep the donor VideoTranscoder implementation and still apply the verified EncoderFilter format patch; other donors retain strict upstream behavior.
+Files: unica/patches/legacy/customize.sh.
+Verification: decode the exact locked AZH4 donor and confirm the absent method plus supported EncoderFilter method/constant, shell syntax, reverse patch dry-run, then clean build.
+
+---
+diff --git a/unica/patches/legacy/customize.sh b/unica/patches/legacy/customize.sh
+--- a/unica/patches/legacy/customize.sh
++++ b/unica/patches/legacy/customize.sh
+@@ -675,5 +675,9 @@ if [ "$TARGET_PLATFORM_SDK_VERSION" -lt "35" ]; then
+-        SMALI_PATCH "system" "system/app/MotionPhoto/MotionPhoto.apk" \
+-            "smali/com/samsung/android/motionphoto/utils/v2/video/VideoTranscoder.smali" "replace" \
+-            'configVideoEncoderParameters(Landroid/media/MediaFormat;Lcom/samsung/android/motionphoto/utils/v2/video/VideoTranscodingTask;)V' \
+-            'const p2, 0x7f420888' \
+-            'const p2, 0x7f000789'
++        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++            LOGW "Reviewed A376B AZH4 MotionPhoto lacks configVideoEncoderParameters; keeping donor transcoder and applying supported EncoderFilter codec patches"
++        else
++            SMALI_PATCH "system" "system/app/MotionPhoto/MotionPhoto.apk" \
++                "smali/com/samsung/android/motionphoto/utils/v2/video/VideoTranscoder.smali" "replace" \
++                'configVideoEncoderParameters(Landroid/media/MediaFormat;Lcom/samsung/android/motionphoto/utils/v2/video/VideoTranscodingTask;)V' \
++                'const p2, 0x7f420888' \
++                'const p2, 0x7f000789'
++        fi

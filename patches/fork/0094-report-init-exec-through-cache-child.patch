@@ -1,0 +1,126 @@
+From: Codex M2 early-boot diagnostic
+Subject: [PATCH] Report original init exec errno through CLOEXEC pipe
+
+Reason: system kernel has no pmsg, so the previous wrapper's exec-failure
+branch could not persist errno. A CLOEXEC pipe sends a negative execve
+result to the child CACHE recorder; EOF is labeled conservatively as
+cloexec_or_parent_exit. Successful exec retains argv/env and PID1.
+
+Files: rom/platform/exynos9810/installer/bootlogger_pid1_probe.c.
+No kernel/vendor/radio or normal ROM build change. On exec failure only,
+PID1 waits one second for the child to persist errno before exiting127.
+
+Verification: AArch64 static build, TWRP --exec-report-test exercised a
+real execve ENOENT and pipe transport (PROBE-EXEC-ENOENT-PIPE-PASS). M1
+boot completed and CACHE reported pipe EOF. M2 result and baseline BOOT
+rollbacks are in logs/20261023-probe09/. Offline M1/M2 fstab files and
+vendor SELinux are byte-identical; init dependency closure and strong
+symbols resolved with no missing names in either ROM. Those checks do
+not establish full runtime compatibility.
+
+--- a/platform/exynos9810/installer/bootlogger_pid1_probe.c
++++ b/platform/exynos9810/installer/bootlogger_pid1_probe.c
+@@ -75,8 +75,8 @@
+     if (r < 0) return r;
+     if (statbuf[0] != 0xef53) return -22; /* EXT4_SUPER_MAGIC */
+     const char *path = (mounted[1] == 'c')
+-        ? "/cache/m2-early-boot-probe08.log"
+-        : "/dev/m2-cache/m2-early-boot-probe08.log";
++        ? "/cache/m2-early-boot-probe09.log"
++        : "/dev/m2-cache/m2-early-boot-probe09.log";
+     return open_file(path,
+                      O_WRONLY | O_CREAT | O_APPEND, 0600);
+ }
+@@ -127,21 +127,39 @@
+     return 0;
+ }
+ 
+-static void monitor(void)
++static void monitor(long exec_pipe)
+ {
+     char buf[4096], pending[8192];
+     long used = 0, in = -1, out = -1, cache = -1;
+     long batched = 0, records = 0, cache_bytes = 0;
+     long start = monotonic_milliseconds(), last_sync = start;
++    long exec_result = 0, exec_reported = 0;
+     for (long tick = 0; tick < 6000; ++tick) {
++        if (exec_pipe >= 0 && !exec_result) {
++            long result;
++            long n = syscall6(SYS_read, exec_pipe, (long)&result, sizeof(result), 0, 0, 0);
++            if (n == sizeof(result) && result < 0) exec_result = result;
++            else if (n == 0) exec_result = 1; /* CLOEXEC closed writer. */
++        }
+         if (cache < 0) {
+             cache = cache_open();
+             if (cache >= 0) {
+-                const char *mark = "\nM2-PID1-PROBE-v6: batched monitor ready\n";
++                const char *mark = "\nM2-PID1-PROBE-v7: exec-report monitor ready\n";
+                 write_all(cache, mark, string_length(mark));
+                 syscall6(SYS_fsync, cache, 0, 0, 0, 0, 0);
+             }
+         }
++        if (cache >= 0 && exec_result && !exec_reported) {
++            char msg[128];
++            const char *tag = exec_result < 0 ? "M2-INIT-EXEC-FAILED errno=" : "M2-INIT-EXEC-PIPE-EOF cloexec_or_parent_exit=";
++            long n = string_length(tag);
++            copy_bytes(msg, tag, n);
++            n += append_decimal(msg + n, exec_result < 0 ? -exec_result : exec_result);
++            msg[n++] = '\n';
++            write_all(cache, msg, n);
++            syscall6(SYS_fsync, cache, 0, 0, 0, 0, 0);
++            exec_reported = 1;
++        }
+         if (out < 0) {
+             out = pmsg_open();
+             if (out >= 0) {
+@@ -205,6 +223,26 @@
+     char **env = argv + argc + 1;
+     long pid = syscall6(172, 0, 0, 0, 0, 0, 0);
+     if (pid != 1) {
++        if (argc == 2 && contains(argv[1], string_length(argv[1]), "--exec-report-test")) {
++            int channel[2];
++            if (syscall6(59, (long)channel, 0x80000, 0, 0, 0, 0) < 0) finish(30);
++            long child = syscall6(220, 17, 0, 0, 0, 0, 0);
++            if (child < 0) finish(31);
++            if (!child) {
++                syscall6(SYS_close, channel[1], 0, 0, 0, 0, 0);
++                long err = 0;
++                long n = syscall6(SYS_read, channel[0], (long)&err, sizeof(err), 0, 0, 0);
++                finish(n == sizeof(err) && err == -2 ? 0 : 32);
++            }
++            syscall6(SYS_close, channel[0], 0, 0, 0, 0, 0);
++            long err = syscall6(221, (long)"/__m2_probe_nonexistent_init__", (long)argv, (long)env, 0, 0, 0);
++            write_all(channel[1], (const char *)&err, sizeof(err));
++            int status = -1;
++            if (syscall6(260, child, (long)&status, 0, 0, 0, 0) != child || status) finish(33);
++            const char *ok = "PROBE-EXEC-ENOENT-PIPE-PASS\n";
++            write_all(1, ok, string_length(ok));
++            finish(0);
++        }
+         if (argc == 2 && (contains(argv[1], string_length(argv[1]), "--namespace-test") ||
+                           contains(argv[1], string_length(argv[1]), "--namespace-cold-test") ||
+                           contains(argv[1], string_length(argv[1]), "--pmsg-write-test") ||
+@@ -261,13 +299,21 @@
+         }
+         finish(13); /* never execute init from a non-PID1 invocation */
+     }
++    int exec_pipe[2] = {-1, -1};
++    syscall6(59, (long)exec_pipe, 0x80000 | O_NONBLOCK, 0, 0, 0, 0); /* pipe2 CLOEXEC */
+     long child = syscall6(220, 17, 0, 0, 0, 0, 0);
+     if (!child) {
++        if (exec_pipe[1] >= 0) syscall6(SYS_close, exec_pipe[1], 0, 0, 0, 0, 0);
+         if (monitor_namespace(0) < 0) finish(22);
+-        monitor();
++        monitor(exec_pipe[0]);
+     }
++    if (exec_pipe[0] >= 0) syscall6(SYS_close, exec_pipe[0], 0, 0, 0, 0, 0);
+     /* Even clone failure must not prevent original init. No wait in PID1. */
+-    syscall6(221, (long)"/init.real", (long)argv, (long)env, 0, 0, 0);
++    long exec_error = syscall6(221, (long)"/init.real", (long)argv, (long)env, 0, 0, 0);
++    if (exec_pipe[1] >= 0 && child > 0) {
++        write_all(exec_pipe[1], (const char *)&exec_error, sizeof(exec_error));
++        sleep_milliseconds(1000); /* Failure only: allow child to persist errno. */
++    }
+     long out = pmsg_open();
+     if (out >= 0) {
+         const char *err = "\nM2-PID1-PROBE-v2: exec /init.real FAILED\n";

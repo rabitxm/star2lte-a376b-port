@@ -1,0 +1,26 @@
+Reason: M2 attempt3.txt:914 aborts SOURCE_GALLERY_CONFIG_PET_CLUSTER_VERSION None versus empty target. Both represent disabled support; the old comparison treats an absent target field as an enabled version. Normalize those two disabled representations without enabling a missing implementation.
+Affected: unica/patches/camera/customize.sh.
+Verify: Seven cases using actual camera block/FF helpers: None/empty inactive combinations are no-ops, a real enabled target without donor support still fails, enabled donor disabled target removes the same four components, enabled/enabled is unchanged. Evidence pet-cluster-fixtures.json in logs/20261021-m2-build. No source or target feature values fabricated.
+Rollback: reverse patch and restore the prior guard behavior. No kernel/vendor/RIL/phone changes.
+
+--- a/unica/patches/camera/customize.sh
++++ b/unica/patches/camera/customize.sh
+@@ -229,15 +229,15 @@
+ # SEC_PRODUCT_FEATURE_GALLERY_CONFIG_PET_CLUSTER_VERSION
+ SOURCE_GALLERY_CONFIG_PET_CLUSTER_VERSION="$(GET_FLOATING_FEATURE_CONFIG "$FW_DIR/$SOURCE_FIRMWARE_PATH/system/system/etc/floating_feature.xml" "SEC_FLOATING_FEATURE_GALLERY_CONFIG_PET_CLUSTER_VERSION")"
+ TARGET_GALLERY_CONFIG_PET_CLUSTER_VERSION="$(GET_FLOATING_FEATURE_CONFIG "SEC_FLOATING_FEATURE_GALLERY_CONFIG_PET_CLUSTER_VERSION")"
+-if [[ "$SOURCE_GALLERY_CONFIG_PET_CLUSTER_VERSION" != "None" ]]; then
+-    if [[ "$TARGET_GALLERY_CONFIG_PET_CLUSTER_VERSION" == "None" ]]; then
++if [[ -n "$SOURCE_GALLERY_CONFIG_PET_CLUSTER_VERSION" && "$SOURCE_GALLERY_CONFIG_PET_CLUSTER_VERSION" != "None" ]]; then
++    if [[ -z "$TARGET_GALLERY_CONFIG_PET_CLUSTER_VERSION" || "$TARGET_GALLERY_CONFIG_PET_CLUSTER_VERSION" == "None" ]]; then
+         DELETE_FROM_WORK_DIR "system" "system/etc/default-permissions/default-permissions-com.samsung.petservice.xml"
+         DELETE_FROM_WORK_DIR "system" "system/etc/permissions/privapp-permissions-com.samsung.petservice.xml"
+         DELETE_FROM_WORK_DIR "system" "system/lib64/libPetClustering.camera.samsung.so"
+         DELETE_FROM_WORK_DIR "system" "system/priv-app/PetService"
+     fi
+ else
+-    if [[ "$TARGET_GALLERY_CONFIG_PET_CLUSTER_VERSION" != "None" ]]; then
++    if [[ -n "$TARGET_GALLERY_CONFIG_PET_CLUSTER_VERSION" && "$TARGET_GALLERY_CONFIG_PET_CLUSTER_VERSION" != "None" ]]; then
+         # TODO handle this condition
+         LOG_MISSING_PATCHES "SOURCE_GALLERY_CONFIG_PET_CLUSTER_VERSION" "TARGET_GALLERY_CONFIG_PET_CLUSTER_VERSION"
+     fi

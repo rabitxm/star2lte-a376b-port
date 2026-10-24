@@ -1,0 +1,52 @@
+From: Codex local A376B compatibility adaptation
+Subject: [PATCH] Retain donor behavior for five optional Settings features
+
+Reason and verification: settings-patches-preflight72.json and settings-smali72.txt:18-19 show mismatches in Google Photos spoof, secure windows, app downgrade, target SDK bypass and capture detection. For temporary M2, omit only those five patches and remove their five XML controls atomically; keep supported hooks and mandatory ADB policy. Diagnostic settings-smali75.txt PASS, XML parse PASS, shell syntax and replay; compiled output/runtime still required.
+Files: scripts/internal/apply_modules.sh, unica/mods/settings/customize.sh.
+
+---
+--- a/scripts/internal/apply_modules.sh
++++ b/scripts/internal/apply_modules.sh
+@@ -175,6 +175,18 @@
+                 [[ "$p" == */setupwizard/smali/system/priv-app/SecSetupWizard_Global/SecSetupWizard_Global.apk/0001-Add-custom-disclaimer-page.patch ]]; then
+             LOGW "AZH4 disclaimer Activity/resources differ; retaining donor disclaimer page for M2"
+             continue
++        fi
++        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++            case "$p" in
++                */settings/smali/system/framework/framework.jar/0001-Allow-unlimited-storage-for-Google-Photos.patch|\
++                */settings/smali/system/framework/services.jar/0001-Allow-disabling-secure-windows.patch|\
++                */settings/smali/system/framework/services.jar/0002-Allow-app-downgrade.patch|\
++                */settings/smali/system/framework/services.jar/0003-Allow-app-target-SDK-bypass.patch|\
++                */settings/smali/system/framework/services.jar/0004-Allow-disable-screen-capture-detection.patch)
++                    LOGW "M2 retains donor behavior and omits the matching unsupported optional Settings control: ${p##*/}"
++                    continue
++                    ;;
++            esac
+         fi
+         APPLY_PATCH "$PARTITION" "$FILE" "$p"
+     done < <(find "$PATCHES_PATH/$TARGET" -type f -name "*.patch" | sort -n)
+--- a/unica/mods/settings/customize.sh
++++ b/unica/mods/settings/customize.sh
+@@ -82,6 +82,21 @@
+ if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
+     python3 "$MODPATH/a376b_search.py" \
+         "$APKTOOL_DIR/system/priv-app/SecSettings/SecSettings.apk" || exit 1
++    python3 - "$APKTOOL_DIR/system/priv-app/SecSettings/SecSettings.apk/res/xml/unica_extra_settings.xml" <<'PYM2EXTRA'
++from pathlib import Path
++import re, sys, xml.etree.ElementTree as ET
++path = Path(sys.argv[1])
++text = path.read_text()
++keys = ("unica_allow_downgrade", "unica_allow_sdkbypass", "unica_secure_ss", "unica_ss_detection", "unica_gphotos")
++for key in keys:
++    pattern = r'^.*android:key="' + re.escape(key) + r'"[^\n]*\n'
++    text, count = re.subn(pattern, '', text, flags=re.M)
++    if count != 1:
++        raise SystemExit("Unexpected M2 optional control: " + key)
++ET.fromstring(text)
++path.write_text(text)
++print("M2: removed five unsupported optional controls; donor behavior retained")
++PYM2EXTRA
+ else
+ LOG "- Patching \"smali/com/android/settingslib/search/SearchIndexableResourcesMobile.smali\" in /system/system/priv-app/SecSettings.apk"
+ SMALI_PATCH "system" "system/priv-app/SecSettings/SecSettings.apk" \

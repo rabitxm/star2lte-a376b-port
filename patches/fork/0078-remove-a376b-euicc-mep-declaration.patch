@@ -1,0 +1,31 @@
+From: Codex local A376B compatibility adaptation
+Subject: [PATCH] Remove unsupported A376B eUICC MEP declaration
+
+Reason: finalstages77.txt:353 reports privapp-permissions-com.samsung.euicc.mep.xml
+still advertises eUICC after final cleanup. S9-family target explicitly has no
+embedded SIM. Extend the existing cleanup list to this actual donor file and
+keep the final gate strict for either euicc or euicc.mep feature declaration.
+Files: unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh.
+Verification: actual XML inspected, shell syntax, replay78 and final-tail78b
+continuation; full clean build and physical SIM/IMS runtime remain required.
+
+---
+--- a/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
+@@ -1173,6 +1173,7 @@
+     for REL in \
+         system/etc/permissions/privapp-permissions-com.samsung.android.app.esimkeystring.xml \
+         system/etc/permissions/privapp-permissions-com.samsung.euicc.xml \
++        system/etc/permissions/privapp-permissions-com.samsung.euicc.mep.xml \
+         system/etc/permissions/privapp-permissions-com.samsung.android.app.telephonyui.esimclient.xml \
+         system/etc/sysconfig/preinstalled-packages-com.samsung.android.app.esimkeystring.xml \
+         system/etc/sysconfig/preinstalled-packages-com.samsung.euicc.xml \
+@@ -1231,7 +1232,7 @@
+     }
+ 
+     while IFS= read -r -d '' PROP_XML; do
+-        if grep -qE 'feature[[:space:]]+name="android\.hardware\.telephony\.euicc"' "$PROP_XML"; then
++        if grep -qE 'feature[[:space:]]+name="android\.hardware\.telephony\.euicc(\.mep)?"' "$PROP_XML"; then
+             LOGE "Unsupported eSIM feature survived final cleanup: $PROP_XML"
+             return 1
+         fi

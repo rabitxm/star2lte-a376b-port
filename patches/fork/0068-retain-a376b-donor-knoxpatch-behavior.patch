@@ -1,0 +1,27 @@
+From: Codex local A376B compatibility adaptation
+Subject: [PATCH] Retain AZH4 donor KnoxPatch and attestation behavior
+
+Reason: attempt36.txt:1259-1260, 1265-1260, 1297-1310, 1343-1348 and
+1360-1388 show KnoxPatch relies on stale integrity-attestation call sites across
+DevicePolicyManagerService, DarManagerService, UserManagerService,
+AttestParameterSpec, AttestationUtils and SemSsdidManagerService. Skip this
+optional module as a whole for the exact AZH4 M2 donor to avoid partial security
+behavior changes and preserve AZH4's Knox/attestation implementation.
+Files: scripts/internal/apply_modules.sh.
+Verification: exact module/profile guard, bash -n, replay68 and clean attempt37.
+This M2 build omits the fork's KnoxPatch spoof/bypass features; revert0068 to port.
+
+---
+--- a/scripts/internal/apply_modules.sh
++++ b/scripts/internal/apply_modules.sh
+@@ -26,6 +26,11 @@ APPLY_MODULE()
+         LOGW "AZH4 keystore2/BouncyCastle classes differ; retaining donor key-attestation behavior for M2"
+         return 0
+     fi
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] && \
++            [[ "$MODPATH" == */mods/knoxpatch ]]; then
++        LOGW "AZH4 attestation and Knox framework methods differ; retaining donor Knox/attestation behavior for M2"
++        return 0
++    fi
+ 
+     # AZH4 changed the PackageBlockListPolicy and its lifecycle wiring. The

@@ -1,0 +1,55 @@
+From: Codex local A376B compatibility adaptation
+Subject: [PATCH] Port AZH4 Separate app sound selection gates
+
+Reason: settings-tail71.txt:41 reports the legacy all-apps patch misses AZH4's
+additional footer child handling. Bypass only the two five-app selection tests,
+keeping saveSelectAppList, unlink handling and footer enabling unchanged.
+Files: scripts/internal/apply_modules.sh and unica/mods/settings/a376b patch.
+Verification: two exact branch changes, real module dispatch PASS in
+settings-smali72.txt:1, standalone Smali assembly, replay72; full build pending.
+Runtime selection of six or more apps remains unverified.
+
+---
+--- a/scripts/internal/apply_modules.sh
++++ b/scripts/internal/apply_modules.sh
+@@ -163,6 +163,12 @@
+         if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] && \
+                 [[ "$p" == */paradigm/smali/system/priv-app/EnvironmentAdaptiveDisplay/EnvironmentAdaptiveDisplay.apk/* ]]; then
+             LOGW "Adaptive colour-tone feature is omitted for M2; skipping its standalone APK patches"
++            continue
++        fi
++        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] && \
++                [[ "$p" == */settings/smali/system/priv-app/MultiSoundSetting/MultiSoundSetting.apk/0001-Allow-more-than-five-apps.patch ]]; then
++            APPLY_PATCH "$PARTITION" "$FILE" \
++                "$SRC_DIR/unica/mods/settings/a376b/0001-Allow-more-than-five-apps.patch"
+             continue
+         fi
+         APPLY_PATCH "$PARTITION" "$FILE" "$p"
+--- /dev/null
++++ b/unica/mods/settings/a376b/0001-Allow-more-than-five-apps.patch
+@@ -0,0 +1,25 @@
++Subject: [PATCH] AZH4 bypass both five-app selection gates
++
++Keep donor saveSelectAppList, unlink handling and footer enablement intact.
++Input class SHA256: ad8ce0fed288f52b85538203b2e2f86bc4b0be5dce53e8da30266caf17145bc2
++
++--- a/smali_classes2/com/samsung/android/setting/multisound/view/fragment/SelectMultipleAppsFragment.smali
+++++ b/smali_classes2/com/samsung/android/setting/multisound/view/fragment/SelectMultipleAppsFragment.smali
++@@ -1592,7 +1592,7 @@
++ 
++     const/4 v2, 0x5
++ 
++-    if-lt v1, v2, :cond_5
+++    goto :cond_5
++ 
++     iget v1, p0, Lcom/samsung/android/setting/multisound/view/fragment/SelectAppBase;->mMode:I
++ 
++@@ -1880,7 +1880,7 @@
++ 
++     const/4 p2, 0x5
++ 
++-    if-lt p1, p2, :cond_2
+++    goto :cond_2
++ 
++     iget p1, p0, Lcom/samsung/android/setting/multisound/view/fragment/SelectAppBase;->mMode:I
++ 

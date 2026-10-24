@@ -1,0 +1,24 @@
+From: Codex local A376B compatibility adaptation
+Subject: [PATCH] Retain AZH4 Hide My Applist behavior
+
+Reason: attempt34.txt:1281-1295 reports Hide My Applist's PackageManager and
+ActivityStarter hooks do not match AZH4. Preserve donor code rather than apply
+a partial privacy hook on M2.
+Files: scripts/internal/apply_modules.sh.
+Verification: exact module/profile guard, shell syntax, replay66 and clean
+attempt35. Revert0066 to resume porting this optional mod.
+
+---
+--- a/scripts/internal/apply_modules.sh
++++ b/scripts/internal/apply_modules.sh
+@@ -21,6 +21,11 @@ APPLY_MODULE()
+         LOGW "AZH4 Knox internals differ across framework classes; retaining the complete donor Knox stack for M2"
+         return 0
+     fi
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] && \
++            [[ "$MODPATH" == */mods/hma ]]; then
++        LOGW "AZH4 PackageManager/ActivityStarter code differs; retaining donor Hide My Applist behavior for M2"
++        return 0
++    fi
+ 
+     # AZH4 changed the PackageBlockListPolicy and its lifecycle wiring. The

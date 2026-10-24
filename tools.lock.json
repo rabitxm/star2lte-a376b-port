@@ -1,0 +1,87 @@
+{
+  "schema": 1,
+  "observed_date": "2026-10-20",
+  "executables": {
+    "git": "/usr/bin/git",
+    "git-lfs": "/usr/bin/git-lfs",
+    "curl": "/usr/bin/curl",
+    "python3": "/usr/bin/python3",
+    "java": "/usr/bin/java",
+    "javac": "/usr/bin/javac",
+    "zip": "/usr/bin/zip",
+    "unzip": "/usr/bin/unzip",
+    "7z": "/usr/bin/7z",
+    "lz4": "/usr/bin/lz4",
+    "mkfs.erofs": null,
+    "simg2img": null,
+    "clang": "/usr/bin/clang",
+    "cmake": "/usr/bin/cmake",
+    "make": "/usr/bin/make",
+    "pkg-config": "/usr/bin/pkg-config",
+    "patchelf": "/usr/bin/patchelf",
+    "rsync": "/usr/bin/rsync",
+    "llvm-readelf": "/usr/lib/llvm-21/bin/llvm-readelf"
+  },
+  "sudo_preparation_error": "sudo: interactive authentication is required",
+  "dpkg_observations": [
+    "7zip\tinstall ok installed\t26.00+dfsg-1",
+    "attr\tinstall ok installed\t1:2.5.2-4ubuntu0.1",
+    "brotli\tinstall ok installed\t1.2.0-3build1",
+    "clang\tinstall ok installed\t1:21.1.6-71",
+    "cmake\tinstall ok installed\t4.2.3-2ubuntu2",
+    "ffmpeg\tinstall ok installed\t7:8.0.1-3ubuntu2",
+    "git-lfs\tinstall ok installed\t3.7.1-1",
+    "libbrotli-dev\tinstall ok installed\t1.2.0-3build1",
+    "libgtest-dev\tinstall ok installed\t1.17.0-1build1",
+    "liblz4-dev\tinstall ok installed\t1.10.0-8",
+    "libpcre2-dev\tinstall ok installed\t10.46-1build1",
+    "libprotobuf-dev\tinstall ok installed\t3.21.12-15ubuntu1",
+    "libunwind-dev\tinstall ok installed\t1.8.3-0ubuntu1",
+    "libzstd-dev\tinstall ok installed\t1.5.7+dfsg-3",
+    "lld\tinstall ok installed\t1:21.1.6-71",
+    "lz4\tinstall ok installed\t1.10.0-8",
+    "openjdk-17-jdk\tinstall ok installed\t17.0.20.1+1-1~26.04",
+    "patchelf\tinstall ok installed\t0.18.0-1.4build1",
+    "pkg-config\tinstall ok installed\t2.5.1-4",
+    "protobuf-compiler\tinstall ok installed\t3.21.12-15ubuntu1",
+    "python3-venv\tinstall ok installed\t3.14.3-0ubuntu2",
+    "secilc\tinstall ok installed\t3.9-1",
+    "webp\tinstall ok installed\t1.5.0-0.1build1"
+  ],
+  "dpkg_errors": [],
+  "local_inspection_tools": {
+    "package": "inputs/tooling/debs/erofs-utils_1.9.1-1_amd64.deb",
+    "sha256": "e06b009c4e53e6cbb848ac98dd2d1862eaa3daa1a63e4e860e59f482acf616b5",
+    "version": "1.9.1-1",
+    "prefix": "inputs/tooling/root",
+    "purpose": "read donor EROFS without system install or device mount"
+  },
+  "f2fs_source_build": {
+    "source": "rom/scripts/internal/f2fs_unpack_src (unchanged pinned fork source)",
+    "go": "go1.26.8 linux/amd64",
+    "system_install": false,
+    "runtime_root": "inputs/tooling/go-root/usr/lib/go-1.26",
+    "debs": [
+      {
+        "path": "/home/whitemmo/Documents/ChatGPT/Port One UI 9 (Android 17) t\u1eeb Galaxy A37 5G (SM-A376B) l\u00ean Galaxy S9+ (star2lte)/inputs/tooling/go-debs/f2fs-tools_1.16.0-2build1_amd64.deb",
+        "sha256": "2c0c1841ba77fb7b4ff98eca6bd0d49740c05f49cee587af7f209ce41847c718"
+      },
+      {
+        "path": "/home/whitemmo/Documents/ChatGPT/Port One UI 9 (Android 17) t\u1eeb Galaxy A37 5G (SM-A376B) l\u00ean Galaxy S9+ (star2lte)/inputs/tooling/go-debs/golang-1.26-go_1.26.8-1~ubuntu0.26.04.2_amd64.deb",
+        "sha256": "a25f64a8b1bd65d68b7ec9497b649f8ed7fb4fddcdfc62d4aea31d9540e110d0"
+      },
+      {
+        "path": "/home/whitemmo/Documents/ChatGPT/Port One UI 9 (Android 17) t\u1eeb Galaxy A37 5G (SM-A376B) l\u00ean Galaxy S9+ (star2lte)/inputs/tooling/go-debs/golang-1.26-src_1.26.8-1~ubuntu0.26.04.2_all.deb",
+        "sha256": "e86fcc27e243b7b8bb8efc86d4b05126bc0eca927fcaaa3d84df889d2356efc5"
+      }
+    ],
+    "executable": "rom/out/tools/bin/f2fs_unpack"
+  },
+  "llvm_discovery": "clang --print-prog-name=llvm-readelf; versioned Ubuntu LLVM21 already installed",
+  "local_payload_audit_tool": {
+    "tool": "bspatch from Ubuntu bsdiff4.3 package, extracted locally without system install",
+    "deb": "inputs/tooling/go-debs/bsdiff_4.3-23build1_amd64.deb",
+    "sha256": "7f391de544e10c8d41faeae66c78249c0d57960adc4ff19f91c1a0e1147d51af",
+    "usage": "reconstruct only upstream May F/N deltas for inspection; not a kernel build"
+  }
+}

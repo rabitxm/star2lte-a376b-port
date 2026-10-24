@@ -1,0 +1,19 @@
+Reason: plain curl metadata requests returned HTTP403 while the existing samloader client succeeded with its Kies2.0_FUS User-Agent.
+Affected: scripts/utils/firmware_utils.sh GET_LATEST_FIRMWARE.
+Verify: same Samsung S22 URL fails without UA and succeeds with UA; GET_LATEST_FIRMWARE returns S901BXXSOGZH3/S901BOXMOGZH3/S901BXXSOGZH3.
+Rollback: reverse this patch in the fork; download/extract failure must not be marked successful.
+
+diff --git a/scripts/utils/firmware_utils.sh b/scripts/utils/firmware_utils.sh
+index 60202ae..2ab708b 100644
+--- a/scripts/utils/firmware_utils.sh
++++ b/scripts/utils/firmware_utils.sh
+@@ -102,7 +102,8 @@ GET_LATEST_FIRMWARE()
+     _CHECK_NON_EMPTY_PARAM "MODEL" "$1" || return 1
+     _CHECK_NON_EMPTY_PARAM "CSC" "$2" || return 1
+ 
+-    curl -s --retry 3 -m 3 "https://fota-cloud-dn.ospserver.net/firmware/$2/$1/version.xml" \
++    curl -fsS --retry 3 -m 3 --user-agent "Kies2.0_FUS" \
++        "https://fota-cloud-dn.ospserver.net/firmware/$2/$1/version.xml" \
+         | perl -nE 'say $1 if /<latest[^>]*>(.*?)<\/latest>/'
+ }
+ 

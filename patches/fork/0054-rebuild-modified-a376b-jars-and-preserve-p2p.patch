@@ -1,0 +1,80 @@
+From: Codex local A376B compatibility adaptation
+Subject: [PATCH] Rebuild modified M2 JARs and carry P2P selection into Smali
+
+Reason: wifi-main-assembly.txt reported Skipping APK/JAR rebuild for semwifi-service.jar; legacy skip-list also drops other M2 shipping-API/HFR edits. For exact A376B16/star2lte/M2 only, rebuild decoded JARs instead of returning early on the legacy skip-list. Early P2P binary patch uses an original DEX method index and would be lost during rebuild, so make the same standard-callback selection in the reviewed decoded setupIface method. Retain the separate Seh callback and all other bytecode; M1 binary handling/skip behavior stay unchanged.
+Files: scripts/apktool.sh; platform/exynos9810/tools/patch_semwifi_p2p_callback.py; unica/patches/exynos9810_device_stack/customize.sh.
+Verification: exact class/method/invoke-pair checks, actual decoded P2P adaptation, mandatory actual semwifi rebuild and compiled callback/APE/SoftAP/class-preservation audit. Full clean build/release and native Wi-Fi runtime remain required; revert0054.
+
+---
+--- a/scripts/apktool.sh
++++ b/scripts/apktool.sh
+@@ -41,6 +41,11 @@
+             esac
+ 
+             if [[ "$PARTITION/$FILE" == $SKIP_PATTERN ]]; then
++                if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] && \
++                        [ "$TARGET_CODENAME" = "star2lte" ] && [ "${ROM_MILESTONE:-}" = "M2" ]; then
++                    LOG "- Rebuilding modified A376B M2 JAR despite legacy skip-list: ${INPUT_FILE//$WORK_DIR/}"
++                    continue
++                fi
+                 LOG "- Skipping APK/JAR rebuild for ${INPUT_FILE//$WORK_DIR/}"
+                 rm -rf "$OUTPUT_PATH/build" "$OUTPUT_PATH/dist"
+                 return 0
+--- a/platform/exynos9810/tools/patch_semwifi_p2p_callback.py
++++ b/platform/exynos9810/tools/patch_semwifi_p2p_callback.py
+@@ -5,6 +5,7 @@
+ 
+ import hashlib
+ import io
++import re
+ import struct
+ import sys
+ import tempfile
+@@ -69,7 +70,29 @@
+         temporary_path.unlink(missing_ok=True)
+ 
+ 
++def patch_smali(path: Path) -> None:
++    """Make the same callback selection in decoded M2 code before rebuild."""
++    text = path.read_text()
++    owner = "Lcom/samsung/android/server/wifi/p2p/SemSupplicantP2pIfaceHalHidlImpl;"
++    if not text.splitlines()[0].endswith(owner):
++        raise RuntimeError("Unreviewed decoded P2P class")
++    matches = list(re.finditer(r"(?ms)^\.method[^\n]* setupIface\(Ljava/lang/String;\)Z\n.*?^\.end method$", text))
++    if len(matches) != 1:
++        raise RuntimeError("Unreviewed P2P setupIface method")
++    method = matches[0]
++    old = ("    invoke-virtual {p0, v0}, " + owner + "->registerCallback(Lcom/samsung/wifi/x/android/hardware/wifi/supplicant/V1_0/ISupplicantP2pIfaceCallback;)Z\n\n"
++           "    move-result v0")
++    if method.group().count(old) != 1:
++        raise RuntimeError("Unreviewed P2P standard callback registration")
++    body = method.group().replace(old, "    const/4 v0, 0x1", 1)
++    path.write_text(text[:method.start()] + body + text[method.end():])
++    print("Patched decoded Samsung P2P callback selection; Seh registration retained")
++
++
+ def main() -> int:
++    if len(sys.argv) == 3 and sys.argv[1] == "--smali":
++        patch_smali(Path(sys.argv[2]))
++        return 0
+     if len(sys.argv) != 2:
+         print(f"usage: {Path(sys.argv[0]).name} <semwifi-service.jar>", file=sys.stderr)
+         return 2
+--- a/unica/patches/exynos9810_device_stack/customize.sh
++++ b/unica/patches/exynos9810_device_stack/customize.sh
+@@ -440,7 +440,14 @@
+         return 1
+     }
+ 
+-    python3 "$PATCHER" "$JAR" || return 1
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] && \
++            [ "$TARGET_CODENAME" = "star2lte" ] && [ "${ROM_MILESTONE:-}" = "M2" ]; then
++        DECODE_APK "system" "system/framework/semwifi-service.jar" || return 1
++        python3 "$PATCHER" --smali \
++            "$APKTOOL_DIR/system/framework/semwifi-service.jar/smali/com/samsung/android/server/wifi/p2p/SemSupplicantP2pIfaceHalHidlImpl.smali" || return 1
++    else
++        python3 "$PATCHER" "$JAR" || return 1
++    fi
+ }
+ 
+ _EXYNOS9810_PATCH_EXTENDED_ETHERNET_BOOTLOOP()

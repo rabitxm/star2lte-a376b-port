@@ -1,0 +1,32 @@
+Reason: m1-build-attempt4.txt:2695 cannot find llvm-readelf, though clang reports the installed versioned LLVM21 binary.
+Verify: compiler-relative discovery from /usr/bin:/bin PASS, native Face ABI verifier PASS; no package install, no skipped ABI check. Evidence llvm-readelf-discovery-check.json and llvm-native-abi-check.txt.
+Rollback: reverse this patch and expose LLVM tools through PATH manually.
+Affected: scripts/utils/build_utils.sh.
+
+diff --git a/scripts/utils/build_utils.sh b/scripts/utils/build_utils.sh
+--- a/scripts/utils/build_utils.sh
++++ b/scripts/utils/build_utils.sh
+@@ -51,11 +51,22 @@
+ }
+ 
+ # [
++# Versioned LLVM distributions may install llvm-readelf beside clang without
++# adding its unversioned name to /usr/bin. Ask the existing compiler first.
++if ! type llvm-readelf &> /dev/null && type clang &> /dev/null; then
++    _UN1CA_LLVM_READELF="$(clang --print-prog-name=llvm-readelf 2> /dev/null)" || \
++        _UN1CA_LLVM_READELF=""
++    if [ -n "$_UN1CA_LLVM_READELF" ] && [ -x "$_UN1CA_LLVM_READELF" ]; then
++        export PATH="$(dirname "$_UN1CA_LLVM_READELF"):$PATH"
++    fi
++    unset _UN1CA_LLVM_READELF
++fi
++
+ DEPENDENCIES=(
+     "7z" "awk" "basename" "bc" "brotli" "cat" "clang" "cmake"
+     "cp" "cpio" "curl" "cut" "cwebp" "dd" "dirname" "du" "ffmpeg"
+     "file" "getfattr" "git" "grep" "head" "java" "ln"
+-    "lz4" "make" "md5sum" "mkdir" "mount" "mv" "perl" "protoc"
++    "llvm-readelf" "lz4" "make" "md5sum" "mkdir" "mount" "mv" "perl" "protoc"
+     "python3" "rm" "rsync" "sed" "sha1sum" "sort" "split" "stat"
+     "sudo" "tail" "tar" "touch" "tr" "truncate" "umount" "unzip"
+     "wc" "whoami" "xargs" "xxd" "zip" "zstd"

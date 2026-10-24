@@ -1,0 +1,104 @@
+From: Codex diagnostic prototype
+Subject: [PATCH] Prototype private monitor namespace; device preflight BLOCKED
+
+Reason: probe02 pstore empty; shared /dev/sysfs readiness remains uncertain.
+Files: installer/bootlogger_pid1_probe.c. Child unshares mount namespace,
+makes mounts private, creates only tmpfs/sysfs mounts, never disk mounts.
+Verification: RAM self-test fails NAMESPACE stage=4 errno=016 (sysfs EBUSY)
+on TWRP; parent /proc/mounts SHA unchanged. DO NOT FLASH this prototype.
+No normal build integration; probe02 rollback restored original BOOT.
+
+---
+--- a/platform/exynos9810/installer/bootlogger_pid1_probe.c
++++ b/platform/exynos9810/installer/bootlogger_pid1_probe.c
+@@ -1,7 +1,8 @@
+ /* Optional M2 early diagnostic; never bundled by normal builds.
+  * Keep PID1 and exec original init with argv/env unchanged. A child copies
+  * selected kernel errors to pmsg. No partition opens, mounts or formats.
+- * Verification: TWRP fork/wait/exec self-test; component hashes on repack.
++ * The monitor uses private tmpfs/sysfs mounts, never disk filesystems.
++ * Verification: TWRP fork/wait/exec and mount-namespace self-tests.
+  */
+ #define EXYNOS9810_BOOTLOGGER_WRAPPER
+ #include "bootlogger.c"
+@@ -47,6 +48,27 @@
+     return open_file("/dev/m2-pmsg-probe", O_WRONLY | O_NONBLOCK, 0);
+ }
+ 
++static long namespace_step;
++static long monitor_namespace(void)
++{
++    /* Child-only mount namespace. PID1's mount table is never changed. */
++    namespace_step = 1;
++    long r = syscall6(97, 0x20000, 0, 0, 0, 0, 0); /* unshare(CLONE_NEWNS) */
++    if (r < 0) return r;
++    namespace_step = 2;
++    r = syscall6(40, 0, (long)"/", 0, (1UL << 18) | 16384, 0, 0);
++    if (r < 0) return r; /* MS_PRIVATE | MS_REC */
++    namespace_step = 3;
++    r = syscall6(40, (long)"tmpfs", (long)"/dev", (long)"tmpfs", 2,
++                 (long)"mode=0755,size=1m", 0);
++    if (r < 0) return r;
++    namespace_step = 4;
++    r = syscall6(40, (long)"sysfs", (long)"/sys", (long)"sysfs", 0, 0, 0);
++    if (r < 0) return r;
++    syscall6(33, AT_FDCWD, (long)"/dev/kmsg", 020600, (1 << 8) | 11, 0, 0);
++    return 0;
++}
++
+ static void monitor(void)
+ {
+     char buf[4096], pending[8192];
+@@ -55,7 +77,7 @@
+         if (out < 0) {
+             out = pmsg_open();
+             if (out >= 0) {
+-                const char *mark = "\nM2-PID1-PROBE-v1: original init handoff attempted\n";
++                const char *mark = "\nM2-PID1-PROBE-v2: private monitor ready\n";
+                 write_all(out, mark, string_length(mark));
+                 if (used) write_all(out, pending, used);
+                 used = 0;
+@@ -90,6 +112,25 @@
+     char **env = argv + argc + 1;
+     long pid = syscall6(172, 0, 0, 0, 0, 0, 0);
+     if (pid != 1) {
++        if (argc == 2 && contains(argv[1], string_length(argv[1]), "--namespace-test")) {
++            long r = monitor_namespace();
++            if (r < 0) {
++                char msg[] = "NAMESPACE stage=0 errno=000\n";
++                msg[16] = '0' + namespace_step;
++                long err = -r;
++                msg[26] = '0' + err % 10;
++                msg[25] = '0' + (err / 10) % 10;
++                msg[24] = '0' + (err / 100) % 10;
++                write_all(1, msg, sizeof(msg) - 1);
++                finish(20);
++            }
++            long in = open_file("/dev/kmsg", O_RDONLY | O_NONBLOCK, 0);
++            long out = pmsg_open();
++            if (in < 0 || out < 0) finish(21);
++            const char *ok = "PROBE-PRIVATE-TMPFS-SYSFS-KMSG-PMSG-OPEN-PASS\n";
++            write_all(1, ok, string_length(ok));
++            finish(0); /* No pmsg write in self-test. Mounts vanish at exit. */
++        }
+         if (argc == 2 && contains(argv[1], string_length(argv[1]), "--self-test")) {
+             long child = syscall6(220, 17, 0, 0, 0, 0, 0);
+             if (child < 0) finish(10);
+@@ -103,12 +144,15 @@
+         finish(13); /* never execute init from a non-PID1 invocation */
+     }
+     long child = syscall6(220, 17, 0, 0, 0, 0, 0);
+-    if (!child) monitor();
++    if (!child) {
++        if (monitor_namespace() < 0) finish(22);
++        monitor();
++    }
+     /* Even clone failure must not prevent original init. No wait in PID1. */
+     syscall6(221, (long)"/init.real", (long)argv, (long)env, 0, 0, 0);
+     long out = pmsg_open();
+     if (out >= 0) {
+-        const char *err = "\nM2-PID1-PROBE-v1: exec /init.real FAILED\n";
++        const char *err = "\nM2-PID1-PROBE-v2: exec /init.real FAILED\n";
+         write_all(out, err, string_length(err));
+     }
+     finish(127);

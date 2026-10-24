@@ -1,0 +1,19 @@
+Reason: attempt5 completed APK/JAR, boot-contract and SELinux checks, then refused packaging at line2844. source-hash-drift-audit.json reproduces both hashes exactly; the sole difference is generated verify_factory_live_default.cpython-314.pyc.
+Affected: scripts/make_rom.sh (GET_WORK_DIR_HASH).
+Verify: seven cases prove cache creation/content ignored while real Python, binary asset, Face source, recipe and filesystem changes still invalidate. Evidence work-hash-cache-checks.json.
+Rollback: reverse this patch; full input/hash guard remains mandatory. Official --package-staged may revalidate already compiled artifacts; never fabricate completion markers.
+
+diff --git a/scripts/make_rom.sh b/scripts/make_rom.sh
+index 31a3ab1..a28d537 100755
+--- a/scripts/make_rom.sh
++++ b/scripts/make_rom.sh
+@@ -34,7 +34,8 @@ GET_WORK_DIR_HASH()
+     local SOURCE_HASH
+     local FACEUNLOCKFIX_HASH
+ 
+-    SOURCE_HASH="$(find "$SRC_DIR/platform/$TARGET_PLATFORM" "$SRC_DIR/unica" "$SRC_DIR/target/$TARGET_CODENAME" -type f -print0 | \
++    SOURCE_HASH="$(find "$SRC_DIR/platform/$TARGET_PLATFORM" "$SRC_DIR/unica" "$SRC_DIR/target/$TARGET_CODENAME" \
++        -type d -name __pycache__ -prune -o -type f -print0 | \
+         sort -z | xargs -0 sha1sum | sha1sum | cut -d " " -f 1)"
+     # Experimental integration lives under scripts/, outside the normal source
+     # hash. Rebuild when a bridge/staging source changes; ignore generated pyc.

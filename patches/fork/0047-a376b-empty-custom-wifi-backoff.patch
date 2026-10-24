@@ -1,0 +1,29 @@
+From: Codex local A376B compatibility adaptation
+Subject: [PATCH] 0047-a376b-empty-custom-wifi-backoff
+
+Reason: The original S22 control-flow diff cannot apply to AZH4. After the existing recipe verifies/substitutes the donor-specific RF string, empty its CONFIG_CUSTOM_BACKOFF placeholder in field, log and constructor; the reviewed TextUtils.isEmpty branch skips donor custom backoff while retaining target native Wi-Fi behavior.
+Files: unica/patches/product_feature/customize.sh.
+Verification: Actual donor preflight passed empty substitution, then stopped at separate 80211AX UI patch. Full Wi-Fi runtime requires logs.
+
+---
+--- a/unica/patches/product_feature/customize.sh
++++ b/unica/patches/product_feature/customize.sh
+@@ -879,8 +879,16 @@
+             "smali/com/samsung/android/server/wifi/SemWifiCoexManager.smali" "replaceall" \
+             "$SOURCE_WLAN_CONFIG_CUSTOM_BACKOFF" \
+             "CONFIG_CUSTOM_BACKOFF" > /dev/null
+-        APPLY_PATCH "system" "system/framework/semwifi-service.jar" \
+-            "$MODPATH/wifi/custom_backoff/semwifi-service.jar/0001-Remove-CUSTOM_BACKOFF-value.patch"
++        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++            # Empty the reviewed field/log/constructor placeholder. Its
++            # TextUtils.isEmpty guard then skips the donor RF table.
++            SMALI_PATCH "system" "system/framework/semwifi-service.jar" \
++                "smali/com/samsung/android/server/wifi/SemWifiCoexManager.smali" "replaceall" \
++                "CONFIG_CUSTOM_BACKOFF" ""
++        else
++            APPLY_PATCH "system" "system/framework/semwifi-service.jar" \
++                "$MODPATH/wifi/custom_backoff/semwifi-service.jar/0001-Remove-CUSTOM_BACKOFF-value.patch"
++        fi
+     fi
+ fi
+ 

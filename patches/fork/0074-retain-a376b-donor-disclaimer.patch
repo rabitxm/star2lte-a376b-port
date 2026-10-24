@@ -1,0 +1,21 @@
+From: Codex local A376B compatibility adaptation
+Subject: [PATCH] Retain AZH4 donor setup disclaimer
+
+Reason and verification: postsettings73.txt:53,96 reports custom disclaimer resource/Activity patch failures. Skip only the cosmetic UN1CA disclaimer replacement for exact M2; preserve donor page. Navigation adaptation remains separate. Verify exact profile/path guard, shell syntax, replay and clean build.
+Files: scripts/internal/apply_modules.sh.
+
+---
+--- a/scripts/internal/apply_modules.sh
++++ b/scripts/internal/apply_modules.sh
+@@ -169,6 +169,11 @@
+                 [[ "$p" == */settings/smali/system/priv-app/MultiSoundSetting/MultiSoundSetting.apk/0001-Allow-more-than-five-apps.patch ]]; then
+             APPLY_PATCH "$PARTITION" "$FILE" \
+                 "$SRC_DIR/unica/mods/settings/a376b/0001-Allow-more-than-five-apps.patch"
++            continue
++        fi
++        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] && \
++                [[ "$p" == */setupwizard/smali/system/priv-app/SecSetupWizard_Global/SecSetupWizard_Global.apk/0001-Add-custom-disclaimer-page.patch ]]; then
++            LOGW "AZH4 disclaimer Activity/resources differ; retaining donor disclaimer page for M2"
+             continue
+         fi
+         APPLY_PATCH "$PARTITION" "$FILE" "$p"

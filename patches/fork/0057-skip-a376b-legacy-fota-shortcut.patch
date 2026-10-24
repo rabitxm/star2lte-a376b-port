@@ -1,0 +1,29 @@
+From: Codex local A376B compatibility adaptation
+Subject: [PATCH] Skip missing legacy FOTA suggestion shortcut on AZH4
+
+Reason: attempt25.txt:1230 reports that the fork's shortcut patch target
+Settings$FOTASuggestionActivity.smali is absent from the AZH4 SecSettings APK.
+The optional UN1CA Updates app and settings category are staged separately;
+skip only this stale suggestion shortcut for the exact A376B Android 16 donor.
+Files: unica/mods/choidujour/customize.sh.
+Verification: donor-scoped branch fixture, shell syntax, full module preflight
+and patch replay. Revert0057.
+
+---
+--- a/unica/mods/choidujour/customize.sh
++++ b/unica/mods/choidujour/customize.sh
+@@ -21,8 +21,12 @@
+ 
+ DECODE_APK "system" "system/priv-app/SecSettings/SecSettings.apk"
+ 
+-APPLY_PATCH "system" "system/priv-app/SecSettings/SecSettings.apk" \
+-    "$MODPATH/suggestions/SecSettings.apk/0001-Launch-UN1CA-Updates-from-suggestions.patch"
++if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++    LOGW "A376B AZH4 has no legacy FOTA suggestion activity; skipping only the UN1CA Updates suggestion shortcut"
++else
++    APPLY_PATCH "system" "system/priv-app/SecSettings/SecSettings.apk" \
++        "$MODPATH/suggestions/SecSettings.apk/0001-Launch-UN1CA-Updates-from-suggestions.patch"
++fi
+ 
+ # Disable stock OTA references
+ SMALI_PATCH "system" "system/priv-app/SecSettings/SecSettings.apk" \

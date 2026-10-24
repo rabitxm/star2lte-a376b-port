@@ -1,0 +1,23 @@
+From: Codex local A376B compatibility adaptation
+Subject: [PATCH] Skip the duplicate legacy FOTA Smali hook on AZH4
+
+Reason: attempt26.txt:1230 shows apply_modules applies the UN1CA Updates
+suggestion patch again from the module smali directory after customize.sh
+skips its direct application. AZH4 lacks Settings$FOTASuggestionActivity.
+Files: scripts/internal/apply_modules.sh.
+Verification: exact M2 dispatcher branch, other profiles still apply the patch,
+shell syntax and patch replay. Revert0058.
+
+---
+--- a/scripts/internal/apply_modules.sh
++++ b/scripts/internal/apply_modules.sh
+@@ -110,6 +110,11 @@ APPLY_SMALI_PATCHES()
+             LOGW "Skipping optional Bixby remap patch for A376B until its Android 16 key-event layout is ported"
+             continue
+         fi
++        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] && \
++                [[ "$p" == */choidujour/smali/system/priv-app/SecSettings/SecSettings.apk/0001-Launch-UN1CA-Updates-from-suggestions.patch ]]; then
++            LOGW "A376B AZH4 has no legacy FOTA suggestion activity; skipping only the UN1CA Updates suggestion shortcut"
++            continue
++        fi
+         APPLY_PATCH "$PARTITION" "$FILE" "$p"

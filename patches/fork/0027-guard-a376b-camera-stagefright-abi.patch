@@ -1,0 +1,21 @@
+Reason: M2 attempt4 stopped at log line 87 with `HEX_PATCH ... File not found: /system/system/lib/libstagefright.so`. A376B Android 16 carries only the applicable 64-bit framework library; unconditional 32-bit patch is invalid. Keep patching every existing ABI library and fail closed for a missing library outside the reviewed A376B XXV LOCAL SDK36 donor. Affected: unica/patches/camera/customize.sh. Verify: shell syntax, fixture covers 32-bit absent/64-bit present on A376B, 64-bit absent abort on A376B, and 32-bit absent abort on other donor. Evidence stagefright-abi-fixtures.json. Rollback: reverse patch and restore hard failure. No kernel, hardware blob, radio, or device changes.  --- a/unica/patches/camera/customize.sh
++++ b/unica/patches/camera/customize.sh
+@@ -380,10 +380,14 @@
+ while IFS= read -r f; do
+     HEX_PATCH "$f" "726f2e70726f647563742e6d6f64656c00" "726f2e626f6f742e656d2e6d6f64656c00"
+ done < <(grep -r -w -l "ro.product.model" "$WORK_DIR/vendor" | grep "camera")
+-HEX_PATCH "$WORK_DIR/system/system/lib/libstagefright.so" \
+-    "726f2e70726f647563742e6d6f64656c00" "726f2e626f6f742e656d2e6d6f64656c00"
+-HEX_PATCH "$WORK_DIR/system/system/lib64/libstagefright.so" \
+-    "726f2e70726f647563742e6d6f64656c00" "726f2e626f6f742e656d2e6d6f64656c00"
++for f in "$WORK_DIR/system/system/lib/libstagefright.so" \
++         "$WORK_DIR/system/system/lib64/libstagefright.so"; do
++    if [ -f "$f" ]; then
++        HEX_PATCH "$f" "726f2e70726f647563742e6d6f64656c00" "726f2e626f6f742e656d2e6d6f64656c00"
++    elif [[ "$SOURCE_FIRMWARE" != "SM-A376B/XXV/LOCAL" ]] || [[ "$SOURCE_PLATFORM_SDK_VERSION" != "36" ]]; then
++        abort "Missing stagefright library outside reviewed A376B Exynos9810 camera patch: $f"
++    fi
++done
+ 
+ # Fix object capture
+ if [[ "$TARGET_OS_SINGLE_SYSTEM_IMAGE" == "essi" ]]; then

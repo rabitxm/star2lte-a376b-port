@@ -1,0 +1,52 @@
+From: Codex local A376B compatibility adaptation
+Subject: [PATCH] Port reviewed AZH4 setup navigation methods
+
+Reason and verification: postsettings72.txt:2 reports missing S2/f.smali. AZH4 uses I2/f.d and SecSetupWizardActivity.e; verify both method hashes before the same navigation-step edits. postsettings73.txt confirms both edits passed. Shell syntax, DEX assembly, replay; runtime navigation choice pending.
+Files: unica/mods/setupwizard/customize.sh.
+
+---
+--- a/unica/mods/setupwizard/customize.sh
++++ b/unica/mods/setupwizard/customize.sh
+@@ -1,15 +1,34 @@
+ DECODE_APK "system" "system/priv-app/SecSetupWizard_Global/SecSetupWizard_Global.apk"
+ 
+ LOG "- Enabling navigation bar type settings step"
++SETUP_LIST_CLASS="smali/S2/f.smali"
++SETUP_FILTER_METHOD="f(Ljava/lang/String;)Z"
++if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++    python3 - "$APKTOOL_DIR/system/priv-app/SecSetupWizard_Global/SecSetupWizard_Global.apk" <<'PYSETUP'
++from pathlib import Path
++import hashlib, re, sys
++root = Path(sys.argv[1])
++for path, signature, digest in (
++    ("smali/I2/f.smali", "d(Landroid/content/Context;Z)Ljava/util/ArrayList;", "924b19721cf25683ec8df5b89184105a55dde3c8f369d15b60e8dad4db51e5c1"),
++    ("smali/com/sec/android/app/SecSetupWizard/SecSetupWizardActivity.smali", "e(Ljava/lang/String;)Z", "3e05a5cb4dcd756a909e81ed9aee9f76a94ba1e0240d5d2426d8567ae97f4e8d"),
++):
++    methods = [m.group() for m in re.finditer(r"^\.method .*?^\.end method", (root / path).read_text(), re.M | re.S) if m.group().splitlines()[0].endswith(signature)]
++    if len(methods) != 1 or hashlib.sha256(methods[0].encode()).hexdigest() != digest:
++        raise SystemExit("Unreviewed AZH4 setup navigation method: " + path)
++print("PASS reviewed AZH4 navigation setup methods")
++PYSETUP
++    SETUP_LIST_CLASS="smali/I2/f.smali"
++    SETUP_FILTER_METHOD="e(Ljava/lang/String;)Z"
++fi
+ SMALI_PATCH "system" "system/priv-app/SecSetupWizard_Global/SecSetupWizard_Global.apk" \
+-    "smali/S2/f.smali" "replace" \
++    "$SETUP_LIST_CLASS" "replace" \
+     "d(Landroid/content/Context;Z)Ljava/util/ArrayList;" \
+     "navigationbar_setting" \
+     "this_string_does_not_exist" \
+     > /dev/null
+ SMALI_PATCH "system" "system/priv-app/SecSetupWizard_Global/SecSetupWizard_Global.apk" \
+     "smali/com/sec/android/app/SecSetupWizard/SecSetupWizardActivity.smali" "replace" \
+-    "f(Ljava/lang/String;)Z" \
++    "$SETUP_FILTER_METHOD" \
+     "navigationbar_setting" \
+     "this_string_does_not_exist" \
+     > /dev/null
+@@ -45,4 +64,4 @@
+     fi
+ done < <(find "$MODPATH/SecSetupWizard_Global.apk" -type f)
+ 
+-unset PATCH_INST CONTENT
++unset PATCH_INST CONTENT SETUP_LIST_CLASS SETUP_FILTER_METHOD

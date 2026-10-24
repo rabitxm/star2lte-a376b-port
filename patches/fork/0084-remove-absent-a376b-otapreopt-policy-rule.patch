@@ -1,0 +1,38 @@
+From: Codex local A376B compatibility adaptation
+Subject: [PATCH] Omit S22 otapreopt_slot allow on pinned A376B policy
+
+Reason: attempt45 policy gate: plat_sepolicy.cil:78269 fails to resolve
+(allow otapreopt_slot vendor_apex_file (dir (search))). Active split-policy
+symbol audit finds this is the only allow source/target without a declaration.
+AZH4 has no otapreopt_slot domain. Do not invent a domain or loosen enforcement.
+Files: existing finalization/customize.sh embedded SELinux compatibility helper.
+After applying existing rule blocks, remove only this exact S22 allow for
+A376B source; reject changed declaration or unexpected rule count. Keep all
+other rules and the mandatory complete secilc gate; other donors unchanged.
+Verification: active split symbol audit, actual helper, full staged policy
+compilation, source replay and original fork package/release gates. Runtime
+SELinux behavior still requires device logs. Kernel unchanged.
+
+---
+--- a/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
+@@ -3123,6 +3123,19 @@
+ append_unique(vendor_cil, quoted_block('local SUPPLEMENTARY_RULES="'))
+ append_unique(plat_cil, quoted_block('local PLAT_PERMISSIVE_RULES="'))
+ append_unique(plat_cil, heredoc_block("<<'ENFORCING_ALLOW_RULES_EOF'"))
++
++# This S22 domain is absent from the pinned AZH4 split policy. Keep all
++# other compatibility rules and compile the entire policy afterwards.
++import os, re
++if os.environ.get("ROM_SOURCE_CONFIG") == "essi_a376b_android16":
++    rule = "(allow otapreopt_slot vendor_apex_file (dir (search)))"
++    text = plat_cil.read_text()
++    if re.search(r"\(type(?:attribute)?\s+otapreopt_slot\s*\)", text + vendor_cil.read_text()):
++        raise SystemExit("AZH4 otapreopt_slot declaration changed; review compatibility rule")
++    if text.splitlines().count(rule) != 1:
++        raise SystemExit("Unexpected obsolete otapreopt_slot rule count")
++    plat_cil.write_text(text.replace(rule + "\n", ""))
++    print("M2: omitted one S22 allow for absent otapreopt_slot domain")
+ PY
+ }
+ 

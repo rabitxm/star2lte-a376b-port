@@ -1,0 +1,66 @@
+From: Codex M2 early-boot diagnostic
+Subject: [PATCH] Record unfiltered early kmsg and periodic heartbeat in CACHE
+
+Reason: probe06 confirmed PID1 on M2 but its selected-message filter left no
+fatal line. Probe07 captures each /dev/kmsg record and emits a heartbeat every
+100 ms while its child runs, to compare M1 and M2 early progress.
+
+Files: rom/platform/exynos9810/installer/bootlogger_pid1_probe.c. Diagnostic
+source only; normal ROM builds and pinned DS-ACK kernel remain unchanged.
+
+Verification: AArch64 static link; independent BOOT component audit kept
+kernel, DTB, cmdline and footer byte-identical. New G965F serial
+M1_G965F_SERIAL installed archived M1 8/8 stages and booted with probe07:
+`sys.boot_completed=1`, CACHE marker, unfiltered kmsg and heartbeat. M2 G965F
+serial M2_G965F_SERIAL booted with the same probe07 and produced 19 CACHE
+markers across a 240-second bootloop, no heartbeat, no ADB. Both devices'
+BOOT partitions were restored to baseline and full readback hashes passed.
+The probe fsyncs every record, so the last captured kmsg timestamp is not
+a proven reset time. Raw evidence is in logs/20261023-m1-second-probe07 and
+logs/20261023-m2-probe07.
+
+--- a/platform/exynos9810/installer/bootlogger_pid1_probe.c
++++ b/platform/exynos9810/installer/bootlogger_pid1_probe.c
+@@ -75,8 +75,8 @@
+     if (r < 0) return r;
+     if (statbuf[0] != 0xef53) return -22; /* EXT4_SUPER_MAGIC */
+     const char *path = (mounted[1] == 'c')
+-        ? "/cache/m2-early-boot-probe06.log"
+-        : "/dev/m2-cache/m2-early-boot-probe06.log";
++        ? "/cache/m2-early-boot-probe07.log"
++        : "/dev/m2-cache/m2-early-boot-probe07.log";
+     return open_file(path,
+                      O_WRONLY | O_CREAT | O_APPEND, 0600);
+ }
+@@ -118,7 +118,7 @@
+         if (cache < 0) {
+             cache = cache_open();
+             if (cache >= 0) {
+-                const char *mark = "\nM2-PID1-PROBE-v4: persistent cache monitor ready\n";
++                const char *mark = "\nM2-PID1-PROBE-v5: monitor ready\n";
+                 write_all(cache, mark, string_length(mark));
+                 syscall6(SYS_fsync, cache, 0, 0, 0, 0, 0);
+             }
+@@ -138,10 +138,6 @@
+                 long n = syscall6(SYS_read, in, (long)buf, sizeof(buf), 0, 0, 0);
+                 if (n == -32) continue; /* EPIPE: ring overrun, next read recovers */
+                 if (n <= 0) break;
+-                if (!(contains(buf, n, "init:") || contains(buf, n, "init.real") ||
+-                      contains(buf, n, "panic") || contains(buf, n, "avc:") ||
+-                      contains(buf, n, "CANNOT LINK") || contains(buf, n, "Fatal") ||
+-                      contains(buf, n, "SELinux") || contains(buf, n, "fs_mgr"))) continue;
+                 if (out >= 0) write_all(out, buf, n);
+                 if (cache >= 0) {
+                     write_all(cache, buf, n);
+@@ -153,6 +149,11 @@
+                 }
+             }
+         }
++        if (cache >= 0 && tick % 10 == 0) {
++            const char *beat = "M2-PROBE-HEARTBEAT\n";
++            write_all(cache, beat, string_length(beat));
++            syscall6(SYS_fsync, cache, 0, 0, 0, 0, 0);
++        }
+         sleep_milliseconds(10);
+     }
+     finish(0);

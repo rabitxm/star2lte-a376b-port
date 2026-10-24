@@ -1,0 +1,30 @@
+From: Codex local compatibility adaptation
+Subject: [PATCH] Port resolution enablement to A376B GameDisplayListener
+
+Reason: `attempt20.txt:1090` reports the old resolution patch cannot find GameManagerService$DisplayListener.smali. AZH4 moved equivalent logic to `com/samsung/android/game/display/GameDisplayListener.smali`; its constructor compares `WQHD,FHD,HD` against an empty string and stores the result in MULTI_RESOLUTION_SUPPORTED. For exact A376B16, set the comparison value to the configured target resolution list using a line replacement; keep the old patch for other donors.
+Files: unica/patches/product_feature/customize.sh.
+Verification: inspect constructor/target feature value, `bash -n`, clean build22 and inspect resulting smali/APK; display switching needs runtime verification.
+
+---
+--- a/unica/patches/product_feature/customize.sh
++++ b/unica/patches/product_feature/customize.sh
+@@ -225,8 +225,17 @@
+             APPLY_PATCH "system" "system/framework/framework.jar" \
+                 "$MODPATH/resolution/framework.jar/0001-Enable-FW_DYNAMIC_RESOLUTION_CONTROL.patch"
+         fi
+-        APPLY_PATCH "system" "system/framework/gamemanager.jar" \
+-            "$MODPATH/resolution/gamemanager.jar/0001-Enable-dynamic-resolution-control.patch"
++        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++            LOGW "Porting dynamic-resolution support to AZH4 GameDisplayListener class layout"
++            SMALI_PATCH "system" "system/framework/gamemanager.jar" \
++                "smali/com/samsung/android/game/display/GameDisplayListener.smali" "replace" \
++                "<init>(Landroid/content/Context;Landroid/hardware/display/DisplayManager;Landroid/os/Handler;Lcom/samsung/android/game/FgCheckThread;ZZ)V" \
++                'const-string v1, ""' \
++                $'    const-string v1, "WQHD,FHD,HD"\n'
++        else
++            APPLY_PATCH "system" "system/framework/gamemanager.jar" \
++                "$MODPATH/resolution/gamemanager.jar/0001-Enable-dynamic-resolution-control.patch"
++        fi
+         APPLY_PATCH "system" "system/priv-app/SecSettings/SecSettings.apk" \
+             "$MODPATH/resolution/SecSettings.apk/0001-Enable-dynamic-resolution-control.patch"
+         SMALI_PATCH "system" "system/priv-app/SecSettings/SecSettings.apk" \

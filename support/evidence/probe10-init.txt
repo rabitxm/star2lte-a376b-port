@@ -1,0 +1,84 @@
+6142: 14,4026,1468933,-;init: init first stage started!
+6143: 14,4027,1468939,-;init: !@Boot: start init process
+6144: 14,4028,1468963,-;init: boot_stat write failed
+6145: 14,4029,1468974,-;init: boot_stat write failed
+6146: 14,4030,1469654,-;init: Using Android DT directory /proc/device-tree/firmware/android/
+6157: 14,4035,1503817,-;init: [libfs_mgr]superblock s_max_mnt_count:35,/dev/block/platform/11120000.ufs/by-name/SYSTEM
+6159: 14,4037,1505765,-;init: [libfs_mgr]__mount(source=/dev/block/platform/11120000.ufs/by-name/SYSTEM,target=/system,type=ext4)=0: Success
+6160: 14,4038,1505775,-;init: [libfs_mgr]__mount return 0(source=SYSTEM,target=/system,type=ext4,flags=1,options=): Success
+6161: 14,4039,1505989,-;init: Switching root to '/system'
+6162: 14,4040,1510074,-;init: [libfs_mgr]superblock s_max_mnt_count:37,/dev/block/platform/11120000.ufs/by-name/ODM
+6164: 14,4042,1511128,-;init: [libfs_mgr]__mount(source=/dev/block/platform/11120000.ufs/by-name/ODM,target=/odm,type=ext4)=0: Success
+6165: 14,4043,1511137,-;init: [libfs_mgr]__mount return 0(source=ODM,target=/odm,type=ext4,flags=1,options=): Success
+6166: 14,4044,1511668,-;init: [libfs_mgr]superblock s_max_mnt_count:25,/dev/block/platform/11120000.ufs/by-name/VENDOR
+6168: 14,4046,1513899,-;init: [libfs_mgr]__mount(source=/dev/block/platform/11120000.ufs/by-name/VENDOR,target=/vendor,type=ext4)=0: Success
+6169: 14,4047,1513907,-;init: [libfs_mgr]__mount return 0(source=VENDOR,target=/vendor,type=ext4,flags=1,options=): Success
+6176: 14,4050,1575736,-;init: Skipped setting INIT_AVB_VERSION (not in recovery mode)
+6177: 14,4051,1575765,-;init: boot_stat write failed
+6178: 14,4052,1653488,-;init: [libfstab] Using Android DT directory /proc/device-tree/firmware/android/
+6179: 14,4053,1656718,-;init: [libfstab] zramsize and zram_backingdev_size are automatically selected
+6180: 14,4054,1656882,-;init: [libfstab] Storage model: UFS, proc_name
+6181: 14,4055,1657764,-;init: [libfstab] storage_blocks: 119 lg: 6
+6182: 14,4056,1657784,-;init: [libfstab] SetNandswapSize(): storage_size: 128GB zramsize: 8192MB zram_backingdev_size: 2048MB
+6183: 14,4057,1658151,-;init: Skipping mount of system_ext, system is not dynamic.
+6184: 14,4058,1658159,-;init: Skipping mount of product, system is not dynamic.
+6185: 14,4059,1658173,-;init: Opening SELinux policy
+6186: 14,4060,1659960,-;init: No precompiled sepolicy at /vendor/etc/selinux/precompiled_sepolicy: No such file or directory
+6187: 14,4061,1659967,-;init: Compiling SELinux policy
+6188: 14,4062,1661566,-;init: Missing /system/etc/selinux/plat_sepolicy_genfs_202404.cil; skipping
+13740: 14,4028,1481139,-;init: init first stage started!
+13741: 14,4029,1481147,-;init: !@Boot: start init process
+13742: 14,4030,1481174,-;init: boot_stat write failed
+13743: 14,4031,1481187,-;init: boot_stat write failed
+13744: 14,4032,1481870,-;init: Using Android DT directory /proc/device-tree/firmware/android/
+13751: 14,4035,1516028,-;init: [libfs_mgr]superblock s_max_mnt_count:35,/dev/block/platform/11120000.ufs/by-name/SYSTEM
+13753: 14,4037,1517971,-;init: [libfs_mgr]__mount(source=/dev/block/platform/11120000.ufs/by-name/SYSTEM,target=/system,type=ext4)=0: Success
+13754: 14,4038,1517980,-;init: [libfs_mgr]__mount return 0(source=SYSTEM,target=/system,type=ext4,flags=1,options=): Success
+13755: 14,4039,1518171,-;init: Switching root to '/system'
+13756: 14,4040,1522420,-;init: [libfs_mgr]superblock s_max_mnt_count:37,/dev/block/platform/11120000.ufs/by-name/ODM
+13758: 14,4042,1523575,-;init: [libfs_mgr]__mount(source=/dev/block/platform/11120000.ufs/by-name/ODM,target=/odm,type=ext4)=0: Success
+13759: 14,4043,1523585,-;init: [libfs_mgr]__mount return 0(source=ODM,target=/odm,type=ext4,flags=1,options=): Success
+13760: 14,4044,1524114,-;init: [libfs_mgr]superblock s_max_mnt_count:25,/dev/block/platform/11120000.ufs/by-name/VENDOR
+13762: 14,4046,1526541,-;init: [libfs_mgr]__mount(source=/dev/block/platform/11120000.ufs/by-name/VENDOR,target=/vendor,type=ext4)=0: Success
+13763: 14,4047,1526549,-;init: [libfs_mgr]__mount return 0(source=VENDOR,target=/vendor,type=ext4,flags=1,options=): Success
+13770: 14,4050,1567764,-;init: Skipped setting INIT_AVB_VERSION (not in recovery mode)
+13771: 14,4051,1567796,-;init: boot_stat write failed
+13772: 14,4052,1645014,-;init: [libfstab] Using Android DT directory /proc/device-tree/firmware/android/
+13773: 14,4053,1648408,-;init: [libfstab] zramsize and zram_backingdev_size are automatically selected
+13774: 14,4054,1648623,-;init: [libfstab] Storage model: UFS, proc_name
+13775: 14,4055,1649562,-;init: [libfstab] storage_blocks: 119 lg: 6
+13776: 14,4056,1649584,-;init: [libfstab] SetNandswapSize(): storage_size: 128GB zramsize: 8192MB zram_backingdev_size: 2048MB
+13777: 14,4057,1649963,-;init: Skipping mount of system_ext, system is not dynamic.
+13778: 14,4058,1649970,-;init: Skipping mount of product, system is not dynamic.
+13779: 14,4059,1649984,-;init: Opening SELinux policy
+13780: 14,4060,1651797,-;init: No precompiled sepolicy at /vendor/etc/selinux/precompiled_sepolicy: No such file or directory
+13781: 14,4061,1651803,-;init: Compiling SELinux policy
+13782: 14,4062,1653530,-;init: Missing /system/etc/selinux/plat_sepolicy_genfs_202404.cil; skipping
+21340: 14,4030,1485156,-;init: init first stage started!
+21341: 14,4031,1485163,-;init: !@Boot: start init process
+21342: 14,4032,1485190,-;init: boot_stat write failed
+21343: 14,4033,1485201,-;init: boot_stat write failed
+21344: 14,4034,1485880,-;init: Using Android DT directory /proc/device-tree/firmware/android/
+21345: 14,4035,1520003,-;init: [libfs_mgr]superblock s_max_mnt_count:35,/dev/block/platform/11120000.ufs/by-name/SYSTEM
+21347: 14,4037,1521697,-;init: [libfs_mgr]__mount(source=/dev/block/platform/11120000.ufs/by-name/SYSTEM,target=/system,type=ext4)=0: Success
+21348: 14,4038,1521706,-;init: [libfs_mgr]__mount return 0(source=SYSTEM,target=/system,type=ext4,flags=1,options=): Success
+21349: 14,4039,1521891,-;init: Switching root to '/system'
+21350: 14,4040,1525559,-;init: [libfs_mgr]superblock s_max_mnt_count:37,/dev/block/platform/11120000.ufs/by-name/ODM
+21352: 14,4042,1526716,-;init: [libfs_mgr]__mount(source=/dev/block/platform/11120000.ufs/by-name/ODM,target=/odm,type=ext4)=0: Success
+21353: 14,4043,1526726,-;init: [libfs_mgr]__mount return 0(source=ODM,target=/odm,type=ext4,flags=1,options=): Success
+21354: 14,4044,1527257,-;init: [libfs_mgr]superblock s_max_mnt_count:25,/dev/block/platform/11120000.ufs/by-name/VENDOR
+21356: 14,4046,1528865,-;init: [libfs_mgr]__mount(source=/dev/block/platform/11120000.ufs/by-name/VENDOR,target=/vendor,type=ext4)=0: Success
+21357: 14,4047,1528873,-;init: [libfs_mgr]__mount return 0(source=VENDOR,target=/vendor,type=ext4,flags=1,options=): Success
+21364: 14,4050,1567855,-;init: Skipped setting INIT_AVB_VERSION (not in recovery mode)
+21365: 14,4051,1567887,-;init: boot_stat write failed
+21366: 14,4052,1644842,-;init: [libfstab] Using Android DT directory /proc/device-tree/firmware/android/
+21367: 14,4053,1648174,-;init: [libfstab] zramsize and zram_backingdev_size are automatically selected
+21368: 14,4054,1648363,-;init: [libfstab] Storage model: UFS, proc_name
+21369: 14,4055,1649255,-;init: [libfstab] storage_blocks: 119 lg: 6
+21370: 14,4056,1649278,-;init: [libfstab] SetNandswapSize(): storage_size: 128GB zramsize: 8192MB zram_backingdev_size: 2048MB
+21371: 14,4057,1649643,-;init: Skipping mount of system_ext, system is not dynamic.
+21372: 14,4058,1649651,-;init: Skipping mount of product, system is not dynamic.
+21373: 14,4059,1649667,-;init: Opening SELinux policy
+21374: 14,4060,1651558,-;init: No precompiled sepolicy at /vendor/etc/selinux/precompiled_sepolicy: No such file or directory
+21375: 14,4061,1651565,-;init: Compiling SELinux policy
+21376: 14,4062,1653207,-;init: Missing /system/etc/selinux/plat_sepolicy_genfs_202404.cil; skipping

@@ -1,0 +1,23 @@
+From: Codex diagnostic follow-up
+Subject: [PATCH] Verify private pmsg recorder before M2 boot probe04
+
+Reason: probe03 stopped in TWRP at `NAMESPACE stage=4 errno=016` when
+mounting sysfs over an inherited sysfs mount. A failed recorder could hide
+the real M2 boot failure. Probe04 accepts EBUSY only when the runtime pmsg
+sysfs node is readable, and has a cold mount test and a pmsg write test.
+
+Files: rom/platform/exynos9810/installer/bootlogger_pid1_probe.c.
+Normal ROM builds and pinned kernel are unchanged. Only the temporary
+diagnostic BOOT ramdisk contains this probe.
+
+Verification: static AArch64 link succeeded; TWRP warm/cold namespace tests
+and fork/wait/exec/env test returned 0. Parent `/proc/mounts` SHA stayed
+be7770f3f400bc3c85749e0d46908e07e16cb5153c3fa2198e9528014e75f869.
+The explicit self-test write returned `PROBE-PMSG-WRITE-PASS`, and after a
+recovery reboot `/sys/fs/pstore/pmsg-ramoops-0` line 59 contained
+`M2-PMSG-RAM-SELFTEST-20261022-PROBE04`.
+
+BOOT diagnostic SHA256 dd4be5b35bd73f6135d8a9d623031439d29652a9e0d4ff1083266b6df9180a68.
+Full BOOT readback matched. Kernel, DTB, cmdline, Samsung footer unchanged;
+original `/init` bytes retained as `/init.real`. Runtime M2 result is
+recorded separately in logs/20261022-m2-early-diag/pid1-probe-04/.

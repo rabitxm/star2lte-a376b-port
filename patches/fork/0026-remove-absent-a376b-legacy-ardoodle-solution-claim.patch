@@ -1,0 +1,28 @@
+Reason: After the PetCluster guard, a host-only run of the next actual camera block reproduces Missing SPF patches: SOURCE_SAIV_CONFIG_ARDOODLE_LIB empty vs inherited PET_DETECTION,IMG_PICKING. Verified AZH4 lacks the legacy key, etc/ardoodle assets and the corresponding pet-detection native library. Remove that legacy optional claim rather than fabricate a source feature.
+Affected: unica/patches/camera/customize.sh.
+Verify: actual block and FF helpers on copied AZH4 XML; only known Exynos9810/A376B absent-implementation case removes claim. Unknown donor/platform/payload/symlink retain review guard. Evidence ardoodle-preflight-before.txt (host probe, not main build failure) and ardoodle-claim-fixtures.json, five cases PASS. No full build/runtime claim.
+Rollback: reverse patch and stop at the old review guard. No hardware blob, radio, kernel or device changes. Optional legacy ARDoodle PET_DETECTION/IMG_PICKING remains unavailable pending an implementation.
+
+--- a/unica/patches/camera/customize.sh
++++ b/unica/patches/camera/customize.sh
+@@ -258,8 +258,18 @@
+         fi
+     else
+         if [ "$TARGET_SAIV_CONFIG_ARDOODLE_LIB" ]; then
+-            # TODO handle this condition
+-            LOG_MISSING_PATCHES "SOURCE_SAIV_CONFIG_ARDOODLE_LIB" "TARGET_SAIV_CONFIG_ARDOODLE_LIB"
++            if [ "$TARGET_PLATFORM" = "exynos9810" ] && \
++                    [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] && \
++                    [ ! -e "$FW_DIR/$SOURCE_FIRMWARE_PATH/system/system/etc/ardoodle" ] && \
++                    [ ! -L "$FW_DIR/$SOURCE_FIRMWARE_PATH/system/system/etc/ardoodle" ] && \
++                    [ ! -e "$FW_DIR/$SOURCE_FIRMWARE_PATH/system/system/lib64/lib_pet_detection.arcsoft.so" ] && \
++                    [ ! -L "$FW_DIR/$SOURCE_FIRMWARE_PATH/system/system/lib64/lib_pet_detection.arcsoft.so" ]; then
++                LOG "- Removing inherited legacy ARDoodle solution claim absent from A376B donor"
++                SET_FLOATING_FEATURE_CONFIG "SEC_FLOATING_FEATURE_SAIV_CONFIG_ARDOODLE_LIB" --delete
++                TARGET_SAIV_CONFIG_ARDOODLE_LIB=""
++            else
++                LOG_MISSING_PATCHES "SOURCE_SAIV_CONFIG_ARDOODLE_LIB" "TARGET_SAIV_CONFIG_ARDOODLE_LIB"
++            fi
+         fi
+     fi
+ fi

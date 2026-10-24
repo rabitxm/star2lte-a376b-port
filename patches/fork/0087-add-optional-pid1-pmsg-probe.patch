@@ -1,0 +1,213 @@
+From: Codex M2 early diagnostics
+Subject: [PATCH] Add explicit optional PID1 exec handoff and pmsg probe
+
+Reason: commandline-only test01 recovered no M2 init failure; capture before
+normal Android logger starts, with unchanged DS-ACK kernel/DTB and no mounts.
+Files: installer/bootlogger_pid1_probe.c; optional prepare diagnostic helper.
+PID1 forks a bounded monitor then execs original init with same argv/env.
+Monitor reads kmsg and writes selected init/fatal errors to pmsg char device;
+uses runtime sysfs device numbers, never opens a partition or mounts a FS.
+Verification: TWRP fork/wait/exec/env PASS, non-PID1 rejected; independent cpio
+metadata/content check, original init preserved; kernel/DTB/cmdline hashes
+unchanged. Probe may alter timing or be blocked by SELinux; diagnostic only.
+Rollback is pinned original full BOOT; no normal-build activation.
+
+---
+--- /dev/null
++++ b/platform/exynos9810/installer/bootlogger_pid1_probe.c
+@@ -0,0 +1,117 @@
++/* Optional M2 early diagnostic; never bundled by normal builds.
++ * Keep PID1 and exec original init with argv/env unchanged. A child copies
++ * selected kernel errors to pmsg. No partition opens, mounts or formats.
++ * Verification: TWRP fork/wait/exec self-test; component hashes on repack.
++ */
++#define EXYNOS9810_BOOTLOGGER_WRAPPER
++#include "bootlogger.c"
++
++static int contains(const char *s, long n, const char *needle)
++{
++    size_t z = string_length(needle);
++    for (long i = 0; i + (long)z <= n; ++i) {
++        size_t j = 0;
++        while (j < z && s[i + j] == needle[j]) ++j;
++        if (j == z) return 1;
++    }
++    return 0;
++}
++
++static void finish(long code)
++{
++    syscall6(94, code, 0, 0, 0, 0, 0); /* exit_group */
++    for (;;) {}
++}
++
++static long pmsg_open(void)
++{
++    long fd = open_file("/dev/pmsg0", O_WRONLY | O_NONBLOCK, 0);
++    if (fd >= 0) return fd;
++    /* Use runtime sysfs dev_t; never guess the dynamic pmsg major number. */
++    fd = open_file("/sys/class/pmsg/pmsg0/dev", O_RDONLY, 0);
++    if (fd < 0) return -1;
++    char text[32];
++    long n = syscall6(SYS_read, fd, (long)text, 31, 0, 0, 0);
++    syscall6(SYS_close, fd, 0, 0, 0, 0, 0);
++    unsigned long major = 0, minor = 0;
++    long i = 0;
++    if (n < 3) return -1;
++    while (i < n && text[i] >= '0' && text[i] <= '9')
++        major = major * 10 + text[i++] - '0';
++    if (i >= n || text[i++] != ':') return -1;
++    while (i < n && text[i] >= '0' && text[i] <= '9')
++        minor = minor * 10 + text[i++] - '0';
++    if (!major || major > 4095 || minor > 1048575) return -1;
++    unsigned long dev = (minor & 255) | (major << 8) | ((minor & ~255UL) << 12);
++    syscall6(33, AT_FDCWD, (long)"/dev/m2-pmsg-probe", 020600, dev, 0, 0);
++    return open_file("/dev/m2-pmsg-probe", O_WRONLY | O_NONBLOCK, 0);
++}
++
++static void monitor(void)
++{
++    char buf[4096], pending[8192];
++    long used = 0, in = -1, out = -1;
++    for (long tick = 0; tick < 6000; ++tick) {
++        if (out < 0) {
++            out = pmsg_open();
++            if (out >= 0) {
++                const char *mark = "\nM2-PID1-PROBE-v1: original init handoff attempted\n";
++                write_all(out, mark, string_length(mark));
++                if (used) write_all(out, pending, used);
++                used = 0;
++            }
++        }
++        if (in < 0) in = open_file("/dev/kmsg", O_RDONLY | O_NONBLOCK, 0);
++        if (in >= 0) {
++            for (int batch = 0; batch < 256; ++batch) {
++                long n = syscall6(SYS_read, in, (long)buf, sizeof(buf), 0, 0, 0);
++                if (n == -32) continue; /* EPIPE: ring overrun, next read recovers */
++                if (n <= 0) break;
++                if (!(contains(buf, n, "init:") || contains(buf, n, "init.real") ||
++                      contains(buf, n, "panic") || contains(buf, n, "avc:") ||
++                      contains(buf, n, "CANNOT LINK") || contains(buf, n, "Fatal") ||
++                      contains(buf, n, "SELinux") || contains(buf, n, "fs_mgr"))) continue;
++                if (out >= 0) write_all(out, buf, n);
++                else {
++                    if (used + n > (long)sizeof(pending)) used = 0;
++                    copy_bytes(pending + used, buf, n); used += n;
++                }
++            }
++        }
++        sleep_milliseconds(10);
++    }
++    finish(0);
++}
++
++void probe_start(unsigned long *stack)
++{
++    unsigned long argc = stack[0];
++    char **argv = (char **)(stack + 1);
++    char **env = argv + argc + 1;
++    long pid = syscall6(172, 0, 0, 0, 0, 0, 0);
++    if (pid != 1) {
++        if (argc == 2 && contains(argv[1], string_length(argv[1]), "--self-test")) {
++            long child = syscall6(220, 17, 0, 0, 0, 0, 0);
++            if (child < 0) finish(10);
++            if (!child) finish(0);
++            int status = -1;
++            if (syscall6(260, child, (long)&status, 0, 0, 0, 0) != child || status) finish(11);
++            char *test[] = {"/sbin/sh", "-c", "test \"$M2_PROBE_TEST\" = env-preserved && echo PROBE-FORK-WAIT-EXEC-ENV-PASS", 0};
++            syscall6(221, (long)test[0], (long)test, (long)env, 0, 0, 0);
++            finish(12);
++        }
++        finish(13); /* never execute init from a non-PID1 invocation */
++    }
++    long child = syscall6(220, 17, 0, 0, 0, 0, 0);
++    if (!child) monitor();
++    /* Even clone failure must not prevent original init. No wait in PID1. */
++    syscall6(221, (long)"/init.real", (long)argv, (long)env, 0, 0, 0);
++    long out = pmsg_open();
++    if (out >= 0) {
++        const char *err = "\nM2-PID1-PROBE-v1: exec /init.real FAILED\n";
++        write_all(out, err, string_length(err));
++    }
++    finish(127);
++}
++
++__asm__(".global _start\n_start:\nmov x0, sp\nbl probe_start\n");
+--- a/scripts/internal/prepare_star2lte_boot_diagnostic.py
++++ b/scripts/internal/prepare_star2lte_boot_diagnostic.py
+@@ -20,6 +20,63 @@
+ 
+ def digest(data):
+     return hashlib.sha256(data).hexdigest()
++
++
++def prepare_probe_ramdisk(source, probe, output):
++    """Prepare raw cpio for existing MagiskBoot; do not pack/flash a kernel."""
++    boot = source.read_bytes()
++    if digest(boot) != BASE:
++        raise ValueError('Probe requires the same pinned BOOT capture')
++    ks, _, rs, _, _, _, _, page, _, _ = struct.unpack_from('<10I', boot, 8)
++    start = page + (ks + page - 1) // page * page
++    raw = boot[start:start + rs]
++    pos, records, names = 0, [], []
++    while pos + 110 <= len(raw):
++        head = raw[pos:pos + 110]
++        if head[:6] != b'070701':
++            raise ValueError('Expected raw newc ramdisk')
++        vals = [int(head[6 + i * 8:14 + i * 8], 16) for i in range(13)]
++        size, ns = vals[6], vals[11]
++        name = raw[pos + 110:pos + 110 + ns - 1].decode('ascii')
++        data_start = (pos + 110 + ns + 3) // 4 * 4
++        end = (data_start + size + 3) // 4 * 4
++        if end > len(raw):
++            raise ValueError('Truncated cpio')
++        records.append((name, vals, raw[data_start:data_start + size]))
++        names.append(name)
++        pos = end
++        if name == 'TRAILER!!!':
++            break
++    if names.count('init') != 1 or 'init.real' in names or names[-1] != 'TRAILER!!!':
++        raise ValueError('Unexpected init/archive inventory')
++    payload = probe.read_bytes()
++    if payload[:5] != b'\x7fELF\x02' or struct.unpack_from('<H', payload, 18)[0] != 183:
++        raise ValueError('Probe must be ELF64 AArch64')
++    original = next(r for r in records if r[0] == 'init')
++    inode = max(r[1][0] for r in records) + 1
++    def entry(name, vals, data):
++        vals = list(vals)
++        vals[6], vals[11] = len(data), len(name) + 1
++        result = b'070701' + ''.join(f'{v:08x}' for v in vals).encode() + name.encode() + b'\0'
++        result += b'\0' * (-len(result) % 4)
++        result += data
++        return result + b'\0' * (-len(result) % 4)
++    result = b''
++    for name, vals, data in records:
++        if name == 'init':
++            result += entry('init.real', vals, data)
++            v = list(vals); v[0] = inode
++            result += entry('init', v, payload)
++        else:
++            result += entry(name, vals, data)
++    result += b'\0' * (-len(result) % 512)
++    with output.open('xb') as handle:
++        handle.write(result)
++    output.chmod(0o600)
++    return {'base_sha256': BASE, 'ramdisk_sha256': digest(result),
++            'original_init_sha256': digest(original[2]), 'probe_sha256': digest(payload),
++            'change': 'rename original init to init.real, install explicit PID1 probe as init',
++            'other_cpio_entries_unchanged': True, 'device_write_performed': False}
+ 
+ 
+ def prepare(source, output):
+@@ -69,5 +126,10 @@
+     parser = argparse.ArgumentParser(description=__doc__)
+     parser.add_argument('--source', type=Path, required=True)
+     parser.add_argument('--output', type=Path, required=True)
++    parser.add_argument('--probe', type=Path, help='prepare raw probe cpio for existing MagiskBoot')
+     args = parser.parse_args()
+-    print(json.dumps(prepare(args.source, args.output), indent=2))
++    if args.probe:
++        report = prepare_probe_ramdisk(args.source, args.probe, args.output)
++    else:
++        report = prepare(args.source, args.output)
++    print(json.dumps(report, indent=2))

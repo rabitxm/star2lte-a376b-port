@@ -1,0 +1,132 @@
+From: Local M2 diagnostics
+Subject: [PATCH] Correct recorder wait-stop signal decoding and private proc snapshots
+
+Reason: the old decoder injects signal 127, causing PTRACE_CONT errno 5 and
+leaving the tracee stopped. Runtime secilc compilation itself passes on both
+TWRP and pinned DS-ACK; probe10 silence is not proof of a policy compile hang.
+Files: diagnostics/bootlogger_pid1_probe11.c (candidate derived from probe10).
+Verification: static AArch64 build; actual SIGCHLD forwarding/exit and ptrace
+attach selftests PASS on TWRP4.9.118 and DS-ACK4.9.337. No PID1 boot tested.
+The private proc mount correction is compiled but not yet boot-validated.
+No standard ROM build or kernel/vendor/radio change, no image/device writes.
+
+--- a/diagnostics/bootlogger_pid1_probe10.c
++++ b/diagnostics/bootlogger_pid1_probe11.c
+@@ -16,6 +16,12 @@
+         if (j == z) return 1;
+     }
+     return 0;
++}
++
++/* WSTOPSIG semantics: the low byte is the stop marker 0x7f, not the signal. */
++static long trace_stop_signal(long status)
++{
++    return ((unsigned long)status >> 8) & 0xff;
+ }
+ 
+ static void finish(long code)
+@@ -75,8 +81,8 @@
+     if (r < 0) return r;
+     if (statbuf[0] != 0xef53) return -22; /* EXT4_SUPER_MAGIC */
+     const char *path = (mounted[1] == 'c')
+-        ? "/cache/m2-early-boot-probe10.log"
+-        : "/dev/m2-cache/m2-early-boot-probe10.log";
++        ? "/cache/m2-early-boot-probe11.log"
++        : "/dev/m2-cache/m2-early-boot-probe11.log";
+     return open_file(path,
+                      O_WRONLY | O_CREAT | O_APPEND, 0600);
+ }
+@@ -174,6 +180,11 @@
+     namespace_step = 2;
+     r = syscall6(40, 0, (long)"/", 0, (1UL << 18) | 16384, 0, 0);
+     if (r < 0) return r; /* MS_PRIVATE | MS_REC */
++    /* The monitor namespace is private before PID1 mounts procfs. */
++    r = syscall6(34, AT_FDCWD, (long)"/proc", 0555, 0, 0, 0);
++    if (r < 0 && r != -17) return r;
++    r = syscall6(40, (long)"proc", (long)"/proc", (long)"proc", 1 | 2 | 4 | 8, 0, 0);
++    if (r < 0 && r != -16) return r;
+     namespace_step = 3;
+     r = syscall6(40, (long)"tmpfs", (long)"/dev", (long)"tmpfs", 2,
+                  (long)"mode=0755,size=1m", 0);
+@@ -208,7 +219,7 @@
+     }
+     cache = cache_open();
+     if (cache >= 0) {
+-        const char *mark = "\nM2-PID1-PROBE10: ptrace monitor ready\n";
++        const char *mark = "\nM2-PID1-PROBE11: ptrace monitor ready\n";
+         write_all(cache, mark, string_length(mark));
+         syscall6(SYS_fsync, cache, 0, 0, 0, 0, 0);
+     }
+@@ -247,7 +258,7 @@
+         if (cache < 0) {
+             cache = cache_open();
+             if (cache >= 0) {
+-                const char *mark = "\nM2-PID1-PROBE-v10: exec-report monitor ready\n";
++                const char *mark = "\nM2-PID1-PROBE-v11: exec-report monitor ready\n";
+                 write_all(cache, mark, string_length(mark));
+                 syscall6(SYS_fsync, cache, 0, 0, 0, 0, 0);
+             }
+@@ -300,14 +311,23 @@
+             long pid = syscall6(260, 1, (long)&status, 0x40000001, 0, 0, 0); /* __WALL | WNOHANG */
+             if (pid == 1 && (status & 0xff) == 0x7f) {
+                 long event = (unsigned long)status >> 16;
+-                long sig = status & 0x7f;
++                long sig = trace_stop_signal(status);
+                 if (event == 4 || event == 6 || (event == 0 &&
+                     (sig == 4 || sig == 6 || sig == 7 || sig == 11 || sig == 31))) {
+                     trace_snapshot(cache, out, pid, status, event);
+                     if (event == 6 || (event == 0 && (sig == 4 || sig == 6 || sig == 7 || sig == 11 || sig == 31)))
+                         sleep_milliseconds(500);
+                 }
+-                syscall6(117, 7, 1, 0, event ? 0 : sig, 0, 0); /* PTRACE_CONT */
++                long resumed = syscall6(117, 7, 1, 0, event ? 0 : sig, 0, 0);
++                if (resumed < 0) {
++                    char line[96]; long n = 0;
++                    const char *tag = "PTRACE-CONT-FAILED errno=";
++                    copy_bytes(line+n, tag, string_length(tag)); n += string_length(tag);
++                    n += append_decimal(line+n, -resumed); line[n++]='\n';
++                    if (cache >= 0) { write_all(cache,line,n); syscall6(SYS_fsync,cache,0,0,0,0,0); }
++                    syscall6(117, 17, 1, 0, event ? 0 : sig, 0, 0); /* DETACH: fail open. */
++                    finish(52);
++                }
+             } else if (pid == 1) {
+                 char line[] = "PID1-TERMINATED status=0x0000\n";
+                 line[23]='0'+((status>>12)&15); line[24]='0'+((status>>8)&15);
+@@ -347,6 +367,37 @@
+     char **env = argv + argc + 1;
+     long pid = syscall6(172, 0, 0, 0, 0, 0, 0);
+     if (pid != 1) {
++        if (argc == 2 && contains(argv[1], string_length(argv[1]), "--signal-forwarding-selftest")) {
++            int gate[2] = {-1, -1};
++            if (syscall6(59, (long)gate, 0x80000, 0, 0, 0, 0) < 0) finish(60);
++            long child = syscall6(220, 17, 0, 0, 0, 0, 0);
++            if (child < 0) finish(61);
++            if (!child) {
++                syscall6(SYS_close, gate[1], 0, 0, 0, 0, 0);
++                char go;
++                if (syscall6(SYS_read, gate[0], (long)&go, 1, 0, 0, 0) != 1) finish(62);
++                long self = syscall6(172,0,0,0,0,0,0);
++                syscall6(129,self,17,0,0,0,0); /* SIGCHLD: default action ignores it. */
++                finish(0);
++            }
++            syscall6(SYS_close,gate[0],0,0,0,0,0);
++            if (syscall6(117,0x4206,child,0,0,0,0) < 0) finish(63);
++            char go='G'; write_all(gate[1],&go,1);
++            syscall6(SYS_close,gate[1],0,0,0,0,0);
++            int status=0;
++            if (syscall6(260,child,(long)&status,0x40000000,0,0,0) != child) finish(64);
++            if ((status & 0xff) != 0x7f || trace_stop_signal(status) != 17) finish(65);
++            long rejected = syscall6(117,7,child,0,status & 0x7f,0,0);
++            if (rejected >= 0) finish(66);
++            char line[128]; long n=0;
++            const char *tag="OLD-DECODE signal=127 PTRACE_CONT errno=";
++            copy_bytes(line+n,tag,string_length(tag));n+=string_length(tag);
++            n+=append_decimal(line+n,-rejected);line[n++]='\n';write_all(1,line,n);
++            if (syscall6(117,7,child,0,trace_stop_signal(status),0,0) < 0) finish(67);
++            if (syscall6(260,child,(long)&status,0x40000000,0,0,0) != child || status) finish(68);
++            const char *ok="PROBE-SIGCHLD-FORWARD-AND-EXIT-PASS\n";
++            write_all(1,ok,string_length(ok));finish(0);
++        }
+         if (argc == 2 && contains(argv[1], string_length(argv[1]), "--ptrace-selftest")) {
+             int gate[2] = {-1, -1};
+             if (syscall6(59, (long)gate, 0x80000, 0, 0, 0, 0) < 0) finish(40);

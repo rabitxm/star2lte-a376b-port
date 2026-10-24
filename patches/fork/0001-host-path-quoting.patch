@@ -1,0 +1,96 @@
+Reason: CMake shell quoting failed on parentheses, and apktool tests decoded literal + as space in the workspace path.
+Affected: external/make.sh (scripts/build_dependencies.sh is its symlink), external/patches/android-tools/0001-cmake-quote-mkbootimg-symlink.patch, external/patches/apktool/0002-fix-file-resource-uri.patch.
+Verify: original dependency build completed; --check-tools exit 0; apktool-lib 185 tests, 0 failures/errors/skips.
+Rollback: reverse this outer patch and reverse already-applied nested patches in their tool submodules.
+Evidence: logs/20261020-m0-buildhost/build-dependencies-before-path-fix.txt:16; build-dependencies-before-uri-fix.txt; apktool-test-summary.json.
+
+diff --git a/external/make.sh b/external/make.sh
+index 5cfc3f6..50be328 100755
+--- a/external/make.sh
++++ b/external/make.sh
+@@ -170,7 +170,8 @@ fi
+ 
+ if $ANDROID_TOOLS; then
+     ANDROID_TOOLS_CMDS=(
+-        "true"
++        # CMake must quote workspace paths containing spaces and parentheses.
++        "git apply --reverse --check \"$SRC_DIR/external/patches/android-tools/0001-cmake-quote-mkbootimg-symlink.patch\" >/dev/null 2>&1 || git apply \"$SRC_DIR/external/patches/android-tools/0001-cmake-quote-mkbootimg-symlink.patch\""
+         "cmake -B \"build\" $(GET_CMAKE_FLAGS) -DANDROID_TOOLS_USE_BUNDLED_FMT=ON -DANDROID_TOOLS_USE_BUNDLED_LIBUSB=ON"
+         "make -C \"build\" -j\"$(nproc)\""
+         "find \"build/vendor\" -maxdepth 1 -type f -exec test -x {} \; -exec cp -a {} \"$TOOLS_DIR/bin\" \;"
+@@ -194,6 +195,7 @@ if $APKTOOL; then
+     APKTOOL_CMDS=(
+         "git reset --hard"
+         "git apply \"$SRC_DIR/external/patches/apktool/0001-feat-support-aapt-optimization.patch\""
++        "git apply \"$SRC_DIR/external/patches/apktool/0002-fix-file-resource-uri.patch\""
+         "./gradlew build shadowJar"
+         "cp -a \"scripts/linux/apktool\" \"$TOOLS_DIR/bin\""
+         "cp -a \"brut.apktool/apktool-cli/build/libs/apktool-cli.jar\" \"$TOOLS_DIR/bin/apktool.jar\""
+diff --git a/external/patches/android-tools/0001-cmake-quote-mkbootimg-symlink.patch b/external/patches/android-tools/0001-cmake-quote-mkbootimg-symlink.patch
+new file mode 100644
+index 0000000..7c20f5c
+--- /dev/null
++++ b/external/patches/android-tools/0001-cmake-quote-mkbootimg-symlink.patch
+@@ -0,0 +1,18 @@
++Reason: mkbootimg_symlink failed with Syntax error: "(" unexpected in a workspace path containing spaces and parentheses.
++Affected: android-tools/vendor/CMakeLists.mkbootimg.txt.
++Verify: configure and build mkbootimg_symlink in the original workspace path.
++Rollback: git apply --reverse this patch.
++
++diff --git a/vendor/CMakeLists.mkbootimg.txt b/vendor/CMakeLists.mkbootimg.txt
++--- a/vendor/CMakeLists.mkbootimg.txt
+++++ b/vendor/CMakeLists.mkbootimg.txt
++@@ -2,7 +2,8 @@
++ install(PROGRAMS mkbootimg/mkbootimg.py DESTINATION ${MKBOOTIMG_SCRIPTS_DIR})
++ add_custom_target(mkbootimg_symlink ALL COMMAND ${CMAKE_COMMAND} -E create_symlink
++ 	../${MKBOOTIMG_SCRIPTS_DIR}/mkbootimg.py
++-	${CMAKE_CURRENT_BINARY_DIR}/mkbootimg)
+++	${CMAKE_CURRENT_BINARY_DIR}/mkbootimg
+++    VERBATIM)
++ install(FILES ${CMAKE_CURRENT_BINARY_DIR}/mkbootimg DESTINATION ${CMAKE_INSTALL_BINDIR})
++ install(FILES mkbootimg/gki/generate_gki_certificate.py DESTINATION ${MKBOOTIMG_SCRIPTS_DIR}/gki)
++ install(PROGRAMS mkbootimg/unpack_bootimg.py DESTINATION ${CMAKE_INSTALL_BINDIR} RENAME unpack_bootimg)
+diff --git a/external/patches/apktool/0002-fix-file-resource-uri.patch b/external/patches/apktool/0002-fix-file-resource-uri.patch
+new file mode 100644
+index 0000000..0678471
+--- /dev/null
++++ b/external/patches/apktool/0002-fix-file-resource-uri.patch
+@@ -0,0 +1,38 @@
++Reason: URLDecoder changed the literal + in Galaxy S9+ to a space and broke existing apktool fixture tests.
++Affected: BaseTest.copyResourceDir; tests only, no ROM/runtime changes.
++Verify: run apktool Gradle build shadowJar with tests in this workspace path.
++Rollback: git apply --reverse this patch in the apktool submodule.
++
++diff --git a/brut.apktool/apktool-lib/src/test/java/brut/androlib/BaseTest.java b/brut.apktool/apktool-lib/src/test/java/brut/androlib/BaseTest.java
++--- a/brut.apktool/apktool-lib/src/test/java/brut/androlib/BaseTest.java
+++++ b/brut.apktool/apktool-lib/src/test/java/brut/androlib/BaseTest.java
++@@ -28,7 +28,7 @@
++ import java.io.IOException;
++ import java.io.Reader;
++ import java.net.URL;
++-import java.net.URLDecoder;
+++import java.net.JarURLConnection;
++ import java.nio.file.Files;
++ 
++ import org.junit.*;
++@@ -97,8 +97,7 @@
++ 
++         URL dirURL = clz.getClassLoader().getResource(dirPath);
++         if (dirURL != null && dirURL.getProtocol().equals("file")) {
++-            String jarPath = URLDecoder.decode(dirURL.getFile(), "UTF-8");
++-            new FileDirectory(jarPath).copyToDir(outDir);
+++            new FileDirectory(new File(dirURL.toURI())).copyToDir(outDir);
++             return;
++         }
++ 
++@@ -108,8 +107,8 @@
++         }
++ 
++         if (dirURL.getProtocol().equals("jar")) {
++-            String jarPath = URLDecoder.decode(dirURL.getPath().substring(5, dirURL.getPath().indexOf('!')), "UTF-8");
++-            new FileDirectory(jarPath).copyToDir(outDir);
+++            JarURLConnection connection = (JarURLConnection) dirURL.openConnection();
+++            new FileDirectory(new File(connection.getJarFileURL().toURI())).copyToDir(outDir);
++         }
++     }
++ 

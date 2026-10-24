@@ -1,0 +1,46 @@
+From: Codex local A376B compatibility adaptation
+Subject: [PATCH] Port AZH4 Secure Folder desktop-mode guard
+
+Reason: final-tail78b.txt:21 cannot find the old Secure Folder class namespace.
+AZH4 uses com/samsung/knox/securefolder/settings/...; preserve the existing
+Exynos9810 optional DeX-PC=false behavior at the reviewed method (exact SHA256,
+with explicit acceptance of the same already-patched body for idempotence).
+Files: unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh.
+Verification: actual Secure Folder helper invocation PASS in securefolder79.txt,
+method hash and Smali assembly; shell/replay and clean build required.
+
+---
+--- a/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
+@@ -685,13 +685,19 @@
+     SMALI="$(find "$APK_DIR" -type f \
+         -path '*/com/samsung/knox/settings/securefolder/preference/data/preference/LockTypePreferenceData.smali' \
+         -print -quit)"
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++        SMALI="$(find "$APK_DIR" -type f \
++            -path '*/com/samsung/knox/securefolder/settings/preference/data/preference/LockTypePreferenceData.smali' \
++            -print -quit)"
++    fi
+     [ -n "$SMALI" ] && [ -f "$SMALI" ] || {
+         LOGE "Secure Folder LockTypePreferenceData smali not found"
+         return 1
+     }
+ 
+-    python3 - "$SMALI" <<'PY' || return 1
++    python3 - "$SMALI" "${ROM_SOURCE_CONFIG:-}" <<'PY' || return 1
+ from pathlib import Path
++import hashlib
+ import re
+ import sys
+ 
+@@ -711,6 +717,10 @@
+ 
+     return v0
+ .end method"""
++if sys.argv[2] == "essi_a376b_android16":
++    method = pattern.search(text)
++    if method is None or (method.group() != replacement and hashlib.sha256(method.group().encode()).hexdigest() != "58b6bae90b8c22929b8ce48407a2bf1f111c85e3e5387dc27c4969b35b40540b"):
++        raise SystemExit("Unreviewed AZH4 Secure Folder desktop-mode method")
+ new, count = pattern.subn(replacement, text, count=1)
+ if count == 0:
+     if "# Exynos9810 has no desktopmode system service" in text:

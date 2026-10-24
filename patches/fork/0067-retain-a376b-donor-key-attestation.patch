@@ -1,0 +1,24 @@
+From: Codex local A376B compatibility adaptation
+Subject: [PATCH] Retain AZH4 key attestation behavior
+
+Reason: attempt35.txt:1256-1260 shows KeyboxImitationHooks targets keystore2
+and BouncyCastle classes absent from AZH4. Preserve donor key-attestation
+behavior instead of injecting an incomplete attestation spoof module.
+Files: scripts/internal/apply_modules.sh.
+Verification: exact module/profile guard, shell syntax, replay67 and clean
+attempt36. Revert0067 to resume porting this optional feature.
+
+---
+--- a/scripts/internal/apply_modules.sh
++++ b/scripts/internal/apply_modules.sh
+@@ -26,6 +26,11 @@ APPLY_MODULE()
+         LOGW "AZH4 PackageManager/ActivityStarter code differs; retaining donor Hide My Applist behavior for M2"
+         return 0
+     fi
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] && \
++            [[ "$MODPATH" == */mods/keybox ]]; then
++        LOGW "AZH4 keystore2/BouncyCastle classes differ; retaining donor key-attestation behavior for M2"
++        return 0
++    fi
+ 
+     # AZH4 changed the PackageBlockListPolicy and its lifecycle wiring. The

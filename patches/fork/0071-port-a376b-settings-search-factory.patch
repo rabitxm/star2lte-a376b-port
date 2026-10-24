@@ -1,0 +1,91 @@
+From: Codex local A376B compatibility adaptation
+Subject: [PATCH] Preserve AZH4 inline Settings search factory
+
+Reason: attempt41.txt:1489 cannot replace SearchIndexableResourcesBase.<init>
+because AZH4 inlined allocation, HashSet initialization and all 211 donor index
+registrations into SearchFeatureProviderImpl's factory lambda. Mobile and Base
+have no constructors. Keep that factory and append a static four-provider UN1CA
+registration call; convert the copied UN1CA subclass to a static utility.
+Files: unica/mods/settings/customize.sh and a376b_search.py.
+Verification: strict four-class hashes, 211 donor plus four added providers,
+unknown-input rejection without partial writes, Smali assembly, replay71,
+diagnostic module continuation and clean build. Runtime Settings search pending.
+
+---
+--- a/unica/mods/settings/customize.sh
++++ b/unica/mods/settings/customize.sh
+@@ -79,6 +79,10 @@
+ done < <(find "$MODPATH/SecSettings.apk" -type f)
+ 
+ # Add UN1CA Settings SearchIndexableData registrations
++if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++    python3 "$MODPATH/a376b_search.py" \
++        "$APKTOOL_DIR/system/priv-app/SecSettings/SecSettings.apk" || exit 1
++else
+ LOG "- Patching \"smali/com/android/settingslib/search/SearchIndexableResourcesMobile.smali\" in /system/system/priv-app/SecSettings.apk"
+ SMALI_PATCH "system" "system/priv-app/SecSettings/SecSettings.apk" \
+     "smali/com/android/settingslib/search/SearchIndexableResourcesMobile.smali" "replaceall" \
+@@ -98,6 +102,7 @@
+     'invoke-direct {p0}, Lcom/android/settingslib/search/SearchIndexableResourcesBase;-><init>()V' \
+     'invoke-direct {p0}, Lio/mesalabs/unica/search/UnicaSearchIndexableResources;-><init>()V' \
+     > /dev/null
++fi
+ 
+ DECODE_APK "system" "system/priv-app/SecSettingsIntelligence/SecSettingsIntelligence.apk"
+ LOG "- Patching \"smali_classes2/com/samsung/android/settings/intelligence/search/categorizing/TopLevelKeysCollector.smali\" in /system/system/priv-app/SecSettingsIntelligence/SecSettingsIntelligence.apk"
+--- /dev/null
++++ b/unica/mods/settings/a376b_search.py
+@@ -0,0 +1,53 @@
++#!/usr/bin/env python3
++"""Preserve AZH4's inlined search factory and append UN1CA providers."""
++import hashlib
++from pathlib import Path
++import sys
++
++
++def stage(root):
++    expected = {
++        "SearchFeatureProviderImpl$$ExternalSyntheticLambda0.smali": "2aabe1b0091e7735f72172ad80b23114c021e9aa67da11a8ed7b63cdb23a213f",
++        "SearchIndexableResourcesBase.smali": "7892ec9867725aa2ed9230d4442fe0785cf4652dda4acc931c1f6934b989128b",
++        "SearchIndexableResourcesMobile.smali": "70e3a838e87f87e5833edde809ef1a010263a68df1f67c550738f415ec2c30b4",
++        "UnicaSearchIndexableResources.smali": "890ffd06e7aefb03d7656980b4a342b9475e3de73e636c545b82e3cbd75ca503",
++    }
++    sources = {}
++    for name, digest in expected.items():
++        matches = list(root.glob("smali*/**/" + name))
++        if len(matches) != 1:
++            raise ValueError(f"Expected exactly one {name}, found {len(matches)}")
++        path = matches[0]
++        data = path.read_bytes()
++        if hashlib.sha256(data).hexdigest() != digest:
++            raise ValueError(f"Unreviewed AZH4 search class: {path.name}")
++        sources[name] = (path, data.decode())
++
++    path, factory = sources["SearchFeatureProviderImpl$$ExternalSyntheticLambda0.smali"]
++    helper_path, helper = sources["UnicaSearchIndexableResources.smali"]
++    base = "Lcom/android/settingslib/search/SearchIndexableResourcesBase;"
++    unica = "Lio/mesalabs/unica/search/UnicaSearchIndexableResources;"
++    marker = "    return-object p0\n.end method"
++    if factory.count(marker) != 1 or factory.count("->addIndex(") != 211:
++        raise ValueError("Unexpected AZH4 factory/provider layout")
++    patched_factory = factory.replace(marker, f"    invoke-static {{p0}}, {unica}->register({base})V\n\n" + marker)
++    patched_helper = helper.replace(
++        ".super Lcom/android/settingslib/search/SearchIndexableResourcesMobile;",
++        ".super Ljava/lang/Object;",
++    ).replace(
++        ".method public constructor <init>()V",
++        f".method public static register({base})V",
++    ).replace(
++        "    invoke-direct {p0}, Lcom/android/settingslib/search/SearchIndexableResourcesMobile;-><init>()V\n\n",
++        "",
++    ).replace(f"{unica}->addIndex(", f"{base}->addIndex(")
++    if patched_helper.count(f"{base}->addIndex(") != 4 or "-><init>()V" in patched_helper:
++        raise ValueError("Unexpected UN1CA provider constructor layout")
++    # Validate every input before either write; keep all 211 donor registrations.
++    path.write_text(patched_factory)
++    helper_path.write_text(patched_helper)
++    print("PASS AZH4 search factory: 211 donor registrations + 4 UN1CA providers")
++
++
++if __name__ == "__main__":
++    stage(Path(sys.argv[1]))

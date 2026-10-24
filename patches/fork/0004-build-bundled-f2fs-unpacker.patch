@@ -1,0 +1,66 @@
+Reason: tracked f2fs_unpack from the pinned fork segfaults even on --help (exit 139); rebuild the existing bundled source through the current dependency script.
+Affected: external/make.sh, scripts/extract_fw.sh. Binary stays in ignored out/tools; no kernel or firmware changes.
+Verify: bash -n, git diff --check, dependency build/check-tools, usage and invalid-image failures, full S22 extraction, metadata coverage for five partitions, CRC of 524 system APK/JAR/APEX. Extractor output is retained in the extraction log. See logs/20261020-m0-buildhost/f2fs-tool-checks.json.
+Rollback: reverse this patch and discard only generated tool/output before rebuilding with another verified extractor; never reuse a partial .extracted tree.
+
+diff --git a/external/make.sh b/external/make.sh
+--- a/external/make.sh
++++ b/external/make.sh
+@@ -117,6 +117,7 @@
+ ANDROID_TOOLS=true
+ APKTOOL=true
+ EROFS_UTILS=true
++F2FS_UNPACK=true
+ IMG2SDAT=true
+ SAMLOADER=true
+ SIGNAPK=true
+@@ -138,6 +139,8 @@
+     "dump.erofs" "extract.erofs" "fsck.erofs" "fuse.erofs" "mkfs.erofs"
+ )
+ CHECK_TOOLS "${EROFS_UTILS_EXEC[@]}" && EROFS_UTILS=false
++F2FS_UNPACK_EXEC=("f2fs_unpack")
++CHECK_TOOLS "${F2FS_UNPACK_EXEC[@]}" && F2FS_UNPACK=false
+ IMG2SDAT_EXEC=(
+     "blockimgdiff.py" "common.py" "images.py" "img2sdat" "rangelib.py" "sparse_img.py"
+ )
+@@ -155,6 +158,7 @@
+     if ! $ANDROID_TOOLS && \
+             ! $APKTOOL && \
+             ! $EROFS_UTILS && \
++            ! $F2FS_UNPACK && \
+             ! $IMG2SDAT && \
+             ! $SAMLOADER && \
+             ! $SIGNAPK; then
+@@ -212,6 +216,12 @@
+ 
+     BUILD "erofs-utils" "$SRC_DIR/external/erofs-utils" "${EROFS_UTILS_CMDS[@]}"
+ fi
++if $F2FS_UNPACK; then
++    F2FS_UNPACK_CMDS=(
++        "CGO_ENABLED=1 GOTOOLCHAIN=local go build -trimpath -o \"$TOOLS_DIR/bin/f2fs_unpack\" ."
++    )
++    BUILD "f2fs_unpack" "$SRC_DIR/scripts/internal/f2fs_unpack_src" "${F2FS_UNPACK_CMDS[@]}"
++fi
+ if $IMG2SDAT; then
+     IMG2SDAT_CMDS=(
+         "test -f \"img2sdat\""
+diff --git a/scripts/extract_fw.sh b/scripts/extract_fw.sh
+--- a/scripts/extract_fw.sh
++++ b/scripts/extract_fw.sh
+@@ -101,9 +101,14 @@
+ 
+         [ -f "$FW_DIR/${MODEL}_${CSC}/$f" ] || continue
+ 
+-        if [[ "$(GET_IMAGE_FILE_SYSTEM "$FW_DIR/${MODEL}_${CSC}/$f")" == "f2fs" ]] && [ -x "$SRC_DIR/scripts/internal/f2fs_unpack" ]; then
++        if [[ "$(GET_IMAGE_FILE_SYSTEM "$FW_DIR/${MODEL}_${CSC}/$f")" == "f2fs" ]]; then
++            if [ ! -x "$TOOLS_DIR/bin/f2fs_unpack" ]; then
++                LOGE "Missing source-built f2fs_unpack; run scripts/build_dependencies.sh"
++                exit 1
++            fi
+             LOG "- Unpacking $(basename "$f") using f2fs_unpack..."
+-            EVAL "\"$SRC_DIR/scripts/internal/f2fs_unpack\" \"$FW_DIR/${MODEL}_${CSC}/$f\" \"$FW_DIR/${MODEL}_${CSC}/$PARTITION\" \"$PARTITION\"" || exit 1
++            "$TOOLS_DIR/bin/f2fs_unpack" "$FW_DIR/${MODEL}_${CSC}/$f" \
++                "$FW_DIR/${MODEL}_${CSC}/$PARTITION" "$PARTITION" || exit 1
+             rm -f "$FW_DIR/${MODEL}_${CSC}/$f"
+             continue
+         fi

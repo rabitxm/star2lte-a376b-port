@@ -1,0 +1,46 @@
+From: Codex local A376B compatibility adaptation
+Subject: [PATCH] Verify the actual A376B PhotoEditor Full package path
+
+Reason: clean attempt42.txt:2393 requires S22 PhotoEditor_AIFull, but the
+pinned AZH4 donor and stage contain PhotoEditor_Full with identical SHA256
+91a458916c289f9218e1791c0d934cb40de1f538a72ab6f402c97d77008d412e.
+Files: existing finalization/customize.sh Photo Editor inventory verifier.
+Change only the exact A376B source path selection; keep all library,
+permissions and ZIP integrity requirements. Other donor paths unchanged.
+Verification: donor/stage hash equality, actual inventory helper, shell
+syntax, series replay and fresh full build. Runtime editor remains pending.
+
+---
+--- a/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
+@@ -3814,6 +3814,10 @@
+ _EXYNOS9810_FINAL_VERIFY_PHOTO_EDITOR_STACK()
+ {
+     local REL
++    local PHOTO_APK="system/system/priv-app/PhotoEditor_AIFull/PhotoEditor_AIFull.apk"
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++        PHOTO_APK="system/system/priv-app/PhotoEditor_Full/PhotoEditor_Full.apk"
++    fi
+     local ARC_PUBLIC="$WORK_DIR/system/system/etc/public.libraries-arcsoft.txt"
+     local PHOTO_PERMS="$WORK_DIR/system/system/etc/permissions/privapp-permissions-com.sec.android.mimage.photoretouching.xml"
+     local CLOUD_PERMS="$WORK_DIR/system/system/etc/permissions/signature-permissions-com.samsung.android.visual.cloudcore.xml"
+@@ -3821,7 +3825,7 @@
+     LOG "- Verifying Photo Editor stack for $TARGET_CODENAME"
+ 
+     for REL in \
+-        system/system/priv-app/PhotoEditor_AIFull/PhotoEditor_AIFull.apk \
++        "$PHOTO_APK" \
+         system/system/app/VisualCloudCore/VisualCloudCore.apk \
+         system/system/etc/public.libraries-arcsoft.txt \
+         system/system/etc/permissions/privapp-permissions-com.sec.android.mimage.photoretouching.xml \
+@@ -3836,8 +3840,8 @@
+     done
+ 
+     unzip -tqq \
+-        "$WORK_DIR/system/system/priv-app/PhotoEditor_AIFull/PhotoEditor_AIFull.apk" || {
+-        LOGE "PhotoEditor_AIFull.apk is corrupt"
++        "$WORK_DIR/$PHOTO_APK" || {
++        LOGE "Photo Editor APK is corrupt: $PHOTO_APK"
+         return 1
+     }
+     unzip -tqq \

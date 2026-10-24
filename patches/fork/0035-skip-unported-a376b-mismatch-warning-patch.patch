@@ -1,0 +1,22 @@
+From: Codex local compatibility adaptation
+Subject: [PATCH] Skip A37 vendor mismatch warning patch with incompatible lambdas
+
+Reason: `attempt14.txt:1035-1061` shows the fork's generic mismatch warning patch targets ActivityManagerService$$ExternalSyntheticLambda6 and ActivityTaskManagerService lambda 4, both incompatible with AZH4. The actual fingerprint warning is in A37 ActivityManagerService$$ExternalSyntheticLambda8 and its posted work uses lambda IDs 1/2. Since this is a UI warning rather than a boot requirement, skip only this patch for the exact AZH4 source profile until its new control flow is ported; preserve donor behavior and all other donors' patching.
+Files: scripts/internal/apply_modules.sh.
+Verification: donor smali inspection, shell syntax, exact-path guard, clean build15.
+
+---
+--- a/scripts/internal/apply_modules.sh
++++ b/scripts/internal/apply_modules.sh
+@@ -88,6 +88,11 @@
+             FILE="$(cut -d "/" -f 2- -s <<< "$FILE")"
+         fi
+ 
++        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] && \
++                [[ "$p" == */0001-Disable-vendor-mismatch-warning.patch ]]; then
++            LOGW "A376B AZH4 relocates vendor-mismatch warning to a different synthetic lambda; keeping donor behavior until an exact port is reviewed"
++            continue
++        fi
+         APPLY_PATCH "$PARTITION" "$FILE" "$p"
+     done < <(find "$PATCHES_PATH/$TARGET" -type f -name "*.patch" | sort -n)
+ 

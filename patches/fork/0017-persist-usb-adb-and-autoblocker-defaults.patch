@@ -1,0 +1,231 @@
+Reason: user requires Auto Blocker off and USB debugging on by default, USB ADB without RSA authorization for all PCs, retained functional switches/descriptions, and the same rule in every future donor/profile. M1 log shows early mtp,adb UDC failures and later working sec_charging,adb.
+Affected: final Exynos9810 module hook; adb_defaults.py host helper; compiled release-default verifier. SettingsProvider seeds missing fresh-data settings with INSERT OR IGNORE; AdbService lifecycle reads the stored USB-debugging choice before deriving state; canonical/conflicting property imports use ro.debuggable=1, ro.adb.secure=0 and sec_charging,adb. Rampart/SecSettings code, descriptions, on/off semantics and kernel remain unchanged. No runtime forcing loop or TCP ADB enabling added.
+Verify: source idempotence and unknown-donor rejection; SQLite fresh/default and retained-choice fixtures; both artifacts rebuilt by existing fork APK/JAR script; disassemble actual compiled classes and inspect SQL/calls/lifecycle order/properties; negative stale-provider/stale-lifecycle/conflicting-auth cases; release-default and 15715-class preservation checks. Logs logs/20261020-adb-defaults. New fresh-data/reboot/switch and new-PC USB tests on candidate NOT YET RUN; USB improvement remains a hypothesis pending logs.
+Rollback: reverse patch, rebuild through existing fork and revalidate. No firmware binary in patch. Historical M1 installed ZIP unchanged; host compiled candidate is not a complete flashable build.
+
+--- a/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
+@@ -7152,3 +7152,10 @@
+ BIXBY_CONTEXTS="$WORK_DIR/system/system/etc/selinux/plat_property_contexts"
+ grep -q '^persist.sys.unica.bixby_action ' "$BIXBY_CONTEXTS" ||     printf '%s\n' 'persist.sys.unica.bixby_action u:object_r:system_prop:s0 exact uint' >> "$BIXBY_CONTEXTS"
+ unset BIXBY_CONTEXTS
++
++# Project defaults apply to every later 9810 donor/profile, including release.
++# Seed once through SettingsProvider; retain Settings/Rampart controls and text.
++DECODE_APK "system" "system/priv-app/SettingsProvider/SettingsProvider.apk" || return 1
++DECODE_APK "system" "system/framework/services.jar" || return 1
++python3 "$MODPATH/adb_defaults.py" apply \
++    --work-dir "$WORK_DIR" --apktool-dir "$APKTOOL_DIR" || return 1
+--- a/scripts/internal/verify_exynos9810_release_defaults.py
++++ b/scripts/internal/verify_exynos9810_release_defaults.py
+@@ -42,6 +42,11 @@
+     for prop in ["ro.un1ca.faceunlockfix.builtin=1","persist.sys.unica.pif=true","persist.sys.pif.version=20261011"]:
+         if prop not in props: raise RuntimeError("Required release default absent: "+prop)
+     verify_kernelsu_runtime(system, os.environ.get("EXYNOS9810_ENABLE_KERNELSU_RUNTIME", "true"))
++    import importlib.util
++    adb_checker=ROOT/"unica/patches/exynos9810_device_stack/exynos9810_finalization/adb_defaults.py"
++    adb_spec=importlib.util.spec_from_file_location("adb_defaults",adb_checker)
++    adb_module=importlib.util.module_from_spec(adb_spec);adb_spec.loader.exec_module(adb_module)
++    adb_module.verify_compiled(work,ROOT/"out/tools")
+     catalog=json.loads((ROOT/"unica/mods/s9_infinity_Wallpaper/source/resources_info.json").read_text())
+     defaults=[entry for entry in catalog["phone"] if entry.get("isDefault")]
+     if len(defaults)!=1 or defaults[0]["type_params"]["service_settings"]["filename"]!="video_001.mp4":
+--- /dev/null
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/adb_defaults.py
+@@ -0,0 +1,196 @@
++#!/usr/bin/env python3
++"""Apply/verify project USB ADB defaults without overriding subsequent choices."""
++from pathlib import Path
++import argparse
++import re
++import subprocess
++import tempfile
++import zipfile
++
++DATABASE = "com/android/providers/settings/DatabaseHelper"
++LIFECYCLE = "com/android/server/adb/AdbService$Lifecycle"
++SEEDS = {
++    "global": {"adb_enabled": "1", "development_settings_enabled": "1"},
++    "system": {"rampart_suw_main_on": "0"},
++    "secure": {"rampart_main_switch_enabled": "0",
++               "rampart_strict_protection_switch_enabled": "0",
++               "rampart_blocked_adb_cmd": "0",
++               "rampart_blocked_usb_data_transfer": "0"},
++}
++AUTH = {"ro.debuggable": "1", "ro.adb.secure": "0"}
++# This is the working locked/setup USB combination observed on M1 F. The donor
++# mtp,adb combination repeatedly failed UDC binding before framework startup.
++PROPS = {**AUTH, "persist.sys.usb.config": "sec_charging,adb"}
++
++
++def method(text, signature):
++    pattern = re.compile(r"^\.method[^\n]* " + re.escape(signature) +
++                         r"\n.*?^\.end method$", re.M | re.S)
++    found = list(pattern.finditer(text))
++    if len(found) != 1:
++        raise RuntimeError("Expected one method: " + signature)
++    return found[0]
++
++
++def seed_method(table):
++    name = "unicaSeed" + table.title() + "Defaults"
++    body = [f".method private {name}(Landroid/database/sqlite/SQLiteDatabase;)V",
++            "    .locals 1", ""]
++    for key, value in SEEDS[table].items():
++        sql = f"INSERT OR IGNORE INTO {table}(name,value) VALUES('{key}','{value}');"
++        body += [f'    const-string v0, "{sql}"', "",
++                 "    invoke-virtual {p1, v0}, Landroid/database/sqlite/SQLiteDatabase;->execSQL(Ljava/lang/String;)V", ""]
++    return "\n".join(body + ["    return-void", ".end method"])
++
++
++def patch_database(text):
++    for table in SEEDS:
++        name = "unicaSeed" + table.title() + "Defaults"
++        call = (f"    invoke-direct/range {{p0 .. p1}}, L{DATABASE};->"
++                f"{name}(Landroid/database/sqlite/SQLiteDatabase;)V")
++        signature = "load" + table.title() + "Settings(Landroid/database/sqlite/SQLiteDatabase;)V"
++        match = method(text, signature)
++        original = match.group()
++        if f"INSERT OR IGNORE INTO {table}(name,value) VALUES(?,?);" not in original:
++            raise RuntimeError("Unknown SettingsProvider initialization: " + table)
++        if call not in original:
++            updated, count = re.subn(r"(    \.locals \d+\n)", r"\1\n" + call + "\n",
++                                     original, count=1)
++            if count != 1:
++                raise RuntimeError("Unknown locals layout: " + signature)
++            text = text[:match.start()] + updated + text[match.end():]
++        expected = seed_method(table)
++        if ".method private " + name + "(" not in text:
++            text += "\n\n" + expected + "\n"
++        elif method(text, name + "(Landroid/database/sqlite/SQLiteDatabase;)V").group() != expected:
++            raise RuntimeError("Existing ADB default helper differs: " + name)
++    return text
++
++
++LIFECYCLE_ANCHOR = ("    iput-boolean v0, p0, Lcom/android/server/adb/AdbService;"
++                    "->mIsAdbUsbEnabled:Z")
++LIFECYCLE_READ = """    # UN1CA: use the stored USB-debugging choice; USB property is only fallback.
++    iget-object v1, p0, Lcom/android/server/adb/AdbService;->mContentResolver:Landroid/content/ContentResolver;
++
++    const-string v4, "adb_enabled"
++
++    invoke-static {v1, v4, v0}, Landroid/provider/Settings$Global;->getInt(Landroid/content/ContentResolver;Ljava/lang/String;I)I
++
++    move-result v0
++
++"""
++
++
++def patch_lifecycle(text):
++    match = method(text, "onBootPhase(I)V")
++    body = match.group()
++    if body.count(LIFECYCLE_ANCHOR) != 1 or ".locals 6" not in body:
++        raise RuntimeError("Unknown Samsung AdbService lifecycle; review donor before building")
++    if LIFECYCLE_READ not in body:
++        body = body.replace(LIFECYCLE_ANCHOR, LIFECYCLE_READ + LIFECYCLE_ANCHOR)
++    return text[:match.start()] + body + text[match.end():]
++
++
++def decoded_class(apk, name):
++    found = list(apk.glob("smali*/" + name + ".smali"))
++    if len(found) != 1:
++        raise RuntimeError("Missing/duplicate decoded class: " + name)
++    return found[0]
++
++
++def set_property(path, key, value):
++    text = path.read_text()
++    text = re.sub(r"^" + re.escape(key) + r"=.*\n?", "", text, flags=re.M)
++    path.write_text(text.rstrip() + f"\n{key}={value}\n")
++
++
++def apply(work, apktool):
++    database = decoded_class(apktool / "system/priv-app/SettingsProvider/SettingsProvider.apk", DATABASE)
++    lifecycle = decoded_class(apktool / "system/framework/services.jar", LIFECYCLE)
++    # Validate both donors before writing either class.
++    db_text = patch_database(database.read_text())
++    lifecycle_text = patch_lifecycle(lifecycle.read_text())
++    database.write_text(db_text)
++    lifecycle.write_text(lifecycle_text)
++    system = work / "system/system"
++    for path in work.rglob("build.prop"):
++        for key, value in PROPS.items():
++            # Resolve existing conflicting imports; add canonical system defaults below.
++            if re.search(r"^" + re.escape(key) + "=", path.read_text(), re.M):
++                set_property(path, key, value)
++    for key, value in PROPS.items():
++        set_property(system / "build.prop", key, value)
++    print("PASS applied fresh-data ADB on / Auto Blocker off; persisted choices preserved")
++
++
++def disassemble_class(archive, name, tools):
++    with tempfile.TemporaryDirectory(prefix="adb-defaults-") as temp:
++        temp = Path(temp)
++        with zipfile.ZipFile(archive) as z:
++            for entry in z.namelist():
++                if not re.fullmatch(r"classes\d*\.dex", entry):
++                    continue
++                dex = temp / entry
++                dex.write_bytes(z.read(entry))
++                out = temp / entry.replace(".dex", "")
++                subprocess.run(["java", "-cp", str(tools / "bin/apktool.jar"),
++                                "com.android.tools.smali.baksmali.Main", "disassemble",
++                                "--jobs", "1", "--classes", "L" + name + ";",
++                                "--output", str(out), str(dex)], check=True,
++                               stdout=subprocess.DEVNULL)
++                result = out / (name + ".smali")
++                if result.exists():
++                    return result.read_text()
++    raise RuntimeError("Missing compiled class: " + name)
++
++
++def verify_compiled(work, tools):
++    system = work / "system/system"
++    for key, value in PROPS.items():
++        found = re.findall(r"^" + re.escape(key) + r"=(.*)$",
++                           (system / "build.prop").read_text(), re.M)
++        if found != [value]:
++            raise RuntimeError("Missing/conflicting canonical ADB property: " + key)
++    for path in work.rglob("build.prop"):
++        for key, value in PROPS.items():
++            found = re.findall(r"^" + re.escape(key) + r"=(.*)$", path.read_text(), re.M)
++            if any(v != value for v in found):
++                raise RuntimeError("Conflicting ADB property import: " + str(path) + ":" + key)
++    text = disassemble_class(system / "priv-app/SettingsProvider/SettingsProvider.apk", DATABASE, tools)
++    for table, values in SEEDS.items():
++        name = "unicaSeed" + table.title() + "Defaults"
++        caller = method(text, "load" + table.title() + "Settings(Landroid/database/sqlite/SQLiteDatabase;)V").group()
++        if caller.count("->" + name + "(") != 1:
++            raise RuntimeError("Missing compiled fresh-data seed call: " + table)
++        # Baksmali escapes single quotes inside const-string; SQL bytes are unchanged.
++        body = method(text, name + "(Landroid/database/sqlite/SQLiteDatabase;)V").group().replace("\\'", "'")
++        for key, value in values.items():
++            if f"INSERT OR IGNORE INTO {table}(name,value) VALUES('{key}','{value}');" not in body:
++                raise RuntimeError("Missing compiled default: " + key)
++        if body.count("->execSQL(") != len(values):
++            raise RuntimeError("Unexpected seed SQL count: " + table)
++    text = disassemble_class(system / "framework/services.jar", LIFECYCLE, tools)
++    body = method(text, "onBootPhase(I)V").group()
++    needle = 'const-string(?:/jumbo)? v4, "adb_enabled"\\s+invoke-static \\{v1, v4, v0\\}, Landroid/provider/Settings\\$Global;->getInt'
++    if not re.search(needle, body):
++        raise RuntimeError("Missing compiled stored USB-debugging choice read")
++    if body.index("->getInt(") > body.index("->mIsAdbUsbEnabled:Z"):
++        raise RuntimeError("USB choice read occurs after state initialization")
++    print("PASS compiled ADB defaults, no-auth properties and stored-choice lifecycle")
++
++
++if __name__ == "__main__":
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("mode", choices=["apply", "verify"])
++    parser.add_argument("--work-dir", type=Path, required=True)
++    parser.add_argument("--apktool-dir", type=Path)
++    parser.add_argument("--tools-dir", type=Path)
++    args = parser.parse_args()
++    if args.mode == "apply":
++        if args.apktool_dir is None:
++            parser.error("apply requires --apktool-dir")
++        apply(args.work_dir, args.apktool_dir)
++    else:
++        if args.tools_dir is None:
++            parser.error("verify requires --tools-dir")
++        verify_compiled(args.work_dir, args.tools_dir)

@@ -1,0 +1,22 @@
+From: Codex local A376B compatibility adaptation
+Subject: [PATCH] Skip standalone AZH4 adaptive colour tone APK patches
+
+Reason: attempt39.txt:1333 failed because the feature-level M2 guard from patch
+0069 omits EnvironmentAdaptiveDisplay.apk, while the generic Smali patch walker
+still tried to decode it. Guard only this APK's Paradigm patches for the exact
+AZH4 M2 donor so the optional feature remains wholly omitted without blocking
+other donor features.
+Files: scripts/internal/apply_modules.sh.
+Verification: exact path/profile guard, shell syntax, replay70 and clean attempt40.
+
+---
+--- a/scripts/internal/apply_modules.sh
++++ b/scripts/internal/apply_modules.sh
+@@ -163,1 +163,6 @@ APPLY_SMALI_PATCHES()
+-        APPLY_PATCH "$PARTITION" "$FILE" "$p"
++        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] && \
++                [[ "$p" == */paradigm/smali/system/priv-app/EnvironmentAdaptiveDisplay/EnvironmentAdaptiveDisplay.apk/* ]]; then
++            LOGW "Adaptive colour-tone feature is omitted for M2; skipping its standalone APK patches"
++            continue
++        fi
++        APPLY_PATCH "$PARTITION" "$FILE" "$p"

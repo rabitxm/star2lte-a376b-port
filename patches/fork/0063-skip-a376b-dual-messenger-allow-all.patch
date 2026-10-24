@@ -1,0 +1,23 @@
+From: Codex local A376B compatibility adaptation
+Subject: [PATCH] Keep AZH4 Dual Messenger allowlist
+
+Reason: attempt31.txt:1236-1454 shows the fork's allow-all Dual Messenger
+patch misses AZH4 code in DualAppProvider, WhiteListApps, DualAppIntentReceiver
+and DAUtility. Keep the donor allowlist and functionality for M2.
+Files: scripts/internal/apply_modules.sh.
+Verification: exact A376B path guard, shell syntax, patch replay and clean
+attempt32. Revert0063.
+
+---
+--- a/scripts/internal/apply_modules.sh
++++ b/scripts/internal/apply_modules.sh
+@@ -135,6 +135,11 @@ APPLY_SMALI_PATCHES()
+             LOGW "A376B AZH4 changed QpRune tile initialization; retaining donor Smart View UI for M2"
+             continue
+         fi
++        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] && \
++                [[ "$p" == */daagent/smali/system/app/DAAgent/DAAgent.apk/0001-Allow-all-apps-in-Dual-Messenger.patch ]]; then
++            LOGW "A376B AZH4 DAAgent code changed; retaining donor Dual Messenger allowlist for M2"
++            continue
++        fi
+         APPLY_PATCH "$PARTITION" "$FILE" "$p"

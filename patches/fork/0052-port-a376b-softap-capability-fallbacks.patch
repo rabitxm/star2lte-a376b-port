@@ -1,0 +1,209 @@
+From: Codex local A376B compatibility adaptation
+Subject: [PATCH] Port AZH4 SoftAP capability fallbacks
+
+Reason: product-tail-after-ape.txt fails old MOBILEAP_11AX diffs; product-tail-softap.txt fails the old country fallback diff, and independent old power/sharing-lite patch preflights also fail. AZH4 changes registers, driver-query visibility, Binder identity handling and SQE command layout. Route only AX case1 to the existing public driver query; preserve other feature cases. On missing/NA HAL country data, call the existing region query while preserving permissions, valid HAL results and Binder restore on success/exception. Select power support from the driver string, disable the legacy-incompatible power worker initializer and split only its SQE command from the shared supported branch. Enable sharing-lite conditionally on sharing, preserving carrier/model exclusions. Update diagnostic SPF flags only for the selected target differences.
+Files: unica/patches/product_feature/customize.sh; unica/patches/product_feature/wifi/a376b_softap.py.
+Verification: exact donor method/region hashes, public query signature, enum/dispatch validation; country/power/sharing-lite fixtures and no-partial-write rejection PASS; independent Apktool jar assembly PASS. Actual recipe remainder passes. Clean full build/compiled gates and native Wi-Fi/hotspot runtime remain required. Revert0052; no scan-UI, RF, kernel or ADB-rule change.
+
+---
+--- a/unica/patches/product_feature/customize.sh
++++ b/unica/patches/product_feature/customize.sh
+@@ -1062,8 +1062,26 @@
+ # SEC_PRODUCT_FEATURE_WLAN_SUPPORT_MOBILEAP_11AX
+ if $SOURCE_WLAN_SUPPORT_MOBILEAP_11AX; then
+     if ! $TARGET_WLAN_SUPPORT_MOBILEAP_11AX; then
+-        APPLY_PATCH "system" "system/framework/semwifi-service.jar" \
+-            "$MODPATH/wifi/80211ax/semwifi-service.jar/0001-Disable-MOBILEAP_11AX-support.patch"
++        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++            # AZH4 exposes the chip query publicly; no old synthetic bridge
++            # is needed. Retain driver detection instead of claiming AX.
++            grep -q '^\.method public final isSupportedSoftAp11ax()Z$' \
++                "$APKTOOL_DIR/system/framework/semwifi-service.jar/smali/com/samsung/android/server/wifi/ap/SemWifiApChipInfo\$SemWifiApChipSupportInfo.smali" || {
++                ABORT "A376B SoftAP11ax driver-query method changed"
++                return 1
++            }
++            SMALI_PATCH "system" "system/framework/semwifi-service.jar" \
++                "smali/com/samsung/android/server/wifi/ap/SemWifiApChipInfo.smali" "replace" \
++                "supportThisSoftApFeature(I)Z" \
++                "if-eq p1, v0, :cond_2" \
++                $'    if-ne p1, v0, :unica_ax_other\n\n    iget-object v2, p0, Lcom/samsung/android/server/wifi/ap/SemWifiApChipInfo;->mSemWifiApChipSupportInfo:Lcom/samsung/android/server/wifi/ap/SemWifiApChipInfo$SemWifiApChipSupportInfo;\n\n    if-eqz v2, :unica_ax_none\n\n    invoke-virtual {v2}, Lcom/samsung/android/server/wifi/ap/SemWifiApChipInfo$SemWifiApChipSupportInfo;->isSupportedSoftAp11ax()Z\n\n    move-result v2\n\n    return v2\n\n    :unica_ax_none\n    const/4 v2, 0x0\n\n    return v2\n\n    :unica_ax_other\n'
++            SMALI_PATCH "system" "system/framework/semwifi-service.jar" \
++                "smali/com/samsung/android/server/wifi/ap/SemSoftApConfiguration.smali" "replaceall" \
++                "SPF_11ax=true" "SPF_11ax=false"
++        else
++            APPLY_PATCH "system" "system/framework/semwifi-service.jar" \
++                "$MODPATH/wifi/80211ax/semwifi-service.jar/0001-Disable-MOBILEAP_11AX-support.patch"
++        fi
+     fi
+ else
+     if $TARGET_WLAN_SUPPORT_MOBILEAP_11AX; then
+@@ -1075,8 +1093,12 @@
+ # SEC_PRODUCT_FEATURE_WLAN_SUPPORT_MOBILEAP_5G_BASEDON_COUNTRY
+ if ! $SOURCE_WLAN_SUPPORT_MOBILEAP_5G_BASEDON_COUNTRY; then
+     if $TARGET_WLAN_SUPPORT_MOBILEAP_5G_BASEDON_COUNTRY; then
+-        APPLY_PATCH "system" "system/framework/semwifi-service.jar" \
+-            "$MODPATH/wifi/5g_basedon_country/semwifi-service.jar/0001-Enable-MOBILEAP_5G_BASEDON_COUNTRY-support.patch"
++        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++            EVAL "python3 \"$MODPATH/wifi/a376b_softap.py\" \"$APKTOOL_DIR\" country" || return 1
++        else
++            APPLY_PATCH "system" "system/framework/semwifi-service.jar" \
++                "$MODPATH/wifi/5g_basedon_country/semwifi-service.jar/0001-Enable-MOBILEAP_5G_BASEDON_COUNTRY-support.patch"
++        fi
+         SMALI_PATCH "system" "system/framework/semwifi-service.jar" \
+             "smali/com/samsung/android/server/wifi/ap/SemSoftApConfiguration.smali" "replaceall" \
+             "SPF_5G_BASEDON_COUNTRY=false" \
+@@ -1172,6 +1194,9 @@
+ # SEC_PRODUCT_FEATURE_WLAN_SUPPORT_MOBILEAP_POWER_SAVEMODE
+ if $SOURCE_WLAN_SUPPORT_MOBILEAP_POWER_SAVEMODE; then
+     if ! $TARGET_WLAN_SUPPORT_MOBILEAP_POWER_SAVEMODE; then
++        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++            EVAL "python3 \"$MODPATH/wifi/a376b_softap.py\" \"$APKTOOL_DIR\" power" || return 1
++        else
+         APPLY_PATCH "system" "system/framework/semwifi-service.jar" \
+             "$MODPATH/wifi/power_savemode/semwifi-service.jar/0001-Disable-MOBILEAP_POWER_SAVEMODE-support.patch"
+         SMALI_PATCH "system" "system/framework/semwifi-service.jar" \
+@@ -1182,6 +1207,12 @@
+             "smali/com/samsung/android/server/wifi/ap/SemWifiApPowerSaveImpl\$\$ExternalSyntheticLambda0.smali" "remove"
+         SMALI_PATCH "system" "system/framework/semwifi-service.jar" \
+             "smali/com/samsung/android/server/wifi/ap/SemWifiApPowerSaveImpl\$\$ExternalSyntheticLambda1.smali" "remove"
++        fi
++        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++            SMALI_PATCH "system" "system/framework/semwifi-service.jar" \
++                "smali/com/samsung/android/server/wifi/ap/SemSoftApConfiguration.smali" "replaceall" \
++                "SPF_POWER_SAVEMODE=true" "SPF_POWER_SAVEMODE=false"
++        fi
+     fi
+ else
+     if $TARGET_WLAN_SUPPORT_MOBILEAP_POWER_SAVEMODE; then
+@@ -1238,6 +1269,9 @@
+ # SEC_PRODUCT_FEATURE_WLAN_SUPPORT_MOBILEAP_WIFISHARING_LITE
+ if ! $SOURCE_WLAN_SUPPORT_MOBILEAP_WIFISHARING_LITE; then
+     if $TARGET_WLAN_SUPPORT_MOBILEAP_WIFISHARING_LITE; then
++        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++            EVAL "python3 \"$MODPATH/wifi/a376b_softap.py\" \"$APKTOOL_DIR\" sharing-lite" || return 1
++        else
+         # Check for target flag instead as we've already took care of this SPF above
+         if ! $TARGET_WLAN_SUPPORT_MOBILEAP_POWER_SAVEMODE; then
+             APPLY_PATCH "system" "system/framework/semwifi-service.jar" \
+@@ -1245,6 +1279,7 @@
+         else
+             APPLY_PATCH "system" "system/framework/semwifi-service.jar" \
+                 "$MODPATH/wifi/wifisharing/semwifi-service.jar/0002-Enable-MOBILEAP_WIFISHARING_LITE-support.patch"
++        fi
+         fi
+         SMALI_PATCH "system" "system/framework/semwifi-service.jar" \
+             "smali/com/samsung/android/server/wifi/ap/SemSoftApConfiguration.smali" "replaceall" \
+--- /dev/null
++++ b/unica/patches/product_feature/wifi/a376b_softap.py
+@@ -0,0 +1,111 @@
++#!/usr/bin/env python3
++"""Port reviewed AZH4 SoftAP fallbacks without stale register/label diffs."""
++from pathlib import Path
++from hashlib import sha256
++import re
++import sys
++
++
++def adapt(root, mode):
++    base = root / "system/framework/semwifi-service.jar/smali/com/samsung/android/server/wifi"
++    pending = {}
++
++    def read(name):
++        path = base / (name + ".smali")
++        pending[path] = path.read_text()
++        return path
++
++    def replace(path, old, new):
++        if pending[path].count(old) != 1:
++            raise RuntimeError("Unreviewed AZH4 SoftAP body: " + path.name + " " + old)
++        pending[path] = pending[path].replace(old, new, 1)
++
++    def method(path, name, expected):
++        matches = re.findall(r"(?ms)^\.method[^\n]* " + re.escape(name) + r"\n.*?^\.end method$", pending[path])
++        if len(matches) != 1 or sha256(matches[0].encode()).hexdigest() != expected:
++            raise RuntimeError("Unreviewed AZH4 SoftAP method: " + name)
++        return matches[0]
++
++    if mode == "country":
++        path = read("ap/SemWifiApServiceImpl")
++        old = method(path, "supportWifiAp5GBasedOnCountry()Z", "9eea5a1e6cc964f22517d43699026e3ca533700ce67e27040f007d7667555592")
++        # Keep permission checks, valid HAL settings, debug override and the
++        # donor's Binder identity cleanup. Only missing/NA HAL data falls back.
++        new = old.replace("if-eqz v0, :cond_3", "if-eqz v0, :unica_country_fallback", 1)
++        new = new.replace("goto :goto_1", "goto :unica_country_fallback", 1)
++        anchor = "    :cond_3\n    :goto_1\n"
++        if new.count(anchor) != 1 or ".method public isRegionFor5GCountry()Z" not in pending[path]:
++            raise RuntimeError("AZH4 country fallback/region query changed")
++        fallback = """    goto :unica_country_return
++
++    :unica_country_fallback
++    :try_start_unica_country
++    invoke-virtual {p0}, Lcom/samsung/android/server/wifi/ap/SemWifiApServiceImpl;->isRegionFor5GCountry()Z
++
++    move-result v2
++    :try_end_unica_country
++    .catchall {:try_start_unica_country .. :try_end_unica_country} :catchall_0
++
++    :unica_country_return
++"""
++        replace(path, old, new.replace(anchor, fallback + anchor, 1))
++    elif mode == "power":
++        chip = read("ap/SemWifiApChipInfo")
++        method(chip, "checkWifiSharingAndPowerSave()V", "27a4abfaa5f6f86fb97bd467b52c02135927725d1e880ac116b84a06409e2f58")
++        # v3 contains the HAL power-save string here, after the diagnostic
++        # StringBuilder append. Test it instead of the compiled true flag.
++        old = "    iput-boolean v5, p0, Lcom/samsung/android/server/wifi/ap/SemWifiApChipInfo;->mSupportPowerSave:Z"
++        new = """    const-string v2, "true"
++
++    invoke-virtual {v2, v3}, Ljava/lang/String;->equals(Ljava/lang/Object;)Z
++
++    move-result v2
++
++    iput-boolean v2, p0, Lcom/samsung/android/server/wifi/ap/SemWifiApChipInfo;->mSupportPowerSave:Z"""
++        replace(chip, old, new)
++        replace(chip, "SEC_PRODUCT_FEATURE_WLAN_SUPPORT_MOBILEAP_POWER_SAVEMODE : true", "SEC_PRODUCT_FEATURE_WLAN_SUPPORT_MOBILEAP_POWER_SAVEMODE : false")
++        worker = read("ap/SemWifiApPowerSaveImpl")
++        old = method(worker, "initializedSemWifiApPowerSaveImpl()V", "522eb23eb47f32c2d77ed46fdba390b91a09b9c0086e41d9218c60f30f152c4c")
++        replace(worker, old, old.splitlines()[0] + "\n    .locals 0\n\n    return-void\n.end method")
++        # Preserve unused lambda/callback classes: no observer is registered
++        # by the disabled initializer, and no descriptor guessing is needed.
++        enum = read("SemSqeCommandHandler$SqeCommand")
++        if 'const/16 v1, 0x1d\n\n    const-string v2, "support_mhs_power_saving"' not in pending[enum]:
++            raise RuntimeError("AZH4 power-saving command ordinal changed")
++        shell = read("SemSqeCommandHandler")
++        table = re.search(r"(?ms)^    \.packed-switch 0x0\n(.*?)^    \.end packed-switch", pending[shell])
++        if table is None or 'const-string v10, "Not Supported"' not in pending[shell]:
++            raise RuntimeError("AZH4 power-saving shell dispatch changed")
++        lines = table.group(1).splitlines(True)
++        if lines[29].strip() != ":pswitch_c":
++            raise RuntimeError("AZH4 power-saving command branch changed")
++        lines[29] = "        :pswitch_power_disabled\n"
++        replace(shell, table.group(), table.group().replace(table.group(1), "".join(lines), 1))
++        replace(shell, "    :pswitch_data_0\n", "    :pswitch_power_disabled\n    invoke-virtual {p2, v10}, Ljava/io/PrintWriter;->println(Ljava/lang/String;)V\n\n    return v11\n\n    :pswitch_data_0\n")
++    elif mode == "sharing-lite":
++        chip = read("ap/SemWifiApChipInfo")
++        method(chip, "checkWifiSharingAndPowerSave()V", "c7d535e871094deffd8fbfa5e11ea4110d40009f3f6611b16a8fb7bdcf36fa47")
++        marker = "    invoke-virtual {p0}, Lcom/samsung/android/server/wifi/ap/SemWifiApChipInfo;->isKoreaModelForWifiSharingLite()Z"
++        # The existing target enables sharing-lite only when sharing itself
++        # is available. Preserve subsequent carrier/model exclusions.
++        before = """    sget-boolean v2, Lcom/samsung/android/server/wifi/ap/SemWifiApChipInfo;->mSupportWifiSharing:Z
++
++    if-eqz v2, :unica_sharing_lite_done
++
++    sput-boolean v5, Lcom/samsung/android/server/wifi/ap/SemWifiApChipInfo;->mSupportWifiSharingLite:Z
++
++    :unica_sharing_lite_done
++"""
++        if "const/4 v5, 0x1" not in pending[chip]:
++            raise RuntimeError("AZH4 sharing true register changed")
++        replace(chip, marker, before + marker)
++    else:
++        raise RuntimeError("Unknown SoftAP adaptation")
++    for path, text in pending.items():
++        if path.read_text() != text:
++            path.write_text(text)
++    print("PASS AZH4 SoftAP " + mode)
++
++
++if __name__ == "__main__":
++    adapt(Path(sys.argv[1]), sys.argv[2])

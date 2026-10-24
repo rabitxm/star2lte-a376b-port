@@ -1,0 +1,39 @@
+Reason: M2 donor is a verified user-supplied Odin ZIP. The existing parser requires an IMEI/SN even for extraction; represent local inputs explicitly and never send a dummy or stale identity to FUS, even with --force.
+Affected: scripts/utils/firmware_utils.sh, scripts/download_fw.sh.
+Verify: bash syntax; actual parser clears preceding identity; actual downloader rejects missing LOCAL before network and preserves an imported LOCAL package under --force without calling curl/samloader. Evidence logs/20261021-m2-inputs/local-import-fixtures.json.
+Rollback: reverse this patch and avoid download/extraction for LOCAL descriptors; original downloaded ZIP remains untouched. No kernel/vendor/device operations.
+
+--- a/scripts/utils/firmware_utils.sh
++++ b/scripts/utils/firmware_utils.sh
+@@ -137,7 +137,12 @@
+ 
+     local THIRD
+     THIRD="$(cut -d "/" -f 3 -s <<< "$STRING")"
+-    if [ ! "$THIRD" ]; then
++    # LOCAL is an imported Odin package, never an identifier to send to FUS.
++    IMEI=""
++    SERIAL_NO=""
++    if [ "$THIRD" = "LOCAL" ]; then
++        return 0
++    elif [ ! "$THIRD" ]; then
+         LOGE "No IMEI/SN value found in \"$STRING\""
+         return 1
+     elif [[ "${#THIRD}" == "11" ]] && [[ "$THIRD" == "R"* ]]; then
+--- a/scripts/download_fw.sh
++++ b/scripts/download_fw.sh
+@@ -113,6 +113,15 @@
+ for i in "${FIRMWARES[@]}"; do
+     PARSE_FIRMWARE_STRING "$i" || exit 1
+ 
++    if [ -z "$IMEI$SERIAL_NO" ]; then
++        if [ -f "$ODIN_DIR/${MODEL}_${CSC}/.downloaded" ]; then
++            LOG "- Using locally imported $MODEL/$CSC firmware; not contacting FUS"
++            continue
++        fi
++        LOGE "Local firmware $MODEL/$CSC is missing; import a verified Odin package first"
++        exit 1
++    fi
++
+     LATEST_FIRMWARE="$(GET_LATEST_FIRMWARE "$MODEL" "$CSC")"
+     if [ ! "$LATEST_FIRMWARE" ]; then
+         LOGE "Latest available firmware could not be fetched"

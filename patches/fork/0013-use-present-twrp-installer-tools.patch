@@ -1,0 +1,58 @@
+Reason: live G965F TWRP 3.7.0_9-0 reports ls: /system/bin/mkdir, unzip, chmod: No such file or directory; /sbin equivalents exist. Old paths would fail around layout/BOOT installation.
+Affected: target/star2lte/installer/install-start.edify, install-end.edify; platform/exynos9810/installer/customize.sh (injected chmod and kernel-unzip rewrite).
+Verify: device capability log; bash -n customize.sh; generated final updater uses /sbin paths and checks required tools before layout, mkdir/chmod failures abort. Official build_flashable_zip.sh repack and flashable/CMS/model/hash audit.
+Rollback: reverse patch; do not flash old candidate on this TWRP. No system/vendor/kernel payload change.
+
+--- a/target/star2lte/installer/install-start.edify
++++ b/target/star2lte/installer/install-start.edify
+@@ -1,6 +1,9 @@
++run_program("/sbin/sh", "-c", "test -x /sbin/mkdir && test -x /sbin/unzip && test -x /sbin/chmod && test -x /sbin/mke2fs") == 0 ||
++    abort("E9810: Required TWRP recovery tools are missing.");
+ ui_print("Checking Exynos9810 partition layout...");
+ package_extract_dir("exynos9810", "/tmp/exynos9810");
+-run_program("/system/bin/chmod", "-R", "0755", "/tmp/exynos9810");
++run_program("/sbin/chmod", "-R", "0755", "/tmp/exynos9810") == 0 ||
++    abort("E9810: Failed to prepare installer permissions.");
+ ifelse(is_mounted("/system"), unmount("/system"));
+ ifelse(is_mounted("/system_root"), unmount("/system_root"));
+ ifelse(is_mounted("/vendor"), unmount("/vendor"));
+--- a/target/star2lte/installer/install-end.edify
++++ b/target/star2lte/installer/install-end.edify
+@@ -2,10 +2,12 @@
+ package_extract_file("exynos9810/ramdisk.img", "/dev/block/platform/11120000.ufs/by-name/BOOT");
+ ui_print("Installing Exynos9810 kernel zip...");
+ package_extract_file("exynos9810/kernel.zip", "/tmp/exynos9810/kernel.zip");
+-run_program("/system/bin/mkdir", "-p", "/tmp/exynos9810/kernel");
+-run_program("/system/bin/unzip", "/tmp/exynos9810/kernel.zip", "META-INF/com/google/android/*", "-d", "/tmp/exynos9810/kernel") == 0 ||
++run_program("/sbin/mkdir", "-p", "/tmp/exynos9810/kernel") == 0 ||
++    abort("E9810: Failed to create kernel installer directory.");
++run_program("/sbin/unzip", "/tmp/exynos9810/kernel.zip", "META-INF/com/google/android/*", "-d", "/tmp/exynos9810/kernel") == 0 ||
+     abort("E9810: Failed to extract kernel installer.");
+-run_program("/system/bin/chmod", "-R", "0755", "/tmp/exynos9810/kernel");
++run_program("/sbin/chmod", "-R", "0755", "/tmp/exynos9810/kernel") == 0 ||
++    abort("E9810: Failed to prepare kernel installer permissions.");
+ run_program("/sbin/sh", "/tmp/exynos9810/kernel/META-INF/com/google/android/update-binary", getprop("ro.boot.bootloader"), "1", "/tmp/exynos9810/kernel.zip") == 0 ||
+     abort("E9810: Failed to install Exynos9810 kernel.");
+ ui_print("Formatting cache, omr, preload and data...");
+--- a/platform/exynos9810/installer/customize.sh
++++ b/platform/exynos9810/installer/customize.sh
+@@ -219,7 +219,7 @@
+ marker = 'abort("E2001: Failed to update vendor image.");'
+ block = '''ui_print("Applying Exynos9810 vendor boot fixes...");
+ package_extract_file("exynos9810/vendor_bootfix.sh", "/tmp/exynos9810/vendor_bootfix.sh");
+-run_program("/system/bin/chmod", "0755", "/tmp/exynos9810/vendor_bootfix.sh");
++run_program("/sbin/chmod", "0755", "/tmp/exynos9810/vendor_bootfix.sh");
+ run_program("/sbin/sh", "/tmp/exynos9810/vendor_bootfix.sh") == 0 ||
+     abort("E9810: Failed to apply vendor boot fixes.");'''
+ 
+@@ -244,8 +244,8 @@
+ 
+ path = Path(sys.argv[1])
+ script = path.read_text()
+-old_extract = '''run_program("/system/bin/unzip", "/tmp/exynos9810/kernel.zip", "META-INF/com/google/android/*", "-d", "/tmp/exynos9810/kernel")'''
+-new_extract = '''run_program("/system/bin/unzip", "/tmp/exynos9810/kernel.zip", "-d", "/tmp/exynos9810/kernel")'''
++old_extract = '''run_program("/sbin/unzip", "/tmp/exynos9810/kernel.zip", "META-INF/com/google/android/*", "-d", "/tmp/exynos9810/kernel")'''
++new_extract = '''run_program("/sbin/unzip", "/tmp/exynos9810/kernel.zip", "-d", "/tmp/exynos9810/kernel")'''
+ if old_extract in script:
+     script = script.replace(old_extract, new_extract, 1)
+ 

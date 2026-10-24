@@ -1,0 +1,158 @@
+From: Codex local A376B compatibility adaptation
+Subject: [PATCH] Port A376B APE and personalization disablement
+
+Reason: product-tail-after-input.txt:94-95 fails the old CONNECTION_PERSONALIZATION diff at SemWifiInjector.smali:1641. AZH4 changed constructor register layout, APE SEP version, Qbox key and SQE command class. Adapt reviewed constructor region to null APE fields, disable the exact personalization/L4s default, stop Qbox's APE observer and dispatch its disabled message. Split only SUPPORT_APE ordinal35 out of its shared shell switch target. Disable the moved develop/ApePreferenceController and reset default. Old ape map entries are absent and checked, rather than editing unrelated booleans. Scan UI retention remains separate.
+Files: unica/patches/product_feature/customize.sh; unica/patches/product_feature/wifi/a376b_backend.py.
+Verification: exact constructor-region and Qbox-method hashes, no external references to removed labels, actual enum/dispatch checks, all-or-nothing fixtures (unknown enum rejected), actual donor preflight PASS4changedclasses. APK assembly/compiled behavior/full build and runtime remain required; revert0051.
+
+---
+--- a/unica/patches/product_feature/customize.sh
++++ b/unica/patches/product_feature/customize.sh
+@@ -959,7 +959,16 @@
+ if [[ "$SOURCE_WLAN_CONFIG_CONNECTION_PERSONALIZATION" != "$TARGET_WLAN_CONFIG_CONNECTION_PERSONALIZATION" ]] || \
+         [[ "$SOURCE_WLAN_CONFIG_DYNAMIC_SWITCH" != "$TARGET_WLAN_CONFIG_DYNAMIC_SWITCH" ]] || \
+         [[ "$SOURCE_WLAN_SUPPORT_APE_SERVICE" != "$TARGET_WLAN_SUPPORT_APE_SERVICE" ]]; then
+-    if [[ "$SOURCE_WLAN_CONFIG_CONNECTION_PERSONALIZATION" == "1" ]] && $SOURCE_WLAN_SUPPORT_APE_SERVICE; then
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] && \
++            [ "$TARGET_CODENAME" = "star2lte" ] && \
++            [ "$SOURCE_WLAN_CONFIG_CONNECTION_PERSONALIZATION" = "1" ] && \
++            [ "$TARGET_WLAN_CONFIG_CONNECTION_PERSONALIZATION" = "0" ] && \
++            [ "$SOURCE_WLAN_CONFIG_DYNAMIC_SWITCH" = "0" ] && \
++            [ "$TARGET_WLAN_CONFIG_DYNAMIC_SWITCH" = "0" ] && \
++            [ "$SOURCE_WLAN_SUPPORT_APE_SERVICE" = "true" ] && \
++            [ "$TARGET_WLAN_SUPPORT_APE_SERVICE" = "false" ]; then
++        EVAL "python3 \"$MODPATH/wifi/a376b_backend.py\" \"$APKTOOL_DIR\"" || return 1
++    elif [[ "$SOURCE_WLAN_CONFIG_CONNECTION_PERSONALIZATION" == "1" ]] && $SOURCE_WLAN_SUPPORT_APE_SERVICE; then
+         if [[ "$SOURCE_WLAN_CONFIG_DYNAMIC_SWITCH" != "0" ]]; then
+             SMALI_PATCH "system" "system/framework/semwifi-service.jar" \
+                 "smali/com/samsung/android/server/wifi/SemWifiInjector.smali" "replace" \
+--- /dev/null
++++ b/unica/patches/product_feature/wifi/a376b_backend.py
+@@ -0,0 +1,127 @@
++#!/usr/bin/env python3
++"""Adapt reviewed AZH4 APE/personalization disablement to legacy target flags."""
++from pathlib import Path
++from hashlib import sha256
++import re
++import sys
++
++
++def adapt(root):
++    pending = {}
++
++    def locate(artifact, descriptor):
++        paths = list((root / artifact).glob("smali*/" + descriptor + ".smali"))
++        if len(paths) != 1:
++            raise RuntimeError("Expected one reviewed Wi-Fi class: " + descriptor)
++        path = paths[0]
++        text = path.read_text()
++        if not text.splitlines()[0].endswith("L" + descriptor + ";"):
++            raise RuntimeError("Wi-Fi class descriptor mismatch")
++        pending[path] = text
++        return path
++
++    def method(text, name):
++        matches = list(re.finditer(r"(?ms)^\.method[^\n]* " + re.escape(name) + r"\n.*?^\.end method$", text))
++        if len(matches) != 1:
++            raise RuntimeError("Expected reviewed Wi-Fi method: " + name)
++        return matches[0]
++
++    def replace(path, before, after):
++        if pending[path].count(before) != 1:
++            raise RuntimeError("Wi-Fi body shape changed: " + path.name)
++        pending[path] = pending[path].replace(before, after, 1)
++
++    jar = "system/framework/semwifi-service.jar"
++    prefix = "com/samsung/android/server/wifi/"
++    injector = locate(jar, prefix + "SemWifiInjector")
++    text = pending[injector]
++    start = text.index('    const-string v0, "SemApeController start"')
++    end = text.index("    new-instance v0, Lcom/samsung/android/server/wifi/SemQboxController;", start)
++    region = text[start:end]
++    if sha256(region.encode()).hexdigest() != "43a42369b291c5ebfe708241618564188770eceae15071ea767d0c82ddc40d6b":
++        raise RuntimeError("Unreviewed AZH4 APE constructor region")
++    # Removed try/catch/control-flow labels must have no outside callers.
++    constructor = method(text, "<init>(Landroid/content/Context;)V").group()
++    outside = constructor.replace(region, "", 1)
++    for label in re.findall(r"(?m)^\s*(:\w+)$", region):
++        if re.search(re.escape(label) + r"\b", outside):
++            raise RuntimeError("APE label referenced outside reviewed region: " + label)
++    replacement = ("    const/4 v0, 0x0\n\n"
++                   "    iput-object v0, v4, Lcom/samsung/android/server/wifi/SemWifiInjector;->mApeController:Lcom/samsung/android/server/wifi/SemApeController;\n\n"
++                   "    iput-object v0, v4, Lcom/samsung/android/server/wifi/SemWifiInjector;->mApeService:Lcom/samsung/android/server/wifi/SemApeService;\n\n")
++    pending[injector] = text[:start] + replacement + text[end:]
++    # CONNECTION_PERSONALIZATION controls L4s after Qbox registration. The
++    # separate factory/dynamic-switch default stays unchanged at zero.
++    marker = ("    invoke-virtual {v0, v1}, Lcom/samsung/android/server/wifi/SemQboxController;->registerContentObserver(Lcom/samsung/android/server/wifi/SemFrameworkFacade;)V\n\n"
++              '    const-string v0, "1"')
++    replace(injector, marker, marker[:-2] + '0"')
++    qbox = locate(jar, prefix + "SemQboxController")
++    current = method(pending[qbox], "registerContentObserver(Lcom/samsung/android/server/wifi/SemFrameworkFacade;)V")
++    if sha256(current.group().encode()).hexdigest() != "70ae9997ceaf965e204508a75b50d22761fcc0bd39853a5a84cba297d23ac126":
++        raise RuntimeError("Unreviewed AZH4 Qbox observer")
++    body = current.group().splitlines()[0] + """
++    .locals 1
++
++    const-string p1, "MSCS in Settings is 0"
++
++    invoke-static {p1}, Lcom/samsung/android/server/wifi/SemQboxController;->logi(Ljava/lang/String;)V
++
++    iget-object p0, p0, Lcom/samsung/android/server/wifi/SemQboxController;->mHandler:Landroid/os/Handler;
++
++    const/4 p1, 0x5
++
++    const/4 v0, 0x0
++
++    invoke-virtual {p0, p1, v0, v0}, Landroid/os/Handler;->obtainMessage(III)Landroid/os/Message;
++
++    move-result-object p1
++
++    invoke-virtual {p0, p1}, Landroid/os/Handler;->sendMessage(Landroid/os/Message;)Z
++
++    return-void
++.end method"""
++    pending[qbox] = pending[qbox][:current.start()] + body + pending[qbox][current.end():]
++    enum = locate(jar, prefix + "SemSqeCommandHandler$SqeCommand")
++    expected = ('    const/16 v1, 0x23\n\n    const-string v2, "support_ape"\n\n'
++                '    const-string v4, "SUPPORT_APE"')
++    if expected not in pending[enum]:
++        raise RuntimeError("AZH4 SUPPORT_APE enum ordinal changed")
++    shell = locate(jar, prefix + "SemSqeCommandHandler")
++    process = method(pending[shell], "process(Ljava/lang/String;Ljava/io/PrintWriter;)I").group()
++    table = re.search(r"(?ms)^    \.packed-switch 0x0\n(.*?)^    \.end packed-switch", process)
++    if table is None or table.group(1).split()[35] != ":pswitch_6" or \
++            'const-string v10, "Not Supported"' not in process or "const/4 v11, 0x0" not in process:
++        raise RuntimeError("AZH4 SQE APE dispatch changed")
++    # The old Supported branch is shared. Split only ordinal35 instead of
++    # changing the result for unrelated supported commands.
++    lines = table.group(1).splitlines(True)
++    lines[35] = "        :pswitch_ape_disabled\n"
++    replace(shell, table.group(), table.group().replace(table.group(1), "".join(lines), 1))
++    replace(shell, "    :pswitch_data_0\n", "    :pswitch_ape_disabled\n    invoke-virtual {p2, v10}, Ljava/io/PrintWriter;->println(Ljava/lang/String;)V\n\n    return v11\n\n    :pswitch_data_0\n")
++    settings = "system/priv-app/SecSettings/SecSettings.apk"
++    controller = locate(settings, "com/samsung/android/settings/wifi/develop/ApePreferenceController")
++    replace(controller, "SUPPORT_APE_SERVICE:Z = true", "SUPPORT_APE_SERVICE:Z = false")
++    for name, before, after in [
++        ("getAvailabilityStatus()I", "const/4 p0, 0x0", "const/4 p0, 0x3"),
++        ("resetDataPriorityMode(Landroid/content/Context;)V", "const/4 v1, 0x1", "const/4 v1, 0x0"),
++    ]:
++        current = method(pending[controller], name)
++        if current.group().count(before) != 1:
++            raise RuntimeError("AZH4 APE Settings method changed: " + name)
++        pending[controller] = pending[controller][:current.start()] + current.group().replace(before, after, 1) + pending[controller][current.end():]
++    # AZH4 removed the old literal 'ape' map entries. Do not edit unrelated
++    # booleans in WifiReset/FeatureUtils in place of those missing keys.
++    for descriptor in ("com/samsung/android/settings/wifi/WifiReset$1", "com/samsung/android/settings/wifi/advanced/WifiFeatureUtils"):
++        path = locate(settings, descriptor)
++        if re.search(r'const-string(?:/jumbo)? [^,]+, "ape"', pending[path]):
++            raise RuntimeError("Unreviewed old APE map key restored")
++    changed = 0
++    for path, text in pending.items():
++        if path.read_text() != text:
++            path.write_text(text)
++            changed += 1
++    print(f"PASS AZH4 APE/personalization disabled: {changed} classes; donor scan UI retained")
++
++
++if __name__ == "__main__":
++    adapt(Path(sys.argv[1]))

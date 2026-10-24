@@ -1,0 +1,88 @@
+From: Codex local M2 diagnostic preparation
+Subject: [PATCH] Prepare pinned G965F boot command-line diagnostic offline
+
+Reason: repeat fresh M2 boot resets without Android failure log; use init fatal
+controls without replacing init or changing the kernel/DTB/ramdisk binaries.
+Files: scripts/internal/prepare_star2lte_boot_diagnostic.py (new offline helper).
+Verification: pinned base/header, all differences confined to header bytes64..575;
+kernel/ramdisk/DTB/tail identical; wrong-base and output-collision rejection PASS.
+No automatic pipeline activation or device writes. Runtime pstore effectiveness
+unverified; user must authorize this separate artifact before installation.
+
+---
+--- /dev/null
++++ b/scripts/internal/prepare_star2lte_boot_diagnostic.py
+@@ -0,0 +1,73 @@
++#!/usr/bin/env python3
++"""Prepare a pinned G965F M2 command-line diagnostic, never flash a device.
++
++Reason: repeated M2 resets leave no Android fatal log. Preserve the known-good
++M1/DS-ACK payload; only request verbose logging and init fatal diagnostics.
++Verification: exact base hash/header, byte-identical kernel/ramdisk/DTB/tail,
++and every changed byte confined to the legacy 512-byte command-line field.
++"""
++import argparse
++import hashlib
++import json
++from pathlib import Path
++import struct
++
++BASE = 'cc618abc72e8e568e56a8c643c906cff0d7b9143dfc77d86dc645f55776ed01d'
++PARAMS = ('loglevel=7 ignore_loglevel '
++          'androidboot.init_fatal_reboot_target=recovery '
++          'androidboot.init_fatal_panic=true')
++
++
++def digest(data):
++    return hashlib.sha256(data).hexdigest()
++
++
++def prepare(source, output):
++    old = source.read_bytes()
++    if digest(old) != BASE or len(old) != 57671680 or old[:8] != b'ANDROID!':
++        raise ValueError('Input must be the pinned full G965F BOOT capture')
++    ks, _, rs, _, ss, _, _, page, ds, _ = struct.unpack_from('<10I', old, 8)
++    if (ks, rs, ss, page, ds) != (37605888, 2081280, 0, 2048, 309248):
++        raise ValueError('Unexpected Samsung legacy boot layout')
++    field = old[64:576]
++    cmd, padding = field.split(b'\0', 1)
++    if cmd != b'androidboot.selinux=enforcing' or any(padding):
++        raise ValueError('Unexpected command line or nonempty padding')
++    new_cmd = cmd + b' ' + PARAMS.encode('ascii')
++    if len(new_cmd) >= 512:
++        raise ValueError('Command line exceeds legacy field')
++    new = old[:64] + new_cmd.ljust(512, b'\0') + old[576:]
++    assert old[:64] == new[:64] and old[576:] == new[576:]
++    align = lambda n: (n + page - 1) // page * page
++    offsets = {'kernel': (page, ks),
++               'ramdisk': (page + align(ks), rs),
++               'dtb': (page + align(ks) + align(rs), ds)}
++    parts = {}
++    for name, (start, size) in offsets.items():
++        assert old[start:start + size] == new[start:start + size]
++        parts[name] = digest(new[start:start + size])
++    report = {'purpose': 'M2 early init fatal diagnostic; runtime effectiveness unverified',
++              'model': 'SM-G965F', 'serial': 'M2_G965F_SERIAL',
++              'bootloader': 'G965FXXUHFVG6', 'base_sha256': BASE,
++              'diagnostic_sha256': digest(new), 'bytes': len(new),
++              'cmdline_before': cmd.decode(), 'cmdline_after': new_cmd.decode(),
++              'changed_field': 'legacy boot header bytes 64..575 only',
++              'payload_sha256': parts, 'kernel_ramdisk_dtb_tail_unchanged': True,
++              'device_write_performed': False,
++              'limitation': 'fatal-panic support is observed in A37 init, not old ramdisk init; '
++                            'pstore survival and recovery target must be verified on device'}
++    output.mkdir(mode=0o700, parents=False, exist_ok=False)
++    for name, data in [('diagnostic-boot.img', new), ('rollback-boot.img', old),
++                       ('manifest.json', (json.dumps(report, indent=2) + '\n').encode())]:
++        with (output / name).open('xb') as handle:
++            handle.write(data)
++        (output / name).chmod(0o600)
++    return report
++
++
++if __name__ == '__main__':
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument('--source', type=Path, required=True)
++    parser.add_argument('--output', type=Path, required=True)
++    args = parser.parse_args()
++    print(json.dumps(prepare(args.source, args.output), indent=2))

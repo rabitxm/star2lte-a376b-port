@@ -1,0 +1,25 @@
+From: Codex local A376B compatibility adaptation
+Subject: [PATCH] Retain AZH4 donor SystemUI text and sensor confirmation
+
+Reason and verification: postsetup74.txt records QP layout hunks failing; tweaks-preflight74.json also finds the obsolete sensor toggle class. Keep donor marquee and confirmation behavior by omitting only these two optional patches. Haptics patch already applied in diagnostic tree; preserve it and the compatible stepX patch. Verify exact profile/path guards, real dispatcher continuation, shell syntax and replay.
+Files: scripts/internal/apply_modules.sh.
+
+---
+--- a/scripts/internal/apply_modules.sh
++++ b/scripts/internal/apply_modules.sh
+@@ -184,6 +184,15 @@
+                 */settings/smali/system/framework/services.jar/0003-Allow-app-target-SDK-bypass.patch|\
+                 */settings/smali/system/framework/services.jar/0004-Allow-disable-screen-capture-detection.patch)
+                     LOGW "M2 retains donor behavior and omits the matching unsupported optional Settings control: ${p##*/}"
++                    continue
++                    ;;
++            esac
++        fi
++        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++            case "$p" in
++                */tweaks/smali/system_ext/priv-app/SystemUI/SystemUI.apk/0001-Disable-QP-text-marquee.patch|\
++                */tweaks/smali/system_ext/priv-app/SystemUI/SystemUI.apk/0003-Remove-confirm-dialog-on-sensors-QS-toggle.patch)
++                    LOGW "AZH4 SystemUI layout differs; retaining donor text scrolling and sensor-toggle confirmation for M2"
+                     continue
+                     ;;
+             esac

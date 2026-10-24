@@ -1,0 +1,351 @@
+From: Codex local compatibility adaptation
+Subject: [PATCH] Adapt existing SehLights backport to A376B Android 16
+
+Reason: attempt8.txt:1104-1105 and :1132-1133 show the upstream SehLights patch does not apply to AZH4 services.jar. Keep the A37 VintfHalCache API, retain two-argument callers, and forward the backlight extension mode.
+Files: unica/patches/legacy/customize.sh; unica/patches/legacy/lights/services.jar/0002-A376B-legacy-SehLights-backlight.patch; unica/patches/legacy/lights/patch_a376b_sehlights.py.
+Verification: decode AZH4 services.jar, run the guarded adapter, apply the backlight patch, and rebuild with Apktool.
+
+---
+--- a/unica/patches/legacy/customize.sh
++++ b/unica/patches/legacy/customize.sh
+@@ -401,7 +401,14 @@
+     if [ -f "$WORK_DIR/vendor/bin/hw/vendor.samsung.hardware.light-service" ] && \
+             ! xxd -p -c 4 "$WORK_DIR/vendor/bin/hw/vendor.samsung.hardware.light-service" | grep -q "1853$"; then
+         PATCHED=true
+-        APPLY_PATCH "system" "system/framework/services.jar" \
+-            "$MODPATH/lights/services.jar/0001-Backport-legacy-SehLights-HAL-code.patch"
++        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++            LOG "- Adapting existing legacy SehLights bridge for A376B Android 16 VintfHalCache"
++            APPLY_PATCH "system" "system/framework/services.jar" \
++                "$MODPATH/lights/services.jar/0002-A376B-legacy-SehLights-backlight.patch"
++            EVAL "python3 \"$MODPATH/lights/patch_a376b_sehlights.py\" \"$APKTOOL_DIR/system/framework/services.jar\" \"$MODPATH/lights/services.jar/0001-Backport-legacy-SehLights-HAL-code.patch\"" || return 1
++        else
++            APPLY_PATCH "system" "system/framework/services.jar" \
++                "$MODPATH/lights/services.jar/0001-Backport-legacy-SehLights-HAL-code.patch"
++        fi
+     fi
+ fi
+diff --git a/unica/patches/legacy/lights/services.jar/0002-A376B-legacy-SehLights-backlight.patch b/unica/patches/legacy/lights/services.jar/0002-A376B-legacy-SehLights-backlight.patch
+new file mode 100644
+--- /dev/null
++++ b/unica/patches/legacy/lights/services.jar/0002-A376B-legacy-SehLights-backlight.patch
+@@ -0,0 +1,194 @@
++From: Codex local compatibility adaptation
++Subject: [PATCH] Apply legacy SehLights backlight adapter to A376B Android 16
++
++---
++diff --git a/smali/com/android/server/display/LocalDisplayAdapter$BacklightAdapter.smali b/smali/com/android/server/display/LocalDisplayAdapter$BacklightAdapter.smali
++index 113049643..8a1f4f852 100644
++--- a/smali/com/android/server/display/LocalDisplayAdapter$BacklightAdapter.smali
+++++ b/smali/com/android/server/display/LocalDisplayAdapter$BacklightAdapter.smali
++@@ -111,22 +111,22 @@
++ 
++ # virtual methods
++ .method public final setBacklight(FFFFII)V
++-    .locals 3
+++    .locals 6
++ 
++     iget-boolean v0, p0, Lcom/android/server/display/LocalDisplayAdapter$BacklightAdapter;->mUseSurfaceControlBrightness:Z
++ 
++-    if-nez v0, :cond_4
+++    if-nez v0, :cond_6
++ 
++     iget-boolean v0, p0, Lcom/android/server/display/LocalDisplayAdapter$BacklightAdapter;->mForceSurfaceControl:Z
++ 
++     if-eqz v0, :cond_0
++ 
++-    goto :goto_0
+++    goto :goto_2
++ 
++     :cond_0
++     iget-object p0, p0, Lcom/android/server/display/LocalDisplayAdapter$BacklightAdapter;->mBacklight:Lcom/android/server/lights/LightsService$LightImpl;
++ 
++-    if-eqz p0, :cond_3
+++    if-eqz p0, :cond_5
++ 
++     invoke-static {p3}, Ljava/lang/Float;->isNaN(F)Z
++ 
++@@ -156,14 +156,12 @@
++     monitor-enter p0
++ 
++     :try_start_0
+++    move/from16 v0, p3
+++
++     invoke-static {p3}, Lcom/android/internal/display/BrightnessSynchronizer;->brightnessFloatToInt(F)I
++ 
++     move-result p1
++ 
++-    const/16 p2, 0xff
++-
++-    if-gt p1, p2, :cond_2
++-
++     and-int/lit16 p1, p1, 0xff
++ 
++     shl-int/lit8 p2, p1, 0x10
++@@ -178,6 +176,18 @@
++ 
++     or-int/2addr p1, p2
++ 
+++    iget-object p2, p0, Lcom/android/server/lights/LightsService$LightImpl;->mHwLight:Landroid/hardware/light/HwLight;
+++
+++    iget-byte p2, p2, Landroid/hardware/light/HwLight;->type:B
+++
+++    if-eqz p2, :cond_3
+++
+++    const/16 v0, 0x9
+++
+++    if-ne p2, v0, :cond_2
+++
+++    goto :goto_0
+++
++     :cond_2
++     const/4 p2, 0x0
++ 
++@@ -187,6 +197,48 @@
++ 
++     return-void
++ 
+++    :cond_3
+++    :goto_0
+++    const/high16 p2, 0x437f0000    # 255.0f
+++
+++    mul-float/2addr v0, p2
+++
+++    sget-boolean p2, Lcom/android/server/power/PowerManagerUtil;->USE_PERSONAL_AUTO_BRIGHTNESS_V3:Z
+++
+++    if-eqz p2, :cond_4
+++
+++    const/16 p2, 0x64
+++
+++    goto :goto_1
+++
+++    :cond_4
+++    const/4 p2, 0x1
+++
+++    :goto_1
+++    int-to-float p2, p2
+++
+++    mul-float/2addr v0, p2
+++
+++    invoke-static {v0}, Ljava/lang/Math;->round(F)I
+++
+++    move-result v2
+++
+++    const/4 v3, 0x0
+++
+++    const/4 v4, 0x0
+++
+++    const/4 v5, 0x0
+++
+++    move-object v0, p0
+++
+++    move v1, p1
+++
+++    invoke-virtual/range {v0 .. v5}, Lcom/android/server/lights/LightsService$LightImpl;->setLightLocked(IIIII)V
+++
+++    monitor-exit p0
+++
+++    return-void
+++
++     :catchall_0
++     move-exception p1
++ 
++@@ -196,18 +248,18 @@
++ 
++     throw p1
++ 
++-    :cond_3
+++    :cond_5
++     return-void
++ 
++-    :cond_4
++-    :goto_0
+++    :cond_6
+++    :goto_2
++     const/high16 v0, 0x7fc00000    # Float.NaN
++ 
++     invoke-static {p1, v0}, Lcom/android/internal/display/BrightnessSynchronizer;->floatEquals(FF)Z
++ 
++     move-result v0
++ 
++-    if-eqz v0, :cond_5
+++    if-eqz v0, :cond_7
++ 
++     iget-object p1, p0, Lcom/android/server/display/LocalDisplayAdapter$BacklightAdapter;->mSurfaceControlProxy:Lcom/android/server/display/LocalDisplayAdapter$SurfaceControlProxy;
++ 
++@@ -219,7 +271,7 @@
++ 
++     return-void
++ 
++-    :cond_5
+++    :cond_7
++     const-string/jumbo v0, "LocalDisplayAdapter"
++ 
++     new-instance v1, Ljava/lang/StringBuilder;
++@@ -250,16 +302,16 @@
++ 
++     iget-boolean v2, p0, Lcom/android/server/display/LocalDisplayAdapter$BacklightAdapter;->mIsFirstDisplay:Z
++ 
++-    if-eqz v2, :cond_6
+++    if-eqz v2, :cond_8
++ 
++     const-string/jumbo v2, "main"
++ 
++-    goto :goto_1
+++    goto :goto_3
++ 
++-    :cond_6
+++    :cond_8
++     const-string/jumbo v2, "sub"
++ 
++-    :goto_1
+++    :goto_3
++     invoke-virtual {v1, v2}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
++ 
++     const-string v2, " +"
++@@ -310,16 +362,16 @@
++ 
++     iget-boolean p0, p0, Lcom/android/server/display/LocalDisplayAdapter$BacklightAdapter;->mIsFirstDisplay:Z
++ 
++-    if-eqz p0, :cond_7
+++    if-eqz p0, :cond_9
++ 
++     const-string/jumbo p0, "main"
++ 
++-    goto :goto_2
+++    goto :goto_4
++ 
++-    :cond_7
+++    :cond_9
++     const-string/jumbo p0, "sub"
++ 
++-    :goto_2
+++    :goto_4
++     invoke-virtual {p4, p0}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
++ 
++     const-string p0, " -"
+diff --git a/unica/patches/legacy/lights/patch_a376b_sehlights.py b/unica/patches/legacy/lights/patch_a376b_sehlights.py
+new file mode 100644
+--- /dev/null
++++ b/unica/patches/legacy/lights/patch_a376b_sehlights.py
+@@ -0,0 +1,120 @@
++#!/usr/bin/env python3
++"""Adapt the existing legacy SehLights backport to the reviewed A376B16 layout."""
++from __future__ import annotations
++
++import re
++import sys
++from pathlib import Path
++
++
++def fail(message: str) -> None:
++    raise SystemExit(message)
++
++
++root, upstream_patch = map(Path, sys.argv[1:3])
++patch_lines = upstream_patch.read_text().splitlines()
++try:
++    hunk_start = next(i for i, line in enumerate(patch_lines) if line.startswith("@@ -384,257 +384,334"))
++    hunk_end = next(i for i in range(hunk_start + 1, len(patch_lines)) if patch_lines[i].startswith("diff --git "))
++except StopIteration:
++    fail("upstream SehLights LightImpl hunk changed; review required")
++
++# Reuse the fork's reviewed implementation, then adapt only its HAL cache API.
++new_lines: list[str] = []
++for line in patch_lines[hunk_start + 1 : hunk_end]:
++    if line.startswith((" ", "+")):
++        new_lines.append(line[1:])
++    elif line.startswith(("-", "\\")):
++        continue
++    elif not line:
++        new_lines.append("")
++    else:
++        fail(f"unexpected upstream diff line: {line!r}")
++new_block = "\n".join(new_lines) + "\n"
++old_signature = ".method public final setLightLocked(IIII)V"
++try:
++    method_start = new_block.index(old_signature)
++    method_end = new_block.index(".method public final turnOff()V", method_start)
++except ValueError:
++    fail("upstream SehLights LightImpl method layout changed; review required")
++new_block = new_block[method_start:method_end]
++new_block = new_block.replace(
++    "invoke-interface {v1}, Ljava/util/function/Supplier;->get()",
++    "invoke-virtual {v1}, Lcom/android/server/lights/LightsService$VintfHalCache;->get()",
++)
++new_block = new_block.replace(
++    "Ljava/util/function/Supplier;",
++    "Lcom/android/server/lights/LightsService$VintfHalCache;",
++)
++if "java/util/function/Supplier" in new_block or "invoke-interface {v1}" in new_block:
++    fail("unadapted Supplier assumption remains in A376B backport")
++
++light_path = root / "smali/com/android/server/lights/LightsService$LightImpl.smali"
++light = light_path.read_text()
++if light.count(old_signature) != 1:
++    fail("expected one A376B setLightLocked(IIII)V; donor layout changed")
++old_start = light.index(old_signature)
++old_end = light.index(".end method", old_start) + len(".end method")
++old_method = light[old_start:old_end]
++for required in (
++    "mVintfLights:Lcom/android/server/lights/LightsService$VintfHalCache;",
++    "mVintfSehLights:Lcom/android/server/lights/LightsService$VintfHalCache;",
++    "->setLightState(ILandroid/hardware/light/HwLightState;)V",
++):
++    if required not in old_method:
++        fail(f"A376B LightImpl expected pattern missing: {required}")
++light = light[:old_start] + new_block.rstrip() + light[old_end:]
++
++proxy_path = root / "smali_classes2/vendor/samsung/hardware/light/ISehLights$Stub$Proxy.smali"
++proxy = proxy_path.read_text()
++proxy_old = ".method public final setLightState(ILandroid/hardware/light/HwLightState;)V"
++proxy_new = ".method public final setLightState(ILandroid/hardware/light/HwLightState;I)V"
++if proxy.count(proxy_old) != 1:
++    fail("expected one A376B two-argument SehLights proxy method")
++proxy = proxy.replace(proxy_old, proxy_new, 1)
++legacy_wrapper = """.method public final setLightState(ILandroid/hardware/light/HwLightState;)V
++    .locals 1
++
++    const/4 v0, -0x1
++
++    invoke-virtual {p0, p1, p2, v0}, Lvendor/samsung/hardware/light/ISehLights$Stub$Proxy;->setLightState(ILandroid/hardware/light/HwLightState;I)V
++
++    return-void
++.end method
++
++"""
++proxy = proxy.replace(proxy_new, legacy_wrapper + proxy_new, 1)
++if proxy.count(proxy_old) != 1 or proxy.count(proxy_new) != 1:
++    fail("A376B proxy compatibility overload was not generated")
++
++power_path = root / "smali_classes2/com/android/server/power/PowerManagerUtil.smali"
++power = power_path.read_text()
++flag_context = re.compile(
++    r"    if-eqz v10, :cond_1d\n.*?"
++    r"    sput-boolean v16, Lcom/android/server/power/PowerManagerUtil;->SEC_FEATURE_USE_LIGHTS_HAL_EXTENSION:Z",
++    re.S,
++)
++if len(flag_context.findall(power)) != 1:
++    fail("A376B PowerManagerUtil legacy lights flag context changed")
++power = flag_context.sub(
++    "    sput-boolean v3, Lcom/android/server/power/PowerManagerUtil;->SEC_FEATURE_USE_LIGHTS_HAL_EXTENSION:Z",
++    power,
++    count=1,
++)
++flag_marker = power.index("sput-boolean v3, Lcom/android/server/power/PowerManagerUtil;->SEC_FEATURE_USE_LIGHTS_HAL_EXTENSION:Z")
++flag_end = flag_marker + len("SEC_FEATURE_USE_LIGHTS_HAL_EXTENSION:Z")
++concurrency_end = power.index(
++    "sput-boolean v0, Lcom/android/server/power/PowerManagerUtil;->SEC_FEATURE_DISPLAY_STATE_CONCURRENCY:Z"
++)
++start = power.rfind("    if-eqz v9, :cond_1e", flag_end, concurrency_end)
++section = power[start:concurrency_end]
++if start < 0 or section.count(":cond_1e") != 3 or section.count(":goto_1d") != 2:
++    fail("A376B display concurrency labels changed; review required")
++section = section.replace(":cond_1e", ":cond_1d").replace(":goto_1d", ":goto_1c")
++power = power[:start] + section + power[concurrency_end:]
++
++# Do not leave a half-patched services.jar source tree if any layout check fails.
++light_path.write_text(light)
++proxy_path.write_text(proxy)
++power_path.write_text(power)
++print("PASS A376B AZH4 SehLights bridge: VintfHalCache retained; two-argument callers preserved; extension mode forwarded")

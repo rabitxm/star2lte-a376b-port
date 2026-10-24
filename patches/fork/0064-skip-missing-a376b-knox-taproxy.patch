@@ -1,0 +1,34 @@
+From: Codex local A376B compatibility adaptation
+Subject: [PATCH] Skip absent AZH4 Knox TAProxy API substitution
+
+Reason: attempt32.txt ends with `Smali not found` at deknox/customize.sh:103;
+AZH4 services.jar has no Knox TAProxy class for the legacy shipping-API edit.
+Keep the rest of Nuke Knox active and skip only this absent-class edit on M2.
+Files: unica/mods/deknox/customize.sh.
+Verification: exact donor+file absence branch, shell syntax, patch replay and
+clean attempt33. Revert0064.
+
+---
+--- a/unica/mods/deknox/customize.sh
++++ b/unica/mods/deknox/customize.sh
+@@ -100,12 +100,17 @@
+     | xargs -0 -I "{}" -P "$(nproc)" sed -i "s/^\.source.*/\.source \"SourceFile\"/g" "{}"
+ if [[ "$SOURCE_PRODUCT_SHIPPING_API_LEVEL" != "$TARGET_PRODUCT_SHIPPING_API_LEVEL" ]]; then
+-    SMALI_PATCH "system" "system/framework/services.jar" \
+-        "smali/com/android/server/knox/dar/ddar/ta/TAProxy.smali" "replace" \
+-        "updateServiceHolder(Z)V" \
+-        "$TARGET_PRODUCT_SHIPPING_API_LEVEL" \
+-        "$SOURCE_PRODUCT_SHIPPING_API_LEVEL" \
+-        > /dev/null
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] && \
++            [ ! -f "$APKTOOL_DIR/system/framework/services.jar/smali/com/android/server/knox/dar/ddar/ta/TAProxy.smali" ]; then
++        LOGW "A376B AZH4 has no Knox TAProxy class; skipping only its shipping-API substitution"
++    else
++        SMALI_PATCH "system" "system/framework/services.jar" \
++            "smali/com/android/server/knox/dar/ddar/ta/TAProxy.smali" "replace" \
++            "updateServiceHolder(Z)V" \
++            "$TARGET_PRODUCT_SHIPPING_API_LEVEL" \
++            "$SOURCE_PRODUCT_SHIPPING_API_LEVEL" \
++            > /dev/null
++    fi
+ fi

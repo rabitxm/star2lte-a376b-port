@@ -1,0 +1,23 @@
+From: Codex local A376B compatibility adaptation
+Subject: [PATCH] Keep AZH4 Smart View tile initialization
+
+Reason: attempt30.txt:1261 reports the CSC Smart View visibility patch context
+is absent in AZH4 QpRune initialization. Preserve donor SystemUI behavior on
+A376B Android16; keep the fork patch for other donors.
+Files: scripts/internal/apply_modules.sh.
+Verification: exact SystemUI patch/profile guard, shell syntax, patch replay and
+clean attempt31. Revert0062.
+
+---
+--- a/scripts/internal/apply_modules.sh
++++ b/scripts/internal/apply_modules.sh
+@@ -130,6 +130,11 @@ APPLY_SMALI_PATCHES()
+             LOGW "A376B AZH4 relocated Secure Folder Settings classes; retaining donor behavior for M2"
+             continue
+         fi
++        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] && \
++                [[ "$p" == */csc/smali/system_ext/priv-app/SystemUI/SystemUI.apk/0002-Enable-Smart-View-tile-visibility-settings.patch ]]; then
++            LOGW "A376B AZH4 changed QpRune tile initialization; retaining donor Smart View UI for M2"
++            continue
++        fi
+         APPLY_PATCH "$PARTITION" "$FILE" "$p"

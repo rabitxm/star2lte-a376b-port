@@ -1,0 +1,167 @@
+Reason: M2 needs an A376B Android16 donor without replacing S22/ESSI layout or reusing a completed work tree from another donor. AZH4 payload is verified SDK36.1 / OneUI80500; input is LOCAL, hardware/kernel profile remains F/no-KSU.
+Affected: scripts/internal/gen_config_file.sh, scripts/make_rom.sh, target/star2lte/profiles/m1-g965f-no-ksu.sh, target/star2lte/profiles/m2-g965f-a376b-android16-no-ksu.sh, unica/configs/essi_a376b_android16.sh.
+Verify: Actual config generator/profile tests, M1 inherited selector reset, unsafe selector rejection, real cache hash function with changed donor/config/SDK/import marker, S22 config SHA unchanged. Donor features inspected from actual props/XML/DEX; Bluetooth flags unused by recipes are explicitly unknown with future-consumer guard. Runtime HAL capability flags do not establish hardware acceptance. Full M2 build/compiled checks remain required.
+Rollback: reverse patch and source the M1 profile; preserve all release/archive directories. No kernel, vendor/RIL payload, partition or phone changes.
+
+--- a/scripts/internal/gen_config_file.sh
++++ b/scripts/internal/gen_config_file.sh
+@@ -53,14 +53,19 @@
+     fi
+ fi
+ 
++ROM_SOURCE_CONFIG="${UN1CA_DONOR_CONFIG:-$TARGET_OS_SINGLE_SYSTEM_IMAGE}"
++if ! [[ "$ROM_SOURCE_CONFIG" =~ ^[a-zA-Z0-9_-]+$ ]]; then
++    LOGE "Invalid donor config name"
++    exit 1
++fi
+ if [ ! "$TARGET_OS_SINGLE_SYSTEM_IMAGE" ]; then
+     LOGE "TARGET_OS_SINGLE_SYSTEM_IMAGE is not set!"
+     exit 1
+-elif [ ! -f "$SRC_DIR/unica/configs/$TARGET_OS_SINGLE_SYSTEM_IMAGE.sh" ]; then
+-    LOGE "\"$TARGET_OS_SINGLE_SYSTEM_IMAGE\" is not a valid system image"
++elif [ ! -f "$SRC_DIR/unica/configs/$ROM_SOURCE_CONFIG.sh" ]; then
++    LOGE "\"$ROM_SOURCE_CONFIG\" is not a valid donor config"
+     exit 1
+ else
+-    source "$SRC_DIR/unica/configs/$TARGET_OS_SINGLE_SYSTEM_IMAGE.sh" || exit 1
++    source "$SRC_DIR/unica/configs/$ROM_SOURCE_CONFIG.sh" || exit 1
+ fi
+ 
+ if [ -f "$OUT_DIR/config.sh" ]; then
+@@ -447,6 +452,7 @@
+     echo "ROM_IS_OFFICIAL=\"$(IS_UNICA_CERT_AVAILABLE)\""
+     GET_BUILD_VAR "ROM_VERSION"
+     GET_BUILD_VAR "ROM_BUILD_TIMESTAMP" "$(date +%s)"
++    GET_BUILD_VAR "ROM_SOURCE_CONFIG"
+     GET_BUILD_VAR "SOURCE_FIRMWARE"
+     if [ "${#SOURCE_EXTRA_FIRMWARES[@]}" -ge 1 ]; then
+         echo "SOURCE_EXTRA_FIRMWARES=\"$(IFS=":"; printf '%s' "${SOURCE_EXTRA_FIRMWARES[*]}")\""
+--- a/scripts/make_rom.sh
++++ b/scripts/make_rom.sh
+@@ -33,6 +33,13 @@
+ {
+     local SOURCE_HASH
+     local FACEUNLOCKFIX_HASH
++    local DONOR_HASH
++
++    # Same checkout can select different donor profiles. Never reuse a work
++    # tree merely because the source files and output filesystem match.
++    DONOR_HASH="$(printf '%s\n' "${ROM_SOURCE_CONFIG:-$TARGET_OS_SINGLE_SYSTEM_IMAGE}" \
++        "$SOURCE_FIRMWARE" "$SOURCE_PLATFORM_SDK_VERSION" \
++        "$(cat "$FW_DIR/$SOURCE_FIRMWARE_PATH/.extracted" 2>/dev/null)" | sha256sum | cut -d ' ' -f 1)"
+ 
+     SOURCE_HASH="$(find "$SRC_DIR/platform/$TARGET_PLATFORM" "$SRC_DIR/unica" "$SRC_DIR/target/$TARGET_CODENAME" \
+         -type d -name __pycache__ -prune -o -type f -print0 | \
+@@ -47,12 +54,12 @@
+                -o -name '*.java' -o -name '*.reference' -o -name '*.xml' \
+                -o -name '*.c' -o -name '*.h' -o -name '*.example' \) -print0 | \
+             sort -z | xargs -0 sha1sum | sha1sum | cut -d " " -f 1)"
+-        printf '%s\n%s\n%s\n%s\n' "$SOURCE_HASH" "${TARGET_OS_FILE_SYSTEM_TYPE:-}" \
+-            "$FACEUNLOCKFIX_HASH" "$(sha1sum "$SRC_DIR/scripts/make_rom.sh" | cut -d ' ' -f 1)" | \
++        printf '%s\n%s\n%s\n%s\n%s\n' "$SOURCE_HASH" "${TARGET_OS_FILE_SYSTEM_TYPE:-}" \
++            "$FACEUNLOCKFIX_HASH" "$(sha1sum "$SRC_DIR/scripts/make_rom.sh" | cut -d ' ' -f 1)" "$DONOR_HASH" | \
+             sha1sum | cut -d " " -f 1
+         return
+     fi
+-    printf '%s\n%s\n' "$SOURCE_HASH" "${TARGET_OS_FILE_SYSTEM_TYPE:-}" | sha1sum | cut -d " " -f 1
++    printf '%s\n%s\n%s\n' "$SOURCE_HASH" "${TARGET_OS_FILE_SYSTEM_TYPE:-}" "$DONOR_HASH" | sha1sum | cut -d " " -f 1
+ }
+ 
+ PREPARE_SCRIPT()
+--- a/target/star2lte/profiles/m1-g965f-no-ksu.sh
++++ b/target/star2lte/profiles/m1-g965f-no-ksu.sh
+@@ -3,6 +3,7 @@
+ # duhansysl OneUI7 enforcing prebuilt without KernelSU; no kernel is rebuilt.
+ _STAR2LTE_M1_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)"
+ export ROM_MILESTONE="M1"
++export UN1CA_DONOR_CONFIG="essi"
+ export STAR2LTE_BUILD_MODEL="SM-G965F"
+ export EXYNOS9810_TARGET_OS_FILE_SYSTEM_TYPE="ext4"
+ export EXYNOS9810_BUILD_KERNELSU_RUNTIME="false"
+--- /dev/null
++++ b/unica/configs/essi_a376b_android16.sh
+@@ -0,0 +1,77 @@
++# A376B XXV AZH4: imported/MD5+CRC verified, Android16 SDK36.1 / OneUI80500.
++# Parallel donor configuration; ESSI layout and S22 config remain independent.
++# Evidence: project logs/20261021-m2-inputs and docs/m2-build.md.
++SOURCE_FIRMWARE="SM-A376B/XXV/LOCAL"
++SOURCE_EXTRA_FIRMWARES=()
++SOURCE_PLATFORM_SDK_VERSION=36
++SOURCE_PRODUCT_SHIPPING_API_LEVEL=36
++# AZH4 exports board.first_api_level=34, not ro.board.api_level.
++SOURCE_BOARD_API_LEVEL=34
++SOURCE_SUPER_GROUP_NAME="group_basic"
++SOURCE_AUDIO_CONFIG_RECORDALIVE_LIB_VERSION="07010"
++SOURCE_AUDIO_SUPPORT_ACH_RINGTONE=false
++SOURCE_AUDIO_SUPPORT_DUAL_SPEAKER=true
++SOURCE_AUDIO_SUPPORT_VIRTUAL_VIBRATION_SOUND=false
++# These four legacy metadata flags have no recipe consumer in this checkout.
++# Unknown native Bluetooth build flags are explicit rather than copied from S22.
++SOURCE_BLUETOOTH_SUPPORT_A2DPSINK_PROFILE=none
++SOURCE_BLUETOOTH_SUPPORT_A2DP_SBM=none
++SOURCE_BLUETOOTH_SUPPORT_HEAD_SAR_BACKOFF=none
++SOURCE_BLUETOOTH_SUPPORT_XLNA_CONTROL=none
++if grep -R -q --include='*.sh' 'SOURCE_BLUETOOTH_SUPPORT_' \
++        "$SRC_DIR/unica/patches" "$SRC_DIR/unica/mods" "$SRC_DIR/platform" "$SRC_DIR/target"; then
++    LOGE "A recipe now consumes unknown A376B Bluetooth metadata; review donor flags first"
++    return 1
++fi
++SOURCE_CAMERA_SUPPORT_CAMERAX_EXTENSION=true
++SOURCE_CAMERA_SUPPORT_CUTOUT_PROTECTION=false
++SOURCE_CAMERA_SUPPORT_MASS_APP_FLAVOR=true
++SOURCE_CAMERA_SUPPORT_SDK_SERVICE=false
++SOURCE_COMMON_CONFIG_MDNIE_MODE="37905"
++SOURCE_COMMON_SUPPORT_DYN_RESOLUTION_CONTROL=false
++SOURCE_COMMON_SUPPORT_EMBEDDED_SIM=true
++SOURCE_COMMON_SUPPORT_HDR_EFFECT=false
++SOURCE_DVFSAPP_CONFIG_DVFS_POLICY_FILENAME="dvfs_policy_default"
++SOURCE_DVFSAPP_CONFIG_SSRM_POLICY_FILENAME="siop_a37x_s5e8845"
++SOURCE_FINGERPRINT_CONFIG_SENSOR="google_touch_display_optical,settings=3"
++SOURCE_LCD_CONFIG_COLOR_WEAKNESS_SOLUTION="3"
++SOURCE_LCD_CONFIG_CONTROL_AUTO_BRIGHTNESS="5"
++SOURCE_LCD_CONFIG_HFR_DEFAULT_REFRESH_RATE="120"
++SOURCE_LCD_CONFIG_HFR_MODE="2"
++SOURCE_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE="60,120"
++SOURCE_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE_NS="none"
++SOURCE_LCD_CONFIG_SEAMLESS_BRT="89,91"
++SOURCE_LCD_CONFIG_SEAMLESS_LUX="260,2500"
++SOURCE_LCD_SUPPORT_MDNIE_HW=false
++SOURCE_SECURITY_CONFIG_ESE_CHIP_VENDOR="NXP_SKU"
++SOURCE_SECURITY_CONFIG_ESE_COS_NAME="JCOP6.5U"
++SOURCE_RIL_FEATURES="onebinary"
++SOURCE_RIL_SIM_CONFIG_MULTISIM_TRAYCOUNT="1"
++SOURCE_RIL_SUPPORT_WATERPROOF_SIM_TRAY_MSG=true
++SOURCE_WLAN_CONFIG_CONNECTION_PERSONALIZATION="1"
++SOURCE_WLAN_CONFIG_CPU_CSTATE_DISABLE_THRESHOLD="0"
++SOURCE_WLAN_CONFIG_CUSTOM_BACKOFF="CAM_BACK -1 -1 -1 9 -1 -1"
++SOURCE_WLAN_CONFIG_DATA_ACTIVITY_AFFINITY_BOOSTER_THRESHOLD="0"
++SOURCE_WLAN_CONFIG_DYNAMIC_SWITCH="0"
++SOURCE_WLAN_CONFIG_L1SS_DISABLE_THRESHOLD="0"
++SOURCE_WLAN_SUPPORT_80211AX=true
++SOURCE_WLAN_SUPPORT_80211AX_6GHZ=false
++SOURCE_WLAN_SUPPORT_APE_SERVICE=true
++# AZH4 does not preseed legacy feature IDs 2/3. Runtime HAL feature detection
++# remains dynamic; these describe the static default, not hardware acceptance.
++SOURCE_WLAN_SUPPORT_LOWLATENCY=false
++SOURCE_WLAN_SUPPORT_MBO=true
++# Antenna count is parsed from HAL capability bits; preserve that runtime path.
++SOURCE_WLAN_SUPPORT_MIMO=true
++SOURCE_WLAN_SUPPORT_MOBILEAP_11AX=true
++SOURCE_WLAN_SUPPORT_MOBILEAP_5G_BASEDON_COUNTRY=false
++SOURCE_WLAN_SUPPORT_MOBILEAP_6G=false
++SOURCE_WLAN_SUPPORT_MOBILEAP_DUALAP=false
++SOURCE_WLAN_SUPPORT_MOBILEAP_OWE=false
++SOURCE_WLAN_SUPPORT_MOBILEAP_POWER_SAVEMODE=true
++SOURCE_WLAN_SUPPORT_MOBILEAP_PRIORITIZE_TRAFFIC=false
++SOURCE_WLAN_SUPPORT_MOBILEAP_WIFI_CONCURRENCY=true
++SOURCE_WLAN_SUPPORT_MOBILEAP_WIFISHARING_LITE=false
++SOURCE_WLAN_SUPPORT_SWITCH_FOR_INDIVIDUAL_APPS=true
++SOURCE_WLAN_SUPPORT_TWT_CONTROL=false
++SOURCE_WLAN_SUPPORT_WIFI_TO_CELLULAR=false
+--- /dev/null
++++ b/target/star2lte/profiles/m2-g965f-a376b-android16-no-ksu.sh
+@@ -0,0 +1,4 @@
++# Reuse the pinned F hardware/kernel/tooling profile, then select A376B donor.
++source "$(dirname -- "${BASH_SOURCE[0]}")/m1-g965f-no-ksu.sh" || return 1
++export ROM_MILESTONE="M2"
++export UN1CA_DONOR_CONFIG="essi_a376b_android16"

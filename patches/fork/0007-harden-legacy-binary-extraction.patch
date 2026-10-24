@@ -1,0 +1,78 @@
+Reason: attempt3 emits missing libbluetooth_jni.so errors and exits while inspecting stock Samsung legacy BOOT; legacy-unpack-error.txt records UnicodeDecodeError. EVAL also hid failing command output under set -e.
+Affected: scripts/utils/common_utils.sh (EVAL), unica/patches/bluetooth/customize.sh, unica/patches/legacy/customize.sh.
+Verify: binary-extraction-checks.json: EVAL failure visible with errexit; actual legacy payload matches boot-header bytes; invalid/truncated input rejected; actual Bluetooth block ELF hash/metadata matches APEX; original BOOT and selected DS-ACK hashes unchanged. bash -n and git diff --check.
+Rollback: reverse this patch and regenerate partial work_dir. This only extracts/inspects existing binaries; no kernel build/version/payload modification.
+
+diff --git a/scripts/utils/common_utils.sh b/scripts/utils/common_utils.sh
+--- a/scripts/utils/common_utils.sh
++++ b/scripts/utils/common_utils.sh
+@@ -527,9 +527,9 @@
+     local CMD="$1"
+ 
+     local OUT
+-    OUT="$(eval "$CMD" 2>&1)"
+-    # shellcheck disable=SC2181,SC2291
+-    if [ $? -ne 0 ]; then
++    if OUT="$(eval "$CMD" 2>&1)"; then
++        return 0
++    else
+         LOGE "Command returned a non-zero exit code\n"
+         echo -e    '\033[0;31m'"$CMD"'\033[0m\n' >&2
+         echo -n -e '\033[0;33m' >&2
+diff --git a/unica/patches/bluetooth/customize.sh b/unica/patches/bluetooth/customize.sh
+--- a/unica/patches/bluetooth/customize.sh
++++ b/unica/patches/bluetooth/customize.sh
+@@ -17,7 +17,10 @@
+ 
+     EVAL "unzip -j \"$BT_APEX\" \"apex_payload.img\" -d \"$TMP_DIR\""
+ 
+-    EVAL "debugfs -R \"dump /lib64/libbluetooth_jni.so $WORK_DIR/system/system/lib64/libbluetooth_jni.so\" \"$TMP_DIR/apex_payload.img\""
++    debugfs -R "dump /lib64/libbluetooth_jni.so \"$WORK_DIR/system/system/lib64/libbluetooth_jni.so\"" \
++        "$TMP_DIR/apex_payload.img" || ABORT "Failed to extract libbluetooth_jni.so"
++    [ -s "$WORK_DIR/system/system/lib64/libbluetooth_jni.so" ] || \
++        ABORT "libbluetooth_jni.so was not created by debugfs"
+     rm -rf "$TMP_DIR"
+ 
+     SET_METADATA "system" "system/lib64/libbluetooth_jni.so" 0 0 644 "u:object_r:system_lib_file:s0"
+diff --git a/unica/patches/legacy/customize.sh b/unica/patches/legacy/customize.sh
+--- a/unica/patches/legacy/customize.sh
++++ b/unica/patches/legacy/customize.sh
+@@ -78,7 +78,37 @@
+     EVAL "mkdir -p \"$TMP_DIR\""
+     EVAL "cp -a \"$WORK_DIR/kernel/boot.img\" \"$TMP_DIR/boot.img\""
+ 
+-    EVAL "unpack_bootimg --boot_img \"$TMP_DIR/boot.img\" --out \"$TMP_DIR/out\" 2>&1"
++    if ! unpack_bootimg --boot_img "$TMP_DIR/boot.img" --out "$TMP_DIR/out" \
++            > "$TMP_DIR/bootimg-unpack.log" 2>&1; then
++        if [ "$TARGET_PLATFORM" != "exynos9810" ]; then
++            cat "$TMP_DIR/bootimg-unpack.log" >&2
++            return 1
++        fi
++        # Inspect the original legacy payload for feature checks only. The
++        # source boot image and selected DS-ACK package are never modified.
++        LOGW "$(tail -n 1 "$TMP_DIR/bootimg-unpack.log"); reading legacy Exynos9810 kernel payload"
++        python3 - "$TMP_DIR/boot.img" "$TMP_DIR/out/kernel" <<'PYBOOT' || return 1
++import pathlib
++import struct
++import sys
++
++source, output = map(pathlib.Path, sys.argv[1:])
++with source.open('rb') as image:
++    header = image.read(48)
++    if len(header) != 48 or header[:8] != b'ANDROID!':
++        raise SystemExit('Invalid legacy Android boot header')
++    size = struct.unpack_from('<I', header, 8)[0]
++    page = struct.unpack_from('<I', header, 36)[0]
++    if page not in (2048, 4096, 8192, 16384, 32768, 65536) or size == 0:
++        raise SystemExit('Invalid legacy kernel size/page size')
++    if page + size > source.stat().st_size:
++        raise SystemExit('Truncated legacy kernel payload')
++    image.seek(page)
++    payload = image.read(size)
++output.parent.mkdir(parents=True, exist_ok=True)
++output.write_bytes(payload)
++PYBOOT
++    fi
+ 
+     EVAL "rm \"$TMP_DIR/boot.img\""
+ 

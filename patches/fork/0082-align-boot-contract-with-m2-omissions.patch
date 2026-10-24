@@ -1,0 +1,75 @@
+From: Codex local A376B compatibility adaptation
+Subject: [PATCH] Align boot verifier with selected M2 Face omission and donor Knox
+
+Reason: boot-contract-preflight43.txt rejects intentionally omitted
+vendor/etc/init/face-default-sec.rc. Existing SDP absence gate also encodes
+S22's workaround, whereas patch0065 retains complete AZH4 Knox after stale
+Nuke Knox patches failed. Do not claim S22 runtime failures apply to A37.
+Files: scripts/internal/verify_exynos9810_boot_contract.sh only.
+Require exact M2/star2lte/Face-disabled scope and run the existing Face omission
+verifier; retain both legacy Face file requirements for other donors. Require
+the retained AZH4 SDP implementation in compiled services.jar; other donors
+keep the SDP absence gate. All hardware/identity/ADB checks remain required.
+Verification: syntax/replay, wrong-profile rejection, actual final compiled
+boot-contract/release checks. APK/JAR payloads unchanged by this patch.
+Runtime Knox compatibility remains unverified and requires device logs.
+
+---
+--- a/scripts/internal/verify_exynos9810_boot_contract.sh
++++ b/scripts/internal/verify_exynos9810_boot_contract.sh
+@@ -10,6 +10,17 @@
+ WORK="${WORK_DIR:?WORK_DIR is not set}"
+ SYSTEM_PROP="$WORK/system/system/build.prop"
+ VENDOR_PROP="$WORK/vendor/build.prop"
++
++A376B_M2=false
++if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++    if [ "${ROM_MILESTONE:-}" != "M2" ] || [ "${TARGET_CODENAME:-}" != "star2lte" ] || \
++            [ "${EXYNOS9810_FACE_UNLOCK_DISABLED:-false}" != "true" ]; then
++        echo "Exynos9810 boot contract: unreviewed A376B omission profile" >&2
++        exit 1
++    fi
++    A376B_M2=true
++    python3 "$(dirname "$0")/verify_face_omission.py" verify "$WORK"
++fi
+ 
+ case "${TARGET_CODENAME:-}" in
+     starlte)
+@@ -66,10 +77,14 @@
+ require_file "$WORK/vendor/bin/hw/vendor.samsung.hardware.biometrics.face-service"
+ require_file "$WORK/vendor/etc/init/mobicore.rc"
+ require_file "$WORK/vendor/etc/init/pa_daemon_kinibi.rc"
+-require_file "$WORK/vendor/etc/init/face-default-sec.rc"
++if ! $A376B_M2; then
++    require_file "$WORK/vendor/etc/init/face-default-sec.rc"
++fi
+ require_file "$WORK/vendor/etc/init/vendor.samsung.hardware.authfw@1.0-service.rc"
+ require_file "$WORK/vendor/etc/sysconfig/vendor-apex-allowlist.xml"
+-require_file "$WORK/vendor/etc/vintf/manifest/face-default-sec.xml"
++if ! $A376B_M2; then
++    require_file "$WORK/vendor/etc/vintf/manifest/face-default-sec.xml"
++fi
+ 
+ require_file "$WORK/system/system/etc/permissions/authfw.xml"
+ require_file "$WORK/system/system/etc/permissions/cameraservice.xml"
+@@ -202,6 +217,12 @@
+ require_final_string "$SERVICES_JAR" "io/mesalabs/unica/PlayIntegrityHooks" "UN1CA services Play Integrity hooks"
+ require_final_string "$SEC_SETUP" "this_string_does_not_exist" "UN1CA SetupWizard navigation-step patch"
+ 
++if $A376B_M2; then
++    # M2 keeps the complete AZH4 Knox stack (patch0065). S22's SDP runtime
++    # workaround is not evidence that the different A37 implementation fails.
++    require_final_string "$SERVICES_JAR" "com/android/server/knox/dar/sdp/SdpManagerImpl" "retained AZH4 Knox SDP implementation"
++    echo "A376B M2 retains donor Knox SDP; runtime compatibility requires device logs"
++else
+ for SDP_NEEDLE in \
+     'SdpManagerImpl$SdpHandler' \
+     'Native_Sdp_TestSdpIoctl' \
+@@ -209,6 +230,7 @@
+     'SdpFileSystem'; do
+     require_final_absent "$SERVICES_JAR" "$SDP_NEEDLE" "boot-crashing Knox SDP bootstrap ($SDP_NEEDLE)"
+ done
++fi
+ 
+ # Production images must not contain the old first-stage logger or the heavy
+ # opt-in userspace recorder. The latter is allowed only for an explicit debug

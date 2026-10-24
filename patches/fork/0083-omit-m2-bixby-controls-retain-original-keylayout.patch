@@ -1,0 +1,135 @@
+From: Codex local A376B compatibility adaptation
+Subject: [PATCH] Hide omitted M2 Bixby remap and retain original key703 carrier
+
+Reason: attempt43.txt:2568 fails compiled remapper requirement. Patch0036
+omitted its incompatible A37 KeyGestureEvent hook but UI/keylayout stayed
+active. User explicitly chose omission/original keylayout on22/10/2026.
+Files: Settings module, device-stack keylayout writer, finalization keylayout
+fixer, boot-contract and release-default verifiers (listed in diff).
+Use stock G965F Generic.kl/AZH4 vendor WINK mapping for M2, hide selector and
+reject app selector; preserve other donor remapping. Verify all seven omitted
+feature/control XML keys absent in compiled output, supported positive control
+present, every703 carrier WINK and vendor KL identical to donor SHA256.
+Verification: source/stage KL comparison, syntax, patch replay, rebuilt
+SecSettings, compiled boot/default gates, original fork resume/package.
+No kernel/radio/ADB changes. Hardware key behavior still needs device logs.
+
+---
+--- a/unica/mods/settings/customize.sh
++++ b/unica/mods/settings/customize.sh
+@@ -87,7 +87,7 @@
+ import re, sys, xml.etree.ElementTree as ET
+ path = Path(sys.argv[1])
+ text = path.read_text()
+-keys = ("unica_allow_downgrade", "unica_allow_sdkbypass", "unica_secure_ss", "unica_ss_detection", "unica_gphotos")
++keys = ("unica_allow_downgrade", "unica_allow_sdkbypass", "unica_secure_ss", "unica_ss_detection", "unica_gphotos", "unica_bixby_action")
+ for key in keys:
+     pattern = r'^.*android:key="' + re.escape(key) + r'"[^\n]*\n'
+     text, count = re.subn(pattern, '', text, flags=re.M)
+@@ -95,7 +95,8 @@
+         raise SystemExit("Unexpected M2 optional control: " + key)
+ ET.fromstring(text)
+ path.write_text(text)
+-print("M2: removed five unsupported optional controls; donor behavior retained")
++assert "unica_bixby_app" not in text, "Unexpected Bixby app control requires review"
++print("M2: removed five unsupported feature controls and Bixby remap; donor behavior retained")
+ PYM2EXTRA
+ else
+ LOG "- Patching \"smali/com/android/settingslib/search/SearchIndexableResourcesMobile.smali\" in /system/system/priv-app/SecSettings.apk"
+--- a/unica/patches/exynos9810_device_stack/customize.sh
++++ b/unica/patches/exynos9810_device_stack/customize.sh
+@@ -592,6 +592,11 @@
+ key 116   POWER             WAKE
+ key 703   USER
+ EOF
++
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++        # Stock G965F Generic.kl and AZH4 Samsung vendor layout map703 to WINK.
++        sed -i 's/^key 703   USER$/key 703   WINK/' "$KL_DIR/gpio_keys.kl"
++    fi
+ 
+     _EXYNOS9810_SET_METADATA "system" "system/usr/keylayout/wg_pwrkey.kl" \
+         "/system/usr/keylayout/wg_pwrkey.kl" 0 0 644 "u:object_r:system_file:s0"
+--- a/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
+@@ -3284,22 +3284,26 @@
+     local KEYLAYOUT_DIR="$WORK_DIR/system/system/usr/keylayout"
+     local FILE
+     local COUNT=0
++    local KEYCODE="USER"
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++        KEYCODE="WINK"
++    fi
+ 
+     [ -d "$KEYLAYOUT_DIR" ] || return 0
+ 
+-    LOG "- Enabling dynamic Exynos9810 Bixby key remapping for physical key 703"
++    LOG "- Setting physical key 703 carrier to $KEYCODE for selected profile"
+     while IFS= read -r -d "" FILE; do
+         if grep -qE "^key[[:space:]]+703[[:space:]]+" "$FILE" 2>/dev/null; then
+             # Use a neutral Samsung keycode carrier for the physical Bixby key.
+             # SystemServer uses scan code 703 directly and consumes it before
+             # dispatching the action selected in UN1CA Settings. CAMERA and
+             # ASSIST both also trigger stock handlers on this One UI 8 base.
+-            sed -i -E "s/^(key[[:space:]]+703[[:space:]]+)[^[:space:]]+(.*)$/\1USER\2/" "$FILE"
++            sed -i -E "s/^(key[[:space:]]+703[[:space:]]+)[^[:space:]]+(.*)$/\1${KEYCODE}\2/" "$FILE"
+             COUNT=$((COUNT + 1))
+         fi
+     done < <(find "$KEYLAYOUT_DIR" -maxdepth 1 -type f -name "*.kl" -print0)
+ 
+-    LOG "  - Remapped key 703 in $COUNT keylayout file(s) to USER"
++    LOG "  - Mapped key 703 in $COUNT keylayout file(s) to $KEYCODE"
+ }
+ 
+ _EXYNOS9810_FINAL_PATCH_CAMERA_FLUSH_RECOVERY()
+--- a/scripts/internal/verify_exynos9810_boot_contract.sh
++++ b/scripts/internal/verify_exynos9810_boot_contract.sh
+@@ -213,7 +213,11 @@
+ require_final_string "$SEC_SETTINGS_INTELLIGENCE" "top_level_unica" "UN1CA Settings search key"
+ require_final_string "$FRAMEWORK_JAR" "io/mesalabs/unica/SamsungPropsHooks" "UN1CA SamsungProps hooks"
+ require_final_string "$FRAMEWORK_JAR" "io/mesalabs/unica/PlayIntegrityHooks" "UN1CA Play Integrity hooks"
++if $A376B_M2; then
++    require_final_absent "$SERVICES_JAR" "com/android/server/policy/PhoneWindowManager\$UnicaBixbyRunnable" "omitted M2 Bixby remapper"
++else
+ require_final_string "$SERVICES_JAR" "com/android/server/policy/PhoneWindowManager\$UnicaBixbyRunnable" "UN1CA Bixby remapper"
++fi
+ require_final_string "$SERVICES_JAR" "io/mesalabs/unica/PlayIntegrityHooks" "UN1CA services Play Integrity hooks"
+ require_final_string "$SEC_SETUP" "this_string_does_not_exist" "UN1CA SetupWizard navigation-step patch"
+ 
+--- a/scripts/internal/verify_exynos9810_release_defaults.py
++++ b/scripts/internal/verify_exynos9810_release_defaults.py
+@@ -80,7 +80,24 @@
+     with zipfile.ZipFile(system/"priv-app/SecSettings/SecSettings.apk") as z:
+         compiled_xml = [z.read(name) for name in z.namelist()
+                         if name.startswith("res/") and name.endswith(".xml")]
+-        if not any(contains(data,"unica_bixby_action") for data in compiled_xml):
++        if os.environ.get("ROM_SOURCE_CONFIG") == "essi_a376b_android16":
++            omitted=("unica_bixby_action", "unica_bixby_app", "unica_allow_downgrade",
++                     "unica_allow_sdkbypass", "unica_secure_ss", "unica_ss_detection", "unica_gphotos")
++            for key in omitted:
++                if any(contains(data,key) for data in compiled_xml):
++                    raise RuntimeError("Unsupported M2 compiled control present: "+key)
++            if not any(contains(data,"unica_games_spoof") for data in compiled_xml):
++                raise RuntimeError("Compiled M2 Extra Settings positive control absent")
++            import re
++            carriers=[]
++            for path in (system/"usr/keylayout").glob("*.kl"):
++                carriers.extend(re.findall(r"(?m)^key\s+703\s+(\S+)",path.read_text()))
++            if not carriers or set(carriers)!={"WINK"}:
++                raise RuntimeError("M2 key703 must retain original WINK mapping")
++            donor_kl=system/"usr/keylayout/Vendor_0075_Product_0100.kl"
++            if sha256(donor_kl.read_bytes()).hexdigest()!="f5cacb4896c414de1c8497d00a7d8bc8287c80bbb9b55e3c09d6473587a15dd8":
++                raise RuntimeError("M2 original Samsung vendor keylayout changed")
++        elif not any(contains(data,"unica_bixby_action") for data in compiled_xml):
+             raise RuntimeError("Compiled Bixby button selector absent")
+     import importlib.util
+     checker=ROOT/"unica/mods/s9_infinity_Wallpaper/source/verify_factory_live_default.py"
+@@ -88,7 +105,7 @@
+     module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+     module.verify(system/"framework/services.jar")
+     face_status = "selected Face omission" if face_disabled else "source-matched face removal/prompt bridge"
+-    print("PASS "+target+": "+face_status+", selected KernelSU runtime profile, Blue Infinity, Bixby and PIF defaults")
++    print("PASS "+target+": "+face_status+", selected KernelSU runtime profile, Blue Infinity, selected Bixby feature policy and PIF defaults")
+ if __name__=="__main__":
+     p=argparse.ArgumentParser(description=__doc__);p.add_argument("--work-dir",type=Path,required=True);p.add_argument("--target",required=True)
+     a=p.parse_args();verify(a.work_dir,a.target)

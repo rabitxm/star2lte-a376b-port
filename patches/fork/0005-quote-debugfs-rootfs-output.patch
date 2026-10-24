@@ -1,0 +1,20 @@
+Reason: m1-build-attempt1.txt:28 reports cp cannot stat the rootfs temporary output; debugfs -R parses its own command string and the workspace contains spaces.
+Affected: unica/patches/exynos9810_device_stack/customize.sh (_EXYNOS9810_COPY_ROOTFS_FILE).
+Verify: actual function copies five embedded rootfs files byte-for-byte against debugfs cat in a path containing spaces/plus/parentheses, metadata recorded, optional missing file skipped; bash -n and git diff --check. Evidence rootfs-path-checks.json.
+Rollback: reverse this patch; regenerate partial work_dir before retrying M1. No kernel/firmware bytes changed.
+
+diff --git a/unica/patches/exynos9810_device_stack/customize.sh b/unica/patches/exynos9810_device_stack/customize.sh
+index 0374ae8..86a7113 100644
+--- a/unica/patches/exynos9810_device_stack/customize.sh
++++ b/unica/patches/exynos9810_device_stack/customize.sh
+@@ -608,7 +608,9 @@ _EXYNOS9810_COPY_ROOTFS_FILE()
+     TMP_FILE="$TMP_DIR/exynos9810_rootfs_${ENTRY//\//_}"
+     rm -f "$TMP_FILE"
+     mkdir -p "$(dirname "$TMP_FILE")"
+-    if ! debugfs -R "dump $SRC $TMP_FILE" "$ROOTFS_IMG" >/dev/null 2>&1; then
++    # debugfs parses its own command string; shell quoting alone is insufficient.
++    if ! debugfs -R "dump \"$SRC\" \"$TMP_FILE\"" "$ROOTFS_IMG" >/dev/null 2>&1 || \
++            [ ! -f "$TMP_FILE" ]; then
+         LOGW "legacy Exynos9810 donor rootfs file not found: $SRC"
+         return 0
+     fi

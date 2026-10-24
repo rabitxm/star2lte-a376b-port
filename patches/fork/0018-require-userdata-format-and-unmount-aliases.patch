@@ -1,0 +1,85 @@
+Reason: flash-03 mkfs log proves USERDATA remained mounted through stacked /sdcard aliases; optional data format swallowed the error and installer returned RC=0. Require a real format and fail safely when aliases cannot be unmounted.
+Affected: platform/exynos9810/installer/repartition/format_partitions.sh; scripts/internal/verify_exynos9810_flashable.sh.
+Verify: shell syntax; simulated stacked/canonical aliases, busy mount and mkfs failure propagation; verifier rejects old optional script. Live flash-03 uses unchanged patch0017 ZIP plus explicit TWRP Format Data after all aliases are unmounted, verified by new UUID and missing old settings/probes. This patch is for subsequent packaging and is not retroactively included in flash-03 ZIP.
+Rollback: reverse patch; never treat installer success or ext4 TYPE alone as proof of fresh data. No kernel/blob changes.
+
+--- a/platform/exynos9810/installer/repartition/format_partitions.sh
++++ b/platform/exynos9810/installer/repartition/format_partitions.sh
+@@ -26,13 +26,33 @@
+     return 1
+ }
+ 
+-unmount_path()
++mounts_for_block()
+ {
+-    mountpoint="$1"
++    resolved_block="$(readlink -f "$1")" || return 1
++    while read -r source mounted_path rest; do
++        resolved_source="$(readlink -f "$source" 2>/dev/null)" || continue
++        if [ "$resolved_source" = "$resolved_block" ]; then
++            echo "$mounted_path"
++        fi
++    done </proc/mounts
++    return 0
++}
+ 
+-    awk -v mp="$mountpoint" '$2 == mp || index($2, mp "/") == 1 { print $2 }' /proc/mounts 2>/dev/null | sort -r | while read -r mounted_path; do
+-        umount "$mounted_path" 2>/dev/null || umount -l "$mounted_path" 2>/dev/null || true
+-    done
++unmount_block()
++{
++    # Recovery can retain multiple /sdcard binds of USERDATA. Unmount every
++    # alias, including stacked mounts, rather than only the /data path.
++    mounted_paths="$(mounts_for_block "$1")" || return 1
++    if [ -n "$mounted_paths" ]; then
++        printf '%s\n' "$mounted_paths" | sort -r | while read -r mounted_path; do
++            umount "$mounted_path" || exit 1
++        done || return 1
++    fi
++    remaining="$(mounts_for_block "$1")" || return 1
++    if [ -n "$remaining" ]; then
++        ui_print "E9810: block still mounted; refusing format: $1"
++        return 1
++    fi
+ }
+ 
+ format_ext4()
+@@ -48,7 +68,11 @@
+         return 1
+     fi
+ 
+-    unmount_path "$mountpoint"
++    unmount_block "$block" || {
++        ui_print "E9810: could not unmount $label aliases"
++        [ "$required" = "optional" ] && return 0
++        return 1
++    }
+     ui_print "E9810: formatting $label"
+     # shellcheck disable=SC2086
+     $MKE2FS -t ext4 -F -L "$label" "$block" >/tmp/format_"$label".log 2>&1 || {
+@@ -87,7 +111,7 @@
+         format_ext4 cache "$BY_NAME/CACHE" /cache optional
+         format_ext4 omr "$BY_NAME/OMR" /omr optional
+         format_ext4 preload "$BY_NAME/HIDDEN" /preload optional
+-        format_ext4 data "$BY_NAME/USERDATA" /data optional
++        format_ext4 data "$BY_NAME/USERDATA" /data required
+         ;;
+     *)
+         ui_print "E9810: unknown format mode: $mode"
+--- a/scripts/internal/verify_exynos9810_flashable.sh
++++ b/scripts/internal/verify_exynos9810_flashable.sh
+@@ -44,6 +44,14 @@
+         exit 1
+     }
+ done
++
++# A successful install must not silently preserve USERDATA after mkfs fails.
++unzip -p "$ZIP_FILE" exynos9810/format_partitions.sh > "$VERIFY_TMP/format_partitions.sh"
++grep -Fqx '        format_ext4 data "$BY_NAME/USERDATA" /data required' "$VERIFY_TMP/format_partitions.sh" &&
++    grep -Fq '    unmount_block "$block" || {' "$VERIFY_TMP/format_partitions.sh" || {
++    echo "Exynos9810 flashable verification: USERDATA format must be required and unmount all block aliases" >&2
++    exit 1
++}
+ 
+ for UNSAFE_ENTRY in exynos9810/bootlogger-init exynos9810/patch_bootlogger.sh; do
+     if grep -Fxq "$UNSAFE_ENTRY" "$VERIFY_TMP/outer.list"; then

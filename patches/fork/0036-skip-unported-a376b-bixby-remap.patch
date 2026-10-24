@@ -1,0 +1,22 @@
+From: Codex local compatibility adaptation
+Subject: [PATCH] Skip unported A37 Bixby remap patch
+
+Reason: `attempt15.txt:1038-1044` shows the optional Bixby patch cannot apply at PhoneWindowManager.smali:11681 because AZH4 is in a KeyGestureEvent branch, while the S9 patch expects KeyEvent registers. Avoid changing key dispatch until the physical key event path is reviewed. Skip only the optional Bixby remap for the exact A376B16 profile; all other donors keep upstream behavior.
+Files: scripts/internal/apply_modules.sh.
+Verification: AZH4 method inspection, exact-path guard, `bash -n`, clean build16.
+
+---
+--- a/scripts/internal/apply_modules.sh
++++ b/scripts/internal/apply_modules.sh
+@@ -91,6 +91,11 @@
+         if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] && \
+                 [[ "$p" == */0001-Disable-vendor-mismatch-warning.patch ]]; then
+             LOGW "A376B AZH4 relocates vendor-mismatch warning to a different synthetic lambda; keeping donor behavior until an exact port is reviewed"
++            continue
++        fi
++        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] && \
++                [[ "$p" == */0002-Add-UN1CA-Bixby-key-remap.patch ]]; then
++            LOGW "Skipping optional Bixby remap patch for A376B until its Android 16 key-event layout is ported"
+             continue
+         fi
+         APPLY_PATCH "$PARTITION" "$FILE" "$p"

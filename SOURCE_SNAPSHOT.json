@@ -1,0 +1,578 @@
+{
+  "date": "2026-10-24",
+  "purpose": "Source and selected diagnostic evidence for external help",
+  "fork_url": "https://github.com/Eend15/Unofficial-Un1ca-9810",
+  "fork_commit": "2b25ae6fc3098650be249bd1898e21e563cd5df1",
+  "active_patches": 88,
+  "device_identifier_replacements": 54,
+  "binary_firmware_raw_logs_credentials_included": false,
+  "device_serials_in_exported_text_are_role_aliases": true,
+  "files": {
+    ".gitignore": {
+      "bytes": 326,
+      "sha256": "82a88c020fdd03eb231a3550e49a1238a3366caa5b3cf4769169c135a3b0d2c4"
+    },
+    "AGENTS.md": {
+      "bytes": 6795,
+      "sha256": "b2785c1bf0b2f265309449166157e490b838f288937366cbd99e376821bdc3ea"
+    },
+    "README.md": {
+      "bytes": 3959,
+      "sha256": "bcdd84d97e1690bfd270c85f5e9ccf3e5dc794b70963d1085e853b4f736d5167"
+    },
+    "STATUS.md": {
+      "bytes": 45313,
+      "sha256": "c0075f9a3a26babec3c4808ab79f8e5d7f2f2335bf5b5198695f618d909f6e23"
+    },
+    "sources.lock.json": {
+      "bytes": 1589553,
+      "sha256": "91b29449827120784a853afa419e1eadee9dec9be1c10b7a64d48bd06ed324f1"
+    },
+    "firmware.lock.json": {
+      "bytes": 661055,
+      "sha256": "7cd700072bef15769759ddd3f86f1ed6eb02a90ac0167f6bd5dffaa84557ab97"
+    },
+    "tools.lock.json": {
+      "bytes": 4075,
+      "sha256": "004158f7b10bf132de0adaf93a23513e511dcc23b9b1534fcda5bf451d540a8b"
+    },
+    "docs/HELP-WANTED.md": {
+      "bytes": 4346,
+      "sha256": "0a347342eb4381cd85a6ed64a43275eb0d66b4f2601c98a5ed0034e7ca1e8053"
+    },
+    "docs/PLAN.md": {
+      "bytes": 14390,
+      "sha256": "84c75bfed46bc96525ece6f8477c1f46ee229d45a374d02a07bc064da30c8163"
+    },
+    "docs/adb-defaults.md": {
+      "bytes": 7249,
+      "sha256": "9d52a5f8f609badafffaab40d410a02c357d3ef628dd22bdffcc836c2bd06d67"
+    },
+    "docs/bugs.md": {
+      "bytes": 58485,
+      "sha256": "f8cd49e262ea0bee0216ca4f87c246ac2be8b6ca96df4bc47344d3d26f53358c"
+    },
+    "docs/build-environment.md": {
+      "bytes": 4132,
+      "sha256": "fe49407e2f9e1dfb6f4d1f5ad83e6e012ea56b82633467dabfea6807cadae8e8"
+    },
+    "docs/hw-diff.md": {
+      "bytes": 6726,
+      "sha256": "96c05061d4f34e16af3f69ce75e10e674e67aa27f6bfeede50e8840c2b32fac7"
+    },
+    "docs/log-protocol.md": {
+      "bytes": 4804,
+      "sha256": "ff028b5a0b2cdfc45df3a452ff56af2e8a7d45e19dcea0219e02b65fb6434b32"
+    },
+    "docs/m1-artifact-review.md": {
+      "bytes": 6285,
+      "sha256": "59d9fcbdd421e6dfb7de4cef00a1b9e867d5429fe53e542feb5c5a8924a3a4d3"
+    },
+    "docs/m1-boot-report.md": {
+      "bytes": 11604,
+      "sha256": "eb1a5de050fb0f9402a21be1059ce3bf3844f5a79e7e6d0bcdbf94c5f9c75179"
+    },
+    "docs/m1-build.md": {
+      "bytes": 9504,
+      "sha256": "ec110f5d4472329b16899ae1a052599ceaf5560e1884e009d00f903757b8016e"
+    },
+    "docs/m1-fresh-report.md": {
+      "bytes": 5495,
+      "sha256": "1204dfb930c5c84454806f64b38b611fa649fc39a87bb1854d2012f62b1cf41c"
+    },
+    "docs/m2-abi-review.md": {
+      "bytes": 6062,
+      "sha256": "85abc2e781b852e97a85a6c0975bf37ecde3a6e3e829343740881a3eb4648600"
+    },
+    "docs/m2-build.md": {
+      "bytes": 90285,
+      "sha256": "cfb98488383c1d6567e994f3407137a9a4dccc24127d2093849bc383a66dacef"
+    },
+    "docs/m2-early-diagnostic-review.md": {
+      "bytes": 3613,
+      "sha256": "d16804ec3d8a5cb5931fa11e7eade8abce0ae1e19248f703d3acb4d2b89a442b"
+    },
+    "docs/module-inventory.tsv": {
+      "bytes": 804,
+      "sha256": "53c67e5a0abad3ab61e8cafd8acf8e93f347ebda03a2780782f98c4f6d385d88"
+    },
+    "docs/patch-inventory.tsv": {
+      "bytes": 26477,
+      "sha256": "eae21e1595dfbc7c8455a75b94ade705c385eba6b13c410e656f1c1b04f0f765"
+    },
+    "docs/patch-matrix.md": {
+      "bytes": 50924,
+      "sha256": "d71a623eddea10d286be31263e515fbbdaf15307eb4aba1b672d9d2706e3e690"
+    },
+    "docs/release-retention.md": {
+      "bytes": 3032,
+      "sha256": "a5ec542aac5e5377d6d023bc00e204bc327b8c2616d8583feeb4f90e28572466"
+    },
+    "docs/repo-map.md": {
+      "bytes": 18930,
+      "sha256": "43cc4058076ad3a3ee6d6441ff84f236a03d58c58619fdafedc5fdb1a9c9add7"
+    },
+    "docs/sources.md": {
+      "bytes": 13218,
+      "sha256": "7b7eed388a04c09c34914dd6151b1c7fd470bd9ce401bfbf9243e30349385ad7"
+    },
+    "patches/fork/0001-host-path-quoting.patch": {
+      "bytes": 5385,
+      "sha256": "adf3c134b2bf3ff62fd43d9675cf4ae5576d870ed0348086750135ba0b346984"
+    },
+    "patches/fork/0002-match-samloader-firmware-user-agent.patch": {
+      "bytes": 1065,
+      "sha256": "f851005a7a233fb9eb654f88176697a852e69e6368ad900470b6b432ade88ff8"
+    },
+    "patches/fork/0003-m1-g965f-upstream-dsack-no-ksu.patch": {
+      "bytes": 10596,
+      "sha256": "957686077a2849fcdc4213caf860f107460ce481d623b250d9608ccd29ec965a"
+    },
+    "patches/fork/0004-build-bundled-f2fs-unpacker.patch": {
+      "bytes": 3065,
+      "sha256": "ace8c7caadc89b615d6a1f655aa3cc56825412f4b314bdda0f296652b4010d27"
+    },
+    "patches/fork/0005-quote-debugfs-rootfs-output.patch": {
+      "bytes": 1433,
+      "sha256": "96b24a099d4ed416ef950e484e9fdca19fea5f3bdd74cb2f654081983662a29f"
+    },
+    "patches/fork/0006-preserve-property-file-paths.patch": {
+      "bytes": 1541,
+      "sha256": "37818185b9d4e8b0179b09c7ed34b0bb6e3a2dbfb668eef12cb8c2ea75d07062"
+    },
+    "patches/fork/0007-harden-legacy-binary-extraction.patch": {
+      "bytes": 3971,
+      "sha256": "e468cbf3c1937e27887b13afc459f5bd7650a95146c732e90d514a3ae60438fe"
+    },
+    "patches/fork/0008-discover-compiler-llvm-tools.patch": {
+      "bytes": 1666,
+      "sha256": "c683957ba5f477a609b892e775f73445cbb4b037c82162edd5c4bdcf52235731"
+    },
+    "patches/fork/0009-honor-non-ksu-boot-template.patch": {
+      "bytes": 3608,
+      "sha256": "1ca0c94477d12224c117588dd477a14eb8bd432b3bc4362d25fedf14f4c31dbe"
+    },
+    "patches/fork/0010-ignore-generated-python-cache-in-work-hash.patch": {
+      "bytes": 1434,
+      "sha256": "19ba3ef383a6fb55ce00efd955f322977bc786cbba668a18c33c9bd2eb05d05b"
+    },
+    "patches/fork/0011-quote-ota-archive-path.patch": {
+      "bytes": 1668,
+      "sha256": "3010b2cb787840b3395560a7b5baea2fb1c7b4098cbc2536535b5899101ad7ac"
+    },
+    "patches/fork/0012-enforce-star2lte-model-assert.patch": {
+      "bytes": 1810,
+      "sha256": "da70acd0b4fee5ab30a09cf72ca0f08f38957b9a6d06556faab62eb2592af7e9"
+    },
+    "patches/fork/0013-use-present-twrp-installer-tools.patch": {
+      "bytes": 4161,
+      "sha256": "d9b4065bd305a270a35896a1c42b71dc9c771b80dc18718aba7b3b5523810ced"
+    },
+    "patches/fork/0014-disable-efs-journal-replay-in-installer.patch": {
+      "bytes": 1196,
+      "sha256": "da7d6b57b2edda0da22ce7792027f935a4b369050ab6090e278fc8053201e744"
+    },
+    "patches/fork/0015-pin-twrp-compatible-sgdisk-override.patch": {
+      "bytes": 3786,
+      "sha256": "a25c1c8969bc9e676c4bca2265619ba67b9c9b75f798137544b64c58edcc396c"
+    },
+    "patches/fork/0016-ordered-legacy-sideload-packaging.patch": {
+      "bytes": 18321,
+      "sha256": "9aa66a42dfce8457954e651f5b7bc18c76ca960d5de84f9abe6b4e41b0de6b77"
+    },
+    "patches/fork/0017-persist-usb-adb-and-autoblocker-defaults.patch": {
+      "bytes": 13232,
+      "sha256": "2b5bf995619ec7026e39917a21d9229d01c88d347ed851269d13389600c27a1b"
+    },
+    "patches/fork/0018-require-userdata-format-and-unmount-aliases.patch": {
+      "bytes": 3916,
+      "sha256": "d402e6506a8e2c932a28f5018861f688e54272a171c34e6baa5b1d7aa2f04bb4"
+    },
+    "patches/fork/0019-retain-milestone-rom-artifacts-without-overwrite.patch": {
+      "bytes": 10266,
+      "sha256": "42c295727c5aa6d5a8d292dd0490bd59ddc028832dec8bdaa1ee7312d9fd2bc4"
+    },
+    "patches/fork/0020-support-local-imported-firmware-without-fus-identity.patch": {
+      "bytes": 1900,
+      "sha256": "9742f5e50a957bf7a298e52a5b511c477bdc6b601d942e44295b6e7dc60fd17a"
+    },
+    "patches/fork/0021-review-a376b-adb-lifecycle-register-layout.patch": {
+      "bytes": 3804,
+      "sha256": "8c9d9920f3d48afe3149130a93052bb37fb566798b2a3b65ba5bc7ecb64c9b5e"
+    },
+    "patches/fork/0022-add-parallel-a376b-android16-donor-and-cache-identity.patch": {
+      "bytes": 8746,
+      "sha256": "db54fb4e814c2e65f7b20d2f37b13ff6f1bf3c655666929fb7af7ba5e670e151"
+    },
+    "patches/fork/0023-preserve-donor-multimic-prepare-abi-with-null-guard.patch": {
+      "bytes": 4035,
+      "sha256": "6410cdcb0d00c361edb9a88cf61e81c03b8bbad776e82e4ff6ca1531c051e273"
+    },
+    "patches/fork/0024-disable-absent-a376b-optional-action-classifier-claim.patch": {
+      "bytes": 2527,
+      "sha256": "a49e6074b58f0dbb1faddaebb50a3cf1200f1524ba529bb401e754e2ea516ac5"
+    },
+    "patches/fork/0025-treat-missing-and-none-pet-clustering-as-disabled.patch": {
+      "bytes": 2461,
+      "sha256": "9c8dfa7ce1591a2115e850ef041d3d763147824845f92290afd0e6650f964c86"
+    },
+    "patches/fork/0026-remove-absent-a376b-legacy-ardoodle-solution-claim.patch": {
+      "bytes": 2270,
+      "sha256": "d99544e6aaf535f78403a31f57926106e3380c09b79fa3f1ea09d25230b3f453"
+    },
+    "patches/fork/0027-guard-a376b-camera-stagefright-abi.patch": {
+      "bytes": 1828,
+      "sha256": "10a8a7826ac28e285e9e18566c716681dde0ca0e37d91bee8a3f7d16657a02ed"
+    },
+    "patches/fork/0028-select-reviewed-a376b-dvfs-feature-class.patch": {
+      "bytes": 1889,
+      "sha256": "0e8f0d92b96bb966835a004c2a16c9e49068ac363d302c50951cabb4e1ba057e"
+    },
+    "patches/fork/0029-omit-face-hal-for-m2-profile.patch": {
+      "bytes": 4478,
+      "sha256": "3a5966c1c3b51769dd2ea7281a50357db486c15ea43cb6480d7068f44919287c"
+    },
+    "patches/fork/0030-adapt-a376b-legacy-sehlights-cache-api.patch": {
+      "bytes": 12500,
+      "sha256": "dda74d8727c01ce129aa9ffb2351264d1f1ff55785f4a3b22a9830077a8c20b2"
+    },
+    "patches/fork/0031-guard-a376b-motionphoto-encoder-method.patch": {
+      "bytes": 1951,
+      "sha256": "2673f02e9c59276156d676cd4490b7b7461fd8345ca55c559355c89cb210743e"
+    },
+    "patches/fork/0032-port-a376b-stagefright-hevc-branch.patch": {
+      "bytes": 4412,
+      "sha256": "0085958b3009efe0be57df85c66f610dafd0c43f2ee7d18a703aae50652811b1"
+    },
+    "patches/fork/0033-adapt-a376b-globalpostproc-encoder-register.patch": {
+      "bytes": 2343,
+      "sha256": "a1949a99a44bc488009e73e39909b3f12e87910bbd7e28045cc3442fa8666d3a"
+    },
+    "patches/fork/0034-guard-absent-a376b-vexfwk-service.patch": {
+      "bytes": 2263,
+      "sha256": "13dc93b49a80d4e286c63e69eaf75abb4af893d50823afd8834d6ec67ce1af6f"
+    },
+    "patches/fork/0035-skip-unported-a376b-mismatch-warning-patch.patch": {
+      "bytes": 1441,
+      "sha256": "ca374b35c4e9a8e603f26865a57b3678b3449291f0652601f77a4735b3384ad4"
+    },
+    "patches/fork/0036-skip-unported-a376b-bixby-remap.patch": {
+      "bytes": 1393,
+      "sha256": "88718e682b63d230bc4cb59e13bede83ad23ceab6cf9d6fad57ba3de2d454ef0"
+    },
+    "patches/fork/0037-guard-absent-a376b-hdm-constructor.patch": {
+      "bytes": 1797,
+      "sha256": "6acaac442f7dacabe78659c1be36416dc6f9462ddc4114c3745a108d18755112"
+    },
+    "patches/fork/0038-guard-absent-a376b-knox-taproxy.patch": {
+      "bytes": 1741,
+      "sha256": "0b60d971cf809de9a78579411ccdd5ac28452f1ea34b49cdb07e9d07da3e3b80"
+    },
+    "patches/fork/0039-port-a376b-core-rune-dyn-resolution.patch": {
+      "bytes": 1887,
+      "sha256": "ddfc7b449111d16c6091db734e0b84bd92577b71988325110216a5b9a981e5f8"
+    },
+    "patches/fork/0040-port-a376b-game-display-listener-resolution.patch": {
+      "bytes": 2311,
+      "sha256": "f6794bb0ec79092f0739753eebb62181c117c4ea41f2bb897b6c3b49b6b4d19c"
+    },
+    "patches/fork/0041-m2-native-fixed-resolution-profile.patch": {
+      "bytes": 5711,
+      "sha256": "9e0be9c599602da0f65aa7fd4c2386cb096ef6c741cbd4a956592a99b304e2e0"
+    },
+    "patches/fork/0042-a376b-dex-class-resolution-and-hdr-controllers.patch": {
+      "bytes": 3547,
+      "sha256": "5f548b8bd7af63eab745b7296464aa5cfb831b1d38f5741a5fbcd868ad6c32a8"
+    },
+    "patches/fork/0043-a376b-rear-capacitive-fingerprint.patch": {
+      "bytes": 8915,
+      "sha256": "ef6f6e889961389d2b185d7e8657ada58a0527617d8e9670b60c4705c297a382"
+    },
+    "patches/fork/0044-port-a376b-refresh-rate-configuration.patch": {
+      "bytes": 7797,
+      "sha256": "a95f18b2cda293d4adc9102775dbedb835ccd6a5a9efaadadec32c41de17bfc4"
+    },
+    "patches/fork/0045-a376b-hardware-mdnie-methods.patch": {
+      "bytes": 7875,
+      "sha256": "870b112a83208988a72ae11ae77373adcbf444c83b19fce8525af082c3172023"
+    },
+    "patches/fork/0046-a376b-identical-constant-return.patch": {
+      "bytes": 1303,
+      "sha256": "ae32e1be50804957b6fe41190ed8d91c7d6bfad627305b518553799408a528cf"
+    },
+    "patches/fork/0047-a376b-empty-custom-wifi-backoff.patch": {
+      "bytes": 1769,
+      "sha256": "202ff6fe615ab1ab324c8aab2a613c0d71eb9e0969da15079472250c9062fdad"
+    },
+    "patches/fork/0048-m2-face-omission-finalization-audit.patch": {
+      "bytes": 10242,
+      "sha256": "726cb0fe6731f45d295629c5ddb2d844c4baedcf7e19c702ae220c4970eac42a"
+    },
+    "patches/fork/0049-m2-retain-donor-wifi-ui.patch": {
+      "bytes": 3966,
+      "sha256": "46589b85ee95a946aaab2c14a0be546975968fd3078b476d0c9bff42ea25f57e"
+    },
+    "patches/fork/0050-fix-smali-replaceall-caller-method-leak.patch": {
+      "bytes": 3127,
+      "sha256": "5c1c7f34e189eaf9053eca976ba3b3c2b6e731e850598c5a8fd6e26c3670d29a"
+    },
+    "patches/fork/0051-port-a376b-wifi-ape-personalization-backend.patch": {
+      "bytes": 9842,
+      "sha256": "503d6223e764824fbdf4d13ea7ecfe6be8800faf285a9319784aa396e9a6fc19"
+    },
+    "patches/fork/0052-port-a376b-softap-capability-fallbacks.patch": {
+      "bytes": 13238,
+      "sha256": "401ee461dcbfb4c352ff7c7b9ec9d90a45fe465c2cf47cbc92465feae04dde05"
+    },
+    "patches/fork/0053-adapt-a376b-saiv-model-layout.patch": {
+      "bytes": 5274,
+      "sha256": "0c482c6653fbe2bb381e18709615ff7b3e46266170a0bf90e1a21bc9c474c4ba"
+    },
+    "patches/fork/0054-rebuild-modified-a376b-jars-and-preserve-p2p.patch": {
+      "bytes": 4184,
+      "sha256": "73f3c0730db5c3a44d233d494f6c3e24f557338e5419ea58b63483ded3dd8e9c"
+    },
+    "patches/fork/0055-port-a376b-platform-signature-integration.patch": {
+      "bytes": 13257,
+      "sha256": "eb8c73a239dba42e9a6d00745d9f961b74a1fdd9e8a1c0668d21f20b7ca606ea"
+    },
+    "patches/fork/0056-retain-a376b-donor-blocklist-policy.patch": {
+      "bytes": 1372,
+      "sha256": "6653fe6bddf2d9e44d37ad17d86102c6e554d3ee95c5cd2d09e0b73e6572ba4c"
+    },
+    "patches/fork/0057-skip-a376b-legacy-fota-shortcut.patch": {
+      "bytes": 1383,
+      "sha256": "5ffddbb6466669c3b1fb8aaf15e2270e9679eb6597affbe0ff2593d1808db40e"
+    },
+    "patches/fork/0058-skip-a376b-fota-smali-hook.patch": {
+      "bytes": 1203,
+      "sha256": "3b5d4f49991b313300d6b758790bc7210895e36b16e853d6f1a8ae89b4aed88e"
+    },
+    "patches/fork/0059-skip-a376b-legacy-network-speed-hook.patch": {
+      "bytes": 1197,
+      "sha256": "8b92113fa7ce43b731e8cd0a4f0b053a8eea028ebba76ef3cd8e79b1acc3fde5"
+    },
+    "patches/fork/0060-skip-a376b-poweroff-lock-hook.patch": {
+      "bytes": 1148,
+      "sha256": "ce3d123a0fba422d99c22805b4a3e24a65cb017fbae3882559d5ba17648b37c4"
+    },
+    "patches/fork/0061-skip-a376b-secure-folder-legacy-hook.patch": {
+      "bytes": 1154,
+      "sha256": "06d148b77ecde5f7ec9090fb048679de5f8bb70f69b62d5fe663a043f2a19054"
+    },
+    "patches/fork/0062-skip-a376b-smartview-qprune-hook.patch": {
+      "bytes": 1139,
+      "sha256": "5531e7f4ce2fe0043766e9763877202514f7d319c65c7fa66ff7db3bed8eab1e"
+    },
+    "patches/fork/0063-skip-a376b-dual-messenger-allow-all.patch": {
+      "bytes": 1109,
+      "sha256": "55899e5b5bae2fd38d825d92d965c17ba64b4f0ad7e97699a7be3e7fd6c27476"
+    },
+    "patches/fork/0064-skip-missing-a376b-knox-taproxy.patch": {
+      "bytes": 1706,
+      "sha256": "cffc96a9f704d2dd9a7a6fcc9e6491d63fbdb175ca19d9b68295551a4749a2c9"
+    },
+    "patches/fork/0065-retain-a376b-donor-knox-stack.patch": {
+      "bytes": 1197,
+      "sha256": "13af3dd837361bf258dc4d40203a45e35d3f49906217f3094cbce886ebfdc0d6"
+    },
+    "patches/fork/0066-retain-a376b-hideapp-list-donor.patch": {
+      "bytes": 1063,
+      "sha256": "5a4ca400010aafa2edfc954d1c2d5dd3ef3e029b1aa8591eaa4c274b352522b2"
+    },
+    "patches/fork/0067-retain-a376b-donor-key-attestation.patch": {
+      "bytes": 1097,
+      "sha256": "ef6fe9b0c08de0f8abb70b61ebc928a7a238de7cc602cc8e1005ae9b79fefe47"
+    },
+    "patches/fork/0068-retain-a376b-donor-knoxpatch-behavior.patch": {
+      "bytes": 1369,
+      "sha256": "c1d3ab54dcfff64d922f591faea3a2690f897de0498f354cb2ea9a5a4cb6c724"
+    },
+    "patches/fork/0069-retain-a376b-donor-adaptive-tone.patch": {
+      "bytes": 1594,
+      "sha256": "5b0ece053daebe53ba908718da60d84102d07c94599e3585f3eb0a12188304be"
+    },
+    "patches/fork/0070-skip-a376b-adaptive-tone-apk-patches.patch": {
+      "bytes": 1146,
+      "sha256": "01f3e6f9afedb35697aa5087837f4a1e067a25f5622a7ee7748b54b1cf833b42"
+    },
+    "patches/fork/0071-port-a376b-settings-search-factory.patch": {
+      "bytes": 4853,
+      "sha256": "7ec1e45046102915bb4b43bc026835e7bb084289a250cdd49f888af26d8c8f9c"
+    },
+    "patches/fork/0072-port-a376b-multisound-selection.patch": {
+      "bytes": 2459,
+      "sha256": "5655c1b5f8715a476f820519f6b0c61dda9c32bd6cea3ffe56c6e65f3494ced4"
+    },
+    "patches/fork/0073-port-a376b-setup-navigation.patch": {
+      "bytes": 2700,
+      "sha256": "e70d81f900b66c4de38d877c4faba1d74b12ebb39c75ef22119b5b44961515ea"
+    },
+    "patches/fork/0074-retain-a376b-donor-disclaimer.patch": {
+      "bytes": 1291,
+      "sha256": "b4b261f8ccf9cfeb66bd3bca83f28e70c7ea2075509e1ce676d914f4862e7cb2"
+    },
+    "patches/fork/0075-scope-a376b-optional-settings-controls.patch": {
+      "bytes": 3265,
+      "sha256": "64f1df44d3bdac1bb95dd8f37e134bb8343a97e0d8ee2d924c91500e25051d1f"
+    },
+    "patches/fork/0076-retain-a376b-donor-systemui-tweaks.patch": {
+      "bytes": 1653,
+      "sha256": "dcbc41280a4f5ad3a8d0755e4456a7836775fc6713ff5a740a3a6a240caba156"
+    },
+    "patches/fork/0077-add-a376b-native32-compatibility.patch": {
+      "bytes": 22296,
+      "sha256": "01dfd79a99b80e574b0df63e0b4ddf1009015bf5d41a5f63576302dacf70461f"
+    },
+    "patches/fork/0078-remove-a376b-euicc-mep-declaration.patch": {
+      "bytes": 1806,
+      "sha256": "3f5045c5b6e9dd46767cc3dc9670feb5cd6cac117f7e9b597855bb24f45cca4b"
+    },
+    "patches/fork/0079-port-a376b-securefolder-desktop-guard.patch": {
+      "bytes": 2146,
+      "sha256": "37b86837079d9cd365ac26adc1c0dd950dae51a36de617325fa00b8407d03aaa"
+    },
+    "patches/fork/0080-scope-s22-only-final-workarounds.patch": {
+      "bytes": 3450,
+      "sha256": "845af0d14da0842afbfa6e3d4a488e22e7550db3085992e115590340f1621c52"
+    },
+    "patches/fork/0081-recognize-a376b-photoeditor-package-path.patch": {
+      "bytes": 2300,
+      "sha256": "ef4e2feb26d8302554fb0c4c89b2dbfc5af8afabd72ebb0ee85ce2e982884a4c"
+    },
+    "patches/fork/0082-align-boot-contract-with-m2-omissions.patch": {
+      "bytes": 3649,
+      "sha256": "8332773dbb45c5fa771e726837ac98ba48d735e1bf17291d09c8a959244e13f2"
+    },
+    "patches/fork/0083-omit-m2-bixby-controls-retain-original-keylayout.patch": {
+      "bytes": 8024,
+      "sha256": "a00a4fbff197fac239bd7259024c91354788aeba1612521ca0c949b08c74da51"
+    },
+    "patches/fork/0084-remove-absent-a376b-otapreopt-policy-rule.patch": {
+      "bytes": 2136,
+      "sha256": "d56b2fff7a2f003b0620acd8184ef2ec13c6b4c6cacc758a76b2977be4629039"
+    },
+    "patches/fork/0086-prepare-g965f-commandline-diagnostic.patch": {
+      "bytes": 4339,
+      "sha256": "79eac2aee0204998df30b42747f582fe14f8bfc40c36c626d0174b31b25d9306"
+    },
+    "patches/fork/0087-add-optional-pid1-pmsg-probe.patch": {
+      "bytes": 9264,
+      "sha256": "4331fdb2d3fffaade866add54c74af4ae73ea95efd65d92663c20cf1f976ed2c"
+    },
+    "patches/fork/0088-prototype-private-namespace-monitor.patch": {
+      "bytes": 4543,
+      "sha256": "1befb2cbde17cb40a1b4e0202b5ec0467bbaeb18b0d2496f4fece800d0ad8d35"
+    },
+    "patches/fork/0089-verify-private-pmsg-recorder-before-boot.patch": {
+      "bytes": 1279,
+      "sha256": "2c3067526b26a0523bf55fd9b755027d8d25782235a3a6eef251c4556b1d2035"
+    },
+    "patches/fork/0090-probe-m2-early-boot-to-cache.patch": {
+      "bytes": 1399,
+      "sha256": "2b7244987c45e74d6e440145d0e9a0b0ad1b1d28477b4625ef639f41a3d5b49c"
+    },
+    "patches/fork/0091-calibrate-m2-cache-probe-on-m1.patch": {
+      "bytes": 4257,
+      "sha256": "b234bcb1d7491d396042b2f7b5e784dad781f455a4bf36f1aca93a97cd965bfc"
+    },
+    "patches/fork/0092-unfiltered-kmsg-heartbeat-probe.patch": {
+      "bytes": 3219,
+      "sha256": "c0e3d06d79e60fb785611e2b7a512770837804dda5f3c7011708d0a2e8c253c4"
+    },
+    "patches/fork/0093-batch-kmsg-heartbeats.patch": {
+      "bytes": 4972,
+      "sha256": "6ce792620a55dcdc1cc744208b30d7d37257f881e17a008c3a7cc1dea8b1f2f5"
+    },
+    "patches/fork/0094-report-init-exec-through-cache-child.patch": {
+      "bytes": 6103,
+      "sha256": "d95132d5d30200bbbce1da528407852ab6603238b6f5f39966913f13cdb1b118"
+    },
+    "patches/fork/0095-retain-cache-init-logger-after-vendor-restore.patch": {
+      "bytes": 4698,
+      "sha256": "05c8c53807ee144c1bebf8df70f7780f28ff255468d17d3a7e5b663b65120299"
+    },
+    "patches/fork/0096-m2-bootstrap-compat-on-exynos9810.patch": {
+      "bytes": 6788,
+      "sha256": "6ae840272e1b5ffda1fc821ebd8c6697456ffaf3185f4c3dc2df1670492f3421"
+    },
+    "patches/fork/0097-record-final-stage-before-userdata-format.patch": {
+      "bytes": 3038,
+      "sha256": "b9579c2f061886c66a22ff48eb15673517bb42084b085fabee6188400c06389b"
+    },
+    "patches/fork/0098-record-existing-source-for-collaboration.patch": {
+      "bytes": 25299,
+      "sha256": "b83a07cf523225fe105a89f7826421f9628780ff1e9d75c19715aa88a6a6f345"
+    },
+    "patches/fork/series": {
+      "bytes": 4198,
+      "sha256": "236b3db39741394714cc1681fb2f57407c3a59b17c6d1c637cc67e1bbc9caf28"
+    },
+    "patches/kernel/0001-star2lte-madvise-wipeonfork-backport.patch": {
+      "bytes": 5268,
+      "sha256": "10a78800d22b76d70463b5c3496d74e2079cd5b5b1fbd2d3cd7a6086add18ff4"
+    },
+    "diagnostics/README.md": {
+      "bytes": 2003,
+      "sha256": "975776f9029e5512382ba057257a693919a90f55436e7654da2ada21e2ba63cc"
+    },
+    "diagnostics/bootlogger_pid1_probe10.c": {
+      "bytes": 23869,
+      "sha256": "8bd9a8297998d5c6e6b71915b3e6bd7efaf12f9658cab2c60682c6e37c8ba0ca"
+    },
+    "diagnostics/bootlogger_pid1_probe11.c": {
+      "bytes": 26736,
+      "sha256": "d062a945654cea0ea4e4f77547be6a7187fac888b9513d4a7488e54de1b171c4"
+    },
+    "diagnostics/probe11-wait-status.patch": {
+      "bytes": 6771,
+      "sha256": "5c07957816a9729ab3e2b10802cf286f0d1a9d770ec718a8075bd64718acbbd8"
+    },
+    "diagnostics/replay_secilc_in_chroot.sh": {
+      "bytes": 2344,
+      "sha256": "9fb6869e328bb8f940bca6fa31ff4b1f251e823af2a96583acbd3fd29d8fc2cb"
+    },
+    "tools/export_github_handoff.py": {
+      "bytes": 4516,
+      "sha256": "93dfd8838144689c0d52f9a7c11399846819ae2d5071dfb2d892c8013ec6800b"
+    },
+    "tools/prepare_fork.sh": {
+      "bytes": 1351,
+      "sha256": "22ca13cef8f0629f79bdba272dcf1fba5e9f3da9baf487efb3384a2f373e92c4"
+    },
+    "support/evidence/probe10-init.txt": {
+      "bytes": 7889,
+      "sha256": "32b31e76372d232585de362655fab6831d7d60cf44eca8698615c501d491296e"
+    },
+    "support/evidence/probe10-ptrace.txt": {
+      "bytes": 1016,
+      "sha256": "afcda42e6557d6e7b380db2fb3abd78a9b6a30f2d5fed7363c24c93237efd603"
+    },
+    "support/evidence/probe11-selftests.txt": {
+      "bytes": 349,
+      "sha256": "6ce2e3fad71491c29b8dab3f4aee4e11245ecce2270b3727717b6a4e81823436"
+    },
+    "support/evidence/secilc-argv.txt": {
+      "bytes": 520,
+      "sha256": "e0dbc5b097c8ba7a7aa0b918ab4a801109000ad71189cba92f13cb0ce898cd81"
+    },
+    "support/evidence/secilc-recovery-stderr.txt": {
+      "bytes": 205,
+      "sha256": "64b801b2ad70764a25d2d1bc797edb3afa6ddd162ed1853386964be7a643fcd2"
+    },
+    "support/evidence/secilc-runtime.json": {
+      "bytes": 2087,
+      "sha256": "2651d720dac1aed9a91968b800fd32e9b36cf93dc9ebc8c3c1defd109ede7fe9"
+    },
+    "support/evidence/source-replay-audit.json": {
+      "bytes": 3934,
+      "sha256": "11178fb362486e2e2d0bdeb7be8ce4ccd13aa427bb83e3390cf2eb69e91f5cbd"
+    }
+  },
+  "canonical_patch_tool": "GNU patch --batch --forward -p1 (dry-run before each application)",
+  "source_replay_verified": {
+    "patches": 88,
+    "modified_or_added_files": 68,
+    "result": "PASS"
+  }
+}

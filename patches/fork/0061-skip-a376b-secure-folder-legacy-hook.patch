@@ -1,0 +1,23 @@
+From: Codex local A376B compatibility adaptation
+Subject: [PATCH] Keep AZH4 Secure Folder Settings behavior
+
+Reason: attempt29.txt:1239,1241 reports missing legacy Usefulfeature$1 and
+FunctionKeyUtils classes in the CSC quick-switch patch. Preserve donor behavior
+for A376B Android16 and retain this patch for other donors.
+Files: scripts/internal/apply_modules.sh.
+Verification: exact module path/profile guard, shell syntax and replay61; clean
+build follows. Revert0061.
+
+---
+--- a/scripts/internal/apply_modules.sh
++++ b/scripts/internal/apply_modules.sh
+@@ -125,6 +125,11 @@ APPLY_SMALI_PATCHES()
+             LOGW "A376B AZH4 relocated the power-off lock Settings controller; retaining donor behavior for M2"
+             continue
+         fi
++        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] && \
++                [[ "$p" == */csc/smali/system/priv-app/SecSettings/SecSettings.apk/0003-Enable-quick-switch-to-Secure-Folder-feature.patch ]]; then
++            LOGW "A376B AZH4 relocated Secure Folder Settings classes; retaining donor behavior for M2"
++            continue
++        fi
+         APPLY_PATCH "$PARTITION" "$FILE" "$p"

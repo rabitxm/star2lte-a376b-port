@@ -1,0 +1,89 @@
+From: Codex local M2 profile adaptation
+Subject: [PATCH] Keep M2 A376B at native star2lte resolution for boot test
+
+Reason: user selected a fixed-resolution M2 boot test after AZH4 Settings resolution preflight failed across the old 57-file patch (resolution-settings-preflight.txt). Disable the dynamic-resolution recipe only for M2/A376B16, retain native 1440x2960/base density 560 from the fork, clear the switcher feature claim in both feature files after overlays, and require that disabled state in the final audit. M1 resets the selection; unrelated profiles are rejected.
+Files: target/star2lte/profiles/m1-g965f-no-ksu.sh; target/star2lte/profiles/m2-g965f-a376b-android16-no-ksu.sh; target/star2lte/config.sh; unica/patches/exynos9810_device_stack/customize.sh; unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh.
+Verification: M1/M2/wrong-profile config fixtures, shell syntax, complete patch replay, clean build23 shows no dynamic-resolution recipe edits; final feature XML must be empty/absent. Native resolution and hidden Settings switcher require runtime confirmation. ADB rules, vendor blobs, radio and pinned kernel remain unchanged.
+
+---
+--- a/target/star2lte/profiles/m1-g965f-no-ksu.sh
++++ b/target/star2lte/profiles/m1-g965f-no-ksu.sh
+@@ -3,6 +3,7 @@
+ # duhansysl OneUI7 enforcing prebuilt without KernelSU; no kernel is rebuilt.
+ _STAR2LTE_M1_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)"
+ export ROM_MILESTONE="M1"
++export STAR2LTE_M2_FIXED_RESOLUTION="false"
+ export UN1CA_DONOR_CONFIG="essi"
+ export STAR2LTE_BUILD_MODEL="SM-G965F"
+ export EXYNOS9810_TARGET_OS_FILE_SYSTEM_TYPE="ext4"
+--- a/target/star2lte/profiles/m2-g965f-a376b-android16-no-ksu.sh
++++ b/target/star2lte/profiles/m2-g965f-a376b-android16-no-ksu.sh
+@@ -4,3 +4,5 @@
+ export UN1CA_DONOR_CONFIG="essi_a376b_android16"
+ # Omit unsupported A37-to-S9 Face HAL bridge for this M2 profile.
+ export EXYNOS9810_FACE_UNLOCK_DISABLED="true"
++# User-selected M2 boot-test limitation: native panel resolution, no switcher.
++export STAR2LTE_M2_FIXED_RESOLUTION="true"
+--- a/target/star2lte/config.sh
++++ b/target/star2lte/config.sh
+@@ -49,4 +49,11 @@
+ # Exynos9810 has physical SIM support only; keep donor eSIM capability off.
+ TARGET_COMMON_SUPPORT_EMBEDDED_SIM=false
+ TARGET_COMMON_SUPPORT_DYN_RESOLUTION_CONTROL=true
++if [ "${STAR2LTE_M2_FIXED_RESOLUTION:-false}" = "true" ]; then
++    if [ "${UN1CA_DONOR_CONFIG:-}" != "essi_a376b_android16" ] || [ "${ROM_MILESTONE:-}" != "M2" ]; then
++        printf 'Fixed-resolution boot-test profile requires M2 A376B Android16.\n' >&2
++        return 1
++    fi
++    TARGET_COMMON_SUPPORT_DYN_RESOLUTION_CONTROL=false
++fi
+ TARGET_CAMERA_SUPPORT_SDK_SERVICE=false
+--- a/unica/patches/exynos9810_device_stack/customize.sh
++++ b/unica/patches/exynos9810_device_stack/customize.sh
+@@ -1776,6 +1776,9 @@
+         # it after the legacy floating-feature restore
+         # so later donor files cannot hide the One UI 8 Settings toggle.
+         _EXYNOS9810_SET_FLOATING_FEATURE "$FILE" "SEC_FLOATING_FEATURE_LCD_SUPPORT_EXTRA_BRIGHTNESS" "TRUE"
++        if [ "${STAR2LTE_M2_FIXED_RESOLUTION:-false}" = "true" ]; then
++            _EXYNOS9810_DELETE_FLOATING_FEATURE "$FILE" "SEC_FLOATING_FEATURE_COMMON_CONFIG_DYN_RESOLUTION_CONTROL"
++        fi
+         _EXYNOS9810_SET_FLOATING_FEATURE "$FILE" "SEC_FLOATING_FEATURE_CAMERA_SUPPORT_AVATAR" "FALSE"
+         _EXYNOS9810_SET_FLOATING_FEATURE "$FILE" "SEC_FLOATING_FEATURE_CAMERA_SUPPORT_DOWNLOAD_EFFECT" "FALSE"
+         _EXYNOS9810_SET_FLOATING_FEATURE "$FILE" "SEC_FLOATING_FEATURE_CAMERA_CONFIG_QRCODE_INTERVAL" "500"
+--- a/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
+@@ -6342,6 +6342,12 @@
+ 
+     _EXYNOS9810_FINAL_RESTORE_FLOATING_FEATURE_FILES || return 1
+ 
++    if [ "${STAR2LTE_M2_FIXED_RESOLUTION:-false}" = "true" ]; then
++        LOG "- Keeping M2 at native star2lte resolution (1440x2960, base density 560); no resolution switcher"
++        _EXYNOS9810_FINAL_SET_FLOATING_FEATURE_BOTH \
++            "SEC_FLOATING_FEATURE_COMMON_CONFIG_DYN_RESOLUTION_CONTROL" "" || return 1
++    fi
++
+     _EXYNOS9810_FINAL_SET_FLOATING_FEATURE_BOTH \
+         "SEC_FLOATING_FEATURE_BATTERY_SUPPORT_LONGLIFE_OPTION" "TRUE" || return 1
+     _EXYNOS9810_FINAL_SET_FLOATING_FEATURE_BOTH \
+@@ -6881,10 +6887,17 @@
+             LOGE "Exynos9810 auto-brightness mode is not set in $REL"
+             return 1
+         }
+-        grep -q '<SEC_FLOATING_FEATURE_COMMON_CONFIG_DYN_RESOLUTION_CONTROL>WQHD,FHD,HD</SEC_FLOATING_FEATURE_COMMON_CONFIG_DYN_RESOLUTION_CONTROL>' "$REL" || {
+-            LOGE "Dynamic resolution control is not enabled in $REL"
+-            return 1
+-        }
++        if [ "${STAR2LTE_M2_FIXED_RESOLUTION:-false}" = "true" ]; then
++            if grep -q '<SEC_FLOATING_FEATURE_COMMON_CONFIG_DYN_RESOLUTION_CONTROL>[^<][^<]*</SEC_FLOATING_FEATURE_COMMON_CONFIG_DYN_RESOLUTION_CONTROL>' "$REL"; then
++                LOGE "M2 fixed-resolution profile still advertises a resolution switcher in $REL"
++                return 1
++            fi
++        else
++            grep -q '<SEC_FLOATING_FEATURE_COMMON_CONFIG_DYN_RESOLUTION_CONTROL>WQHD,FHD,HD</SEC_FLOATING_FEATURE_COMMON_CONFIG_DYN_RESOLUTION_CONTROL>' "$REL" || {
++                LOGE "Dynamic resolution control is not enabled in $REL"
++                return 1
++            }
++        fi
+         grep -q '<SEC_FLOATING_FEATURE_COMMON_CONFIG_MDNIE_MODE>65303</SEC_FLOATING_FEATURE_COMMON_CONFIG_MDNIE_MODE>' "$REL" || {
+             LOGE "Samsung screen colour modes are not enabled in $REL"
+             return 1

@@ -1,0 +1,32 @@
+Reason: source audit found PRINT_ASSERTIONS accepts a G965N recovery with star2lte codename even for the F-only M1 metadata, before destructive layout operations. Shared codename is not evidence of matching variant blobs.
+Affected: scripts/utils/install_utils.sh, explicit model-list branch for star2lte only.
+Verify: generate actual assertions for F list, N list and another codename; F variants accept, N/unknown reject with shared codename, future N list rejects F, other targets retain existing fallback. Audit final ZIP order before prepare_layout.
+Rollback: reverse patch; keep candidate review-only if model bypass is restored. No kernel/blob/partition change.
+
+--- a/scripts/utils/install_utils.sh
++++ b/scripts/utils/install_utils.sh
+@@ -85,13 +85,17 @@
+             echo -n "$i"
+             echo -n '" || '
+         done
+-        echo -n 'getprop("ro.product.device") == "'
+-        echo -n "$DEVICE"
+-        echo -n '" || getprop("ro.build.product") == "'
+-        echo -n "$DEVICE"
+-        echo -n '" || getprop("ro.product.vendor.device") == "'
+-        echo -n "$DEVICE"
+-        echo -n '" || '
++        # star2lte variants share the codename but require distinct blob sets.
++        # An explicit model list must not be bypassed by recovery device props.
++        if [ "$DEVICE" != "star2lte" ]; then
++            echo -n 'getprop("ro.product.device") == "'
++            echo -n "$DEVICE"
++            echo -n '" || getprop("ro.build.product") == "'
++            echo -n "$DEVICE"
++            echo -n '" || getprop("ro.product.vendor.device") == "'
++            echo -n "$DEVICE"
++            echo -n '" || '
++        fi
+         echo -n 'abort("E3004: This package is for \"'
+         echo -n "$DEVICE"
+         echo    '\" devices; this is a \"" + getprop("ro.product.device") + "\".");'

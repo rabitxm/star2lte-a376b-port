@@ -1,0 +1,27 @@
+From: Codex local A376B compatibility adaptation
+Subject: [PATCH] Retain AZH4 Knox stack in M2
+
+Reason: attempt33.txt:1437-1480 shows multiple Nuke Knox framework patches fail
+across LockPatternUtils, VerifyCredentialResponse, DarRune and CoreRune. A
+partial removal could leave AZH4 Knox code inconsistent, so retain the complete
+donor Knox stack in this M2 profile.
+Files: scripts/internal/apply_modules.sh.
+Verification: exact module/profile guard, shell syntax, patch replay and clean
+attempt34. Revert0065 to resume Knox porting.
+
+---
+--- a/scripts/internal/apply_modules.sh
++++ b/scripts/internal/apply_modules.sh
+@@ -13,6 +13,14 @@ APPLY_MODULE()
+     local MODNAME
+     local MODAUTH
+ 
++    # AZH4 moved Knox framework internals across several classes. Applying the
++    # older Nuke Knox module partially would leave the donor's Knox stack split.
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] && \
++            [[ "$MODPATH" == */mods/deknox ]]; then
++        LOGW "AZH4 Knox internals differ across framework classes; retaining the complete donor Knox stack for M2"
++        return 0
++    fi
++
+     # AZH4 changed the PackageBlockListPolicy and its lifecycle wiring. The

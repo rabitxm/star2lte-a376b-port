@@ -1,0 +1,75 @@
+Reason: The existing HIDL2 face fallback patch fails on A37 AZH4. User selected temporarily omitting Face Unlock in M2. Under the explicit EXYNOS9810_FACE_UNLOCK_DISABLED=true M2 profile, skip the legacy HIDL2 Smali bridge, skip Exynos9810 face enrollment/HIDL AIDL-bridge hooks, remove the vendor face HAL VINTF manifest and both face init service definitions, and keep the Android feature XML so FaceManager remains non-null. Suppress automatic FaceunlockFix integration for this profile and include the policy bit in workdir identity. Other builds retain current behavior. Affected: scripts/make_rom.sh; unica/patches/legacy/customize.sh; target/star2lte/profiles/m2-g965f-a376b-android16-no-ksu.sh. Verify: exact output manifest/init absence, FaceManager XML presence, no automatic FaceunlockFix flags and no enrollment/HAL bridge logs for M2; bash syntax; clean build and patch replay. Runtime FaceManager empty-sensor behavior remains to verify after boot. Rollback: reverse this patch, restore bridge and FaceUnlock flag. No kernel, radio, vendor blob payload, or device changes.  --- a/scripts/make_rom.sh
++++ b/scripts/make_rom.sh
+@@ -9,8 +9,10 @@
+ if [ "$TARGET_PLATFORM" = "exynos9810" ]; then
+     case "$TARGET_CODENAME" in
+         starlte|star2lte|crownlte)
+-            export EXYNOS9810_FACEUNLOCKFIX_EXPERIMENTAL_BUILD=true
+-            export EXYNOS9810_FACEUNLOCKFIX_BUILTIN=true
++            if [ "${EXYNOS9810_FACE_UNLOCK_DISABLED:-false}" != "true" ]; then
++                export EXYNOS9810_FACEUNLOCKFIX_EXPERIMENTAL_BUILD=true
++                export EXYNOS9810_FACEUNLOCKFIX_BUILTIN=true
++            fi
+             ;;
+     esac
+ fi
+--- a/unica/patches/legacy/customize.sh
++++ b/unica/patches/legacy/customize.sh
+@@ -175,7 +175,22 @@
+ 
+ # Support legacy Face HAL (pre-API 34)
+ if [ "$TARGET_PLATFORM_SDK_VERSION" -lt "34" ]; then
+-    if [ ! -f "$WORK_DIR/vendor/bin/hw/vendor.samsung.hardware.biometrics.face@3.0-service" ]; then
++    if [ "${EXYNOS9810_FACE_UNLOCK_DISABLED:-false}" = "true" ] && \
++            [[ "$TARGET_PLATFORM" == "exynos9810" ]] && [[ "$TARGET_CODENAME" == "star2lte" ]]; then
++        LOG "- Omitting Face Unlock for the selected Exynos9810 profile; keep FaceManager feature XML and disable face HAL declarations"
++        for REL in \
++            "vendor/etc/vintf/manifest/face-default-sec.xml" \
++            "vendor/etc/init/face-default-sec.rc" \
++            "vendor/etc/init/vendor.samsung.hardware.biometrics.face@2.0-service.rc"; do
++            if [ -f "$WORK_DIR/$REL" ]; then
++                LOG "- Removing $REL"
++                rm -f "$WORK_DIR/$REL"
++            fi
++        done
++        [ -f "$WORK_DIR/system/system/etc/permissions/android.hardware.biometrics.face.xml" ] || {
++            ABORT "Face Unlock omission requires FaceManager feature XML to remain present"
++        }
++    elif [ ! -f "$WORK_DIR/vendor/bin/hw/vendor.samsung.hardware.biometrics.face@3.0-service" ]; then
+         PATCHED=true
+         APPLY_PATCH "system" "system/framework/services.jar" \
+             "$MODPATH/face/services.jar/0001-Fallback-to-Face-HIDL-2.0.patch"
+@@ -332,7 +347,11 @@
+     PATCHED=true
+ }
+ 
+-_EXYNOS9810_PATCH_FACE_ZERO_CHALLENGE || return 1
++if [ "${EXYNOS9810_FACE_UNLOCK_DISABLED:-false}" != "true" ]; then
++    _EXYNOS9810_PATCH_FACE_ZERO_CHALLENGE || return 1
++else
++    LOG "- Skipping Exynos9810 face enrollment bridge because Face Unlock is disabled in this profile"
++fi
+ 
+ # Android 16 prefers a declared AIDL face service even if it cannot use the
+ # Exynos9810 front-camera recognition stack. Original S9/Note9 firmware uses
+@@ -370,7 +389,11 @@
+     PATCHED=true
+ }
+ 
+-_EXYNOS9810_USE_LEGACY_FACE_HIDL || return 1
++if [ "${EXYNOS9810_FACE_UNLOCK_DISABLED:-false}" != "true" ]; then
++    _EXYNOS9810_USE_LEGACY_FACE_HIDL || return 1
++else
++    LOG "- Skipping Exynos9810 face HAL selection because Face Unlock is disabled in this profile"
++fi
+ 
+ # Support legacy SehLights HAL (pre-API 35)
+ # - Check for [lsr wD, wS, #0x18] to determine if the newer HAL is already in place
+--- a/target/star2lte/profiles/m2-g965f-a376b-android16-no-ksu.sh
++++ b/target/star2lte/profiles/m2-g965f-a376b-android16-no-ksu.sh
+@@ -2,3 +2,5 @@
+ source "$(dirname -- "${BASH_SOURCE[0]}")/m1-g965f-no-ksu.sh" || return 1
+ export ROM_MILESTONE="M2"
+ export UN1CA_DONOR_CONFIG="essi_a376b_android16"
++# Omit unsupported A37-to-S9 Face HAL bridge for this M2 profile.
++export EXYNOS9810_FACE_UNLOCK_DISABLED="true"

@@ -1,0 +1,112 @@
+From: Codex local A376B compatibility adaptation
+Subject: [PATCH] 0045-a376b-hardware-mdnie-methods
+
+Reason: AZH4 mDNIe false -> target true aborted. Restore three hardware methods and the color-table helper from the reviewed existing fork diff, retain permissions, add curtain state and set matching accessibility flags. Inline pure formatting outlines whose signatures differ in AZH4; validate all inputs before writes.
+Files: unica/patches/product_feature/customize.sh; unica/patches/product_feature/mdnie/a376b_hw.py.
+Verification: Actual donor preflight PASS; complete method hashes, upstream diff hash and remaining exact helper signatures validated. Clean assembly and runtime mDNIe logs required.
+
+---
+--- a/unica/patches/product_feature/customize.sh
++++ b/unica/patches/product_feature/customize.sh
+@@ -738,6 +738,13 @@
+         APPLY_PATCH "system" "system/framework/services.jar" \
+             "$MODPATH/mdnie/hw/services.jar/0001-Disable-HW-mDNIe.patch"
+     fi
++elif [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] && \
++        [ "$TARGET_CODENAME" = "star2lte" ] && $TARGET_LCD_SUPPORT_MDNIE_HW && \
++        [ "$TARGET_PRODUCT_SHIPPING_API_LEVEL" = "26" ] && \
++        [ "$SOURCE_LCD_CONFIG_COLOR_WEAKNESS_SOLUTION" = "3" ] && \
++        [ "$TARGET_LCD_CONFIG_COLOR_WEAKNESS_SOLUTION" = "3" ]; then
++    EVAL "python3 \"$MODPATH/mdnie/a376b_hw.py\" \"$APKTOOL_DIR\" \"$MODPATH\"" || return 1
++    SET_FLOATING_FEATURE_CONFIG "SEC_FLOATING_FEATURE_LCD_SUPPORT_MDNIE_HW" "TRUE"
+ elif $SOURCE_LCD_SUPPORT_MDNIE_HW && [[ "$SOURCE_LCD_CONFIG_COLOR_WEAKNESS_SOLUTION" == "0" ]]; then
+     # TODO handle these conditions
+     LOG_MISSING_PATCHES "SOURCE_LCD_SUPPORT_MDNIE_HW" "TARGET_LCD_SUPPORT_MDNIE_HW" || true
+--- /dev/null
++++ b/unica/patches/product_feature/mdnie/a376b_hw.py
+@@ -0,0 +1,85 @@
++#!/usr/bin/env python3
++"""Restore reviewed mDNIe hardware methods retained in the fork's own diff."""
++from pathlib import Path
++from hashlib import sha256
++import re
++import sys
++
++
++def method(text, name):
++    matches = list(re.finditer(r"(?ms)^\.method[^\n]* " + re.escape(name) + r"\n.*?^\.end method$", text))
++    if len(matches) != 1:
++        raise RuntimeError("Expected one mDNIe method: " + name)
++    return matches[0]
++
++
++def adapt(root, module):
++    patch = module / "mdnie/hw/services.jar/0001-Disable-HW-mDNIe.patch"
++    if sha256(patch.read_bytes()).hexdigest() != "0d81648383615d03218463e4da7117ff269e329e12e59dbfb076749dfa653557":
++        raise RuntimeError("Reviewed upstream mDNIe diff changed")
++    section = patch.read_text().split("diff --git a/smali_classes2/com/samsung/android/hardware/display/SemMdnieManagerService.smali", 1)[1].split("diff --git ", 1)[0]
++    old = "\n".join(line[1:] for line in section.splitlines()
++                    if line.startswith((" ", "-")) and not line.startswith("---"))
++    path = root / "system/framework/services.jar/smali_classes2/com/samsung/android/hardware/display/SemMdnieManagerService.smali"
++    service = path.read_text()
++    hashes = {
++        "setmDNIeAccessibilityMode(IZ)Z": "76c511d75da2be34ad96741ff69e6d6affc04f3e8bdbc1b8d196fcd1088039a2",
++        "setmDNIeColorBlind(Z[I)Z": "fa090c41d8fd70c6574e19729d42c0c042fac93db9d06cd633af62cf7d009765",
++        "setmDNIeNegative(Z)Z": "ee25290898a9f89ef38ef20f7c1ccedcbe50614394cae38a9cf535140cca5f18",
++    }
++    for name, expected in hashes.items():
++        current = method(service, name)
++        if sha256(current.group().encode()).hexdigest() != expected:
++            raise RuntimeError("Unreviewed AZH4 mDNIe method: " + name)
++        restored = method(old, name).group()
++        service = service[:current.start()] + restored + service[current.end():]
++    if "mCurtainModeIsRunning:Z" in path.read_text() or "sysfsWrite_CB(" in path.read_text():
++        raise RuntimeError("AZH4 mDNIe state/helper already exists")
++    method(service, "sysfsWrite(ILjava/lang/String;)Z")
++    helper = method(old, "sysfsWrite_CB(ILjava/lang/String;[I)Z").group()
++    # Inline pure StringBuilder operations instead of borrowing synthetic
++    # outline IDs whose signatures differ in AZH4.
++    helper, count = re.subn(
++        r"    invoke-static \{(v[23]), v0, p0\}, Lcom/android/server/BatteryService\$\$ExternalSyntheticOutline0;->m\(ILjava/lang/StringBuilder;Ljava/lang/String;\)V",
++        r"    invoke-virtual {v0, \1}, Ljava/lang/StringBuilder;->append(I)Ljava/lang/StringBuilder;\n\n    invoke-virtual {v0, p0}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;", helper)
++    if count != 8:
++        raise RuntimeError("mDNIe color table helper shape changed")
++    outline = "    invoke-static {v0, p0}, Landroid/hardware/audio/common/V2_0/AudioChannelMask$$ExternalSyntheticOutline0;->m(Ljava/lang/StringBuilder;I)Ljava/lang/String;"
++    if helper.count(outline) != 1:
++        raise RuntimeError("mDNIe table final value changed")
++    helper = helper.replace(outline, "    invoke-virtual {v0, p0}, Ljava/lang/StringBuilder;->append(I)Ljava/lang/StringBuilder;\n\n    invoke-virtual {v0}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;")
++    service += "\n\n" + helper + "\n"
++    service = service.replace("# instance fields\n", "# instance fields\n.field public mCurtainModeIsRunning:Z\n\n", 1)
++    curtain = method(service, "setmDNIeScreenCurtain(Z)Z")
++    if sha256(curtain.group().encode()).hexdigest() != "64f6abf333fecebaf03873901a73c7344f810cdd7d8697fee23134c79ebb0d74":
++        raise RuntimeError("AZH4 screen curtain method changed")
++    body = curtain.group().replace("    .locals 4\n", "    .locals 4\n\n    iput-boolean p1, p0, Lcom/samsung/android/hardware/display/SemMdnieManagerService;->mCurtainModeIsRunning:Z\n", 1)
++    service = service[:curtain.start()] + body + service[curtain.end():]
++    # Remaining outlines are already used by AZH4's existing methods. Check
++    # the exact signatures before installing the restored method bodies.
++    for cls, signature in [("BatteryService", "m(Ljava/lang/String;)Z"),
++                           ("DeviceIdleController", "m(Ljava/lang/StringBuilder;Ljava/lang/String;Ljava/lang/String;)V")]:
++        method((root / f"system/framework/services.jar/smali/com/android/server/{cls}$$ExternalSyntheticOutline0.smali").read_text(), signature)
++    rune_path = root / "system/framework/framework.jar/smali_classes4/android/view/accessibility/A11yRune.smali"
++    rune = rune_path.read_text()
++    replacements = {
++        "A11Y_COLOR_BOOL_SUPPORT_MDNIE_HW:Z = false": "A11Y_COLOR_BOOL_SUPPORT_MDNIE_HW:Z = true",
++        "sput-boolean v0, Landroid/view/accessibility/A11yRune;->A11Y_COLOR_BOOL_SUPPORT_DMC_COLORWEAKNESS:Z": "sput-boolean v1, Landroid/view/accessibility/A11yRune;->A11Y_COLOR_BOOL_SUPPORT_DMC_COLORWEAKNESS:Z",
++        "sput-boolean v1, Landroid/view/accessibility/A11yRune;->A11Y_COLOR_BOOL_SUPPORT_COLOR_FILTER_MDNIE_HW:Z": "sput-boolean v0, Landroid/view/accessibility/A11yRune;->A11Y_COLOR_BOOL_SUPPORT_COLOR_FILTER_MDNIE_HW:Z",
++    }
++    # Move the existing false register initialization ahead of its first use.
++    marker = "    const/4 v0, 0x1\n"
++    if rune.count(marker) != 1 or rune.count("    const/4 v1, 0x0\n") != 1:
++        raise RuntimeError("AZH4 A11yRune initializer registers changed")
++    rune = rune.replace("    const/4 v1, 0x0\n", "", 1).replace(marker, marker + "\n    const/4 v1, 0x0\n", 1)
++    for before, after in replacements.items():
++        if rune.count(before) != 1:
++            raise RuntimeError("AZH4 A11yRune feature changed: " + before)
++        rune = rune.replace(before, after, 1)
++    path.write_text(service)
++    rune_path.write_text(rune)
++    print("PASS AZH4 HW mDNIe: three methods, color-table helper, curtain state and accessibility flags restored")
++
++
++if __name__ == "__main__":
++    adapt(Path(sys.argv[1]), Path(sys.argv[2]))

@@ -1,0 +1,39 @@
+From: Codex local compatibility adaptation
+Subject: [PATCH] Guard absent A376B vexfwk_service patch target
+
+Reason: `attempt13.txt:1007` reports `File not found: /system/system/priv-app/vexfwk_service/vexfwk_service.apk`; the locked AZH4 system tree contains no vexfwk_service APK. This is a donor-specific optional encoder patch target. Guard it for the exact A376B16 profile, emit a warning when absent, and preserve strict behavior for all other donors.
+Files: unica/patches/legacy/customize.sh.
+Verification: AZH4 filesystem search, donor-only guard, shell syntax and reverse patch replay; next clean build14.
+
+---
+--- a/unica/patches/legacy/customize.sh
++++ b/unica/patches/legacy/customize.sh
+@@ -735,11 +735,23 @@
+             'configCodec(Lcom/samsung/android/sum/core/message/Message;)V' \
+             'const v4, 0x7f420888' \
+             'const v4, 0x7f000789'
+-        SMALI_PATCH "system" "system/priv-app/vexfwk_service/vexfwk_service.apk" \
+-            "smali/com/samsung/android/sum/core/filter/EncoderFilter.smali" "replace" \
+-            'configCodec(Lcom/samsung/android/sum/core/message/Message;)V' \
+-            'const v3, 0x7f420888' \
+-            'const v3, 0x7f000789'
++        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++            if [ -f "$WORK_DIR/system/system/priv-app/vexfwk_service/vexfwk_service.apk" ]; then
++                SMALI_PATCH "system" "system/priv-app/vexfwk_service/vexfwk_service.apk" \
++                    "smali/com/samsung/android/sum/core/filter/EncoderFilter.smali" "replace" \
++                    'configCodec(Lcom/samsung/android/sum/core/message/Message;)V' \
++                    'const v3, 0x7f420888' \
++                    'const v3, 0x7f000789'
++            else
++                LOGW "A376B AZH4 has no vexfwk_service APK; skipping its optional encoder color-format patch"
++            fi
++        else
++            SMALI_PATCH "system" "system/priv-app/vexfwk_service/vexfwk_service.apk" \
++                "smali/com/samsung/android/sum/core/filter/EncoderFilter.smali" "replace" \
++                'configCodec(Lcom/samsung/android/sum/core/message/Message;)V' \
++                'const v3, 0x7f420888' \
++                'const v3, 0x7f000789'
++        fi
+     fi
+ fi
+ 

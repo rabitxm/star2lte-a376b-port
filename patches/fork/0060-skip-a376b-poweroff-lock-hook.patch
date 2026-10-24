@@ -1,0 +1,23 @@
+From: Codex local A376B compatibility adaptation
+Subject: [PATCH] Keep AZH4 power-off lock Settings implementation
+
+Reason: attempt28.txt:1238 reports the donor PowerOffLockPreferenceController
+class is absent at the CSC patch path. Retain the donor implementation for
+A376B Android16 while leaving all other module patches active.
+Files: scripts/internal/apply_modules.sh.
+Verification: exact path/profile guard, shell syntax and patch replay; clean
+build follows. Revert0060.
+
+---
+--- a/scripts/internal/apply_modules.sh
++++ b/scripts/internal/apply_modules.sh
+@@ -120,6 +120,11 @@ APPLY_SMALI_PATCHES()
+             LOGW "A376B AZH4 relocated the network-speed Settings classes; retaining donor behavior for M2"
+             continue
+         fi
++        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] && \
++                [[ "$p" == */csc/smali/system/priv-app/SecSettings/SecSettings.apk/0002-Enable-Power-off-lock-feature.patch ]]; then
++            LOGW "A376B AZH4 relocated the power-off lock Settings controller; retaining donor behavior for M2"
++            continue
++        fi
+         APPLY_PATCH "$PARTITION" "$FILE" "$p"

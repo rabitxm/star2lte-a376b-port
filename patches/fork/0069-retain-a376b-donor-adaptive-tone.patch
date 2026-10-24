@@ -1,0 +1,33 @@
+From: Codex local A376B compatibility adaptation
+Subject: [PATCH] Retain AZH4 donor adaptive colour tone behavior
+
+Reason: attempt37.txt:1261-1340 shows the optional Paradigm adaptive colour
+tone patch does not match AZH4 display-service classes and call sites. Skip only
+that feature's framework, Settings, provider, SystemUI and donor resource edits
+for exact M2, retaining donor display behavior and avoiding partial class changes.
+Files: unica/mods/paradigm/customize.sh.
+Verification: shell syntax and replay69; clean attempt38. Revert0069 to port.
+
+---
+diff --git a/unica/mods/paradigm/customize.sh b/unica/mods/paradigm/customize.sh
+index 63dd236..d7ce43a 100755
+--- a/unica/mods/paradigm/customize.sh
++++ b/unica/mods/paradigm/customize.sh
+@@ -43,6 +43,9 @@ LOG_STEP_OUT
+ 
+ # Adaptive colour tone
+ LOG_STEP_IN "- Adding Adaptive colour tone feature"
++if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++    LOGW "AZH4 display-service layout differs; retaining donor adaptive-colour-tone behavior for M2"
++else
+ ADD_TO_WORK_DIR "pa2qxxx" "system" \
+     "system/etc/permissions/privapp-permissions-com.samsung.android.sead.xml" 0 0 644 "u:object_r:system_file:s0"
+ ADD_TO_WORK_DIR "pa2qxxx" "system" \
+@@ -70,6 +73,7 @@ APPLY_PATCH "system" "system/priv-app/SettingsProvider/SettingsProvider.apk" \
+     "$MODPATH/ead/SettingsProvider.apk/0001-Add-Adaptive-color-tone-feature.patch"
+ APPLY_PATCH "system_ext" "priv-app/SystemUI/SystemUI.apk" \
+     "$MODPATH/ead/SystemUI.apk/0001-Add-Adaptive-color-tone-toggle.patch"
++fi
+ LOG_STEP_OUT
+ 
+ # Set AI Version to 20253 (latest)

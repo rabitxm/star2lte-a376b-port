@@ -1,0 +1,60 @@
+From: Codex local compatibility adaptation
+Subject: [PATCH] Port AZH4 Stagefright HEVC branch adjustment
+
+Reason: attempt11.txt:1003-1005 exposed a missing 32-bit library and an unmatched 64-bit signature. Disassembly and Android RELA identify AZH4's ACodec::setupVideoEncoder comparison as MEDIA_MIMETYPE_VIDEO_HEVC; the analogous S22 fork patch NOPs the HEVC-only early exit. Restrict the adaptation to the exact A376B Android16 source profile and fail closed if its reviewed 64-bit-only layout changes.
+Files: unica/patches/legacy/customize.sh.
+Verification: hash and disassembly review of locked AZH4 lib64, relocation resolves 0x2639a0 to MEDIA_MIMETYPE_VIDEO_HEVC, exact byte signature occurs once, verify NOP disassembly and ensure other donor branch remains unchanged; clean build and media runtime test still required.
+
+---
+--- a/unica/patches/legacy/customize.sh
++++ b/unica/patches/legacy/customize.sh
+@@ -687,23 +687,33 @@
+             'configCodec(Lcom/samsung/android/sum/core/message/Message;)V' \
+             'const v4, 0x7f420888' \
+             'const v4, 0x7f000789'
+-        if xxd -p -c 0 "$WORK_DIR/system/system/lib/libstagefright.so" | grep -q "ceec002848d1724c0620"; then
+-            HEX_PATCH "$WORK_DIR/system/system/lib/libstagefright.so" \
+-                "ceec002848d1724c0620" "ceec002848e0724c0620"
+-        elif xxd -p -c 0 "$WORK_DIR/system/system/lib/libstagefright.so" | grep -q "aaea002879d1264c0620"; then
+-            HEX_PATCH "$WORK_DIR/system/system/lib/libstagefright.so" \
+-                "aaea002879d1264c0620" "aaea002879e0264c0620"
++        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++            if [ -e "$WORK_DIR/system/system/lib/libstagefright.so" ]; then
++                ABORT "Reviewed A376B AZH4 layout changed: unexpected 32-bit libstagefright.so"
++            fi
++            # AZH4 compares MEDIA_MIMETYPE_VIDEO_HEVC here; match S22's reviewed behavior.
++            HEX_PATCH "$WORK_DIR/system/system/lib64/libstagefright.so" \
++                "e80b00d0e00319aa08d144f9010140f9fca90594804d0034e83f41b9" \
++                "e80b00d0e00319aa08d144f9010140f9fca905941f2003d5e83f41b9"
+         else
+-            ABORT "No known patch available for the supplied libstagefright.so"
+-        fi
+-        if xxd -p -c 0 "$WORK_DIR/system/system/lib64/libstagefright.so" | grep -q "70690594205100347a9a40f9"; then
+-            HEX_PATCH "$WORK_DIR/system/system/lib64/libstagefright.so" \
+-                "70690594205100347a9a40f9" "706905941f2003d57a9a40f9"
+-        elif xxd -p -c 0 "$WORK_DIR/system/system/lib64/libstagefright.so" | grep -q "864d0594604d00347a9a40f9"; then
+-            HEX_PATCH "$WORK_DIR/system/system/lib64/libstagefright.so" \
+-                "864d0594604d00347a9a40f9" "864d05941f2003d57a9a40f9"
+-        else
+-            ABORT "No known patch available for the supplied libstagefright.so"
++            if xxd -p -c 0 "$WORK_DIR/system/system/lib/libstagefright.so" | grep -q "ceec002848d1724c0620"; then
++                HEX_PATCH "$WORK_DIR/system/system/lib/libstagefright.so" \
++                    "ceec002848d1724c0620" "ceec002848e0724c0620"
++            elif xxd -p -c 0 "$WORK_DIR/system/system/lib/libstagefright.so" | grep -q "aaea002879d1264c0620"; then
++                HEX_PATCH "$WORK_DIR/system/system/lib/libstagefright.so" \
++                    "aaea002879d1264c0620" "aaea002879e0264c0620"
++            else
++                ABORT "No known patch available for the supplied libstagefright.so"
++            fi
++            if xxd -p -c 0 "$WORK_DIR/system/system/lib64/libstagefright.so" | grep -q "70690594205100347a9a40f9"; then
++                HEX_PATCH "$WORK_DIR/system/system/lib64/libstagefright.so" \
++                    "70690594205100347a9a40f9" "706905941f2003d57a9a40f9"
++            elif xxd -p -c 0 "$WORK_DIR/system/system/lib64/libstagefright.so" | grep -q "864d0594604d00347a9a40f9"; then
++                HEX_PATCH "$WORK_DIR/system/system/lib64/libstagefright.so" \
++                    "864d0594604d00347a9a40f9" "864d05941f2003d57a9a40f9"
++            else
++                ABORT "No known patch available for the supplied libstagefright.so"
++            fi
+         fi
+         if [ -f "$WORK_DIR/system/system/priv-app/GlobalPostProcMgr/GlobalPostProcMgr.apk" ]; then
+             SMALI_PATCH "system" "system/priv-app/GlobalPostProcMgr/GlobalPostProcMgr.apk" \

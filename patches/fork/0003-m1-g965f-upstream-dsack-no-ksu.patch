@@ -1,0 +1,193 @@
+Reason: user selected original duhansysl OneUI7 enforcing prebuilt without KernelSU and G965F first; default fork must remain available.
+Affected: platform/exynos9810/config.sh, scripts/internal/gen_config_file.sh, target/star2lte/config.sh, unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh, scripts/internal/verify_exynos9810_release_defaults.py, target/star2lte/profiles/m1-g965f-no-ksu.sh.
+Verify: generated default config unchanged in donor/model policy; M1 selects S22 SDK36/ext4/F-only asserts/no KernelSU runtime; wrong N firmware and invalid booleans rejected. Runtime checker positive/negative cases and real staging-function cleanup/metadata checks pass in fixtures. Full ROM/package/boot are NOT_TESTED.
+Rollback: reverse this patch; do not reuse cached output with a different KernelSU profile.
+
+diff --git a/platform/exynos9810/config.sh b/platform/exynos9810/config.sh
+index c4bf831..6eab86b 100644
+--- a/platform/exynos9810/config.sh
++++ b/platform/exynos9810/config.sh
+@@ -12,6 +12,15 @@ TARGET_BOARD_API_LEVEL="${EXYNOS9810_TARGET_BOARD_API_LEVEL:-33}"
+ # enabled explicitly while reproducing a boot failure.
+ EXYNOS9810_ENABLE_SYSTEM_BOOT_DEBUG="${EXYNOS9810_ENABLE_SYSTEM_BOOT_DEBUG:-false}"
+ EXYNOS9810_ENABLE_VENDOR_BOOT_TRACE="${EXYNOS9810_ENABLE_VENDOR_BOOT_TRACE:-false}"
++# Use a distinct input name: buildenv clears previously generated config keys.
++EXYNOS9810_ENABLE_KERNELSU_RUNTIME="${EXYNOS9810_BUILD_KERNELSU_RUNTIME:-true}"
++case "$EXYNOS9810_ENABLE_KERNELSU_RUNTIME" in
++    true|false) ;;
++    *)
++        printf 'EXYNOS9810_ENABLE_KERNELSU_RUNTIME must be true or false.\n' >&2
++        return 1
++        ;;
++esac
+ 
+ # Partitions
+ # Expands the Exynos9810 repartition baseline for One UI 8:
+diff --git a/scripts/internal/gen_config_file.sh b/scripts/internal/gen_config_file.sh
+index d9c0632..a2692d5 100755
+--- a/scripts/internal/gen_config_file.sh
++++ b/scripts/internal/gen_config_file.sh
+@@ -460,6 +460,7 @@ fi
+     GET_BUILD_VAR "TARGET_CODENAME"
+     GET_BUILD_VAR "TARGET_PLATFORM" "none"
+     GET_BUILD_VAR "TARGET_SIM_VARIANT"
++    GET_BUILD_VAR "EXYNOS9810_ENABLE_KERNELSU_RUNTIME" "true"
+     if [ "${#TARGET_ASSERT_MODEL[@]}" -ge 1 ]; then
+         echo "TARGET_ASSERT_MODEL=\"$(IFS=":"; printf '%s' "${TARGET_ASSERT_MODEL[*]}")\""
+     else
+diff --git a/scripts/internal/verify_exynos9810_release_defaults.py b/scripts/internal/verify_exynos9810_release_defaults.py
+index 047dd87..fa9f0d2 100644
+--- a/scripts/internal/verify_exynos9810_release_defaults.py
++++ b/scripts/internal/verify_exynos9810_release_defaults.py
+@@ -2,20 +2,22 @@
+ """Fail closed if a fresh/cached release omits source-matched default fixes."""
+ from pathlib import Path
+ from hashlib import sha256
+-import argparse,json,sys,zipfile
++import argparse,json,os,sys,zipfile
+ ROOT=Path(__file__).resolve().parents[2]
+ sys.path.insert(0,str(ROOT/"scripts/internal/FaceunlockFix"))
+ from release_bridge import load_release_bridge
+ 
+-def verify(work: Path, target: str) -> None:
+-    if target not in ("starlte","star2lte","crownlte"): raise RuntimeError("Unsupported target")
+-    system=work/"system/system"
+-    with zipfile.ZipFile(system/"framework/services.jar") as z:
+-        if z.read("classes3.dex") != load_release_bridge():
+-            raise RuntimeError("Staged face bridge differs from verified source release")
+-    props=(system/"build.prop").read_text().splitlines()
+-    for prop in ["ro.un1ca.faceunlockfix.builtin=1","persist.sys.unica.pif=true","persist.sys.pif.version=20261011"]:
+-        if prop not in props: raise RuntimeError("Required release default absent: "+prop)
++def verify_kernelsu_runtime(system: Path, enabled: str) -> None:
++    if enabled not in ("true", "false"):
++        raise RuntimeError("Invalid EXYNOS9810_ENABLE_KERNELSU_RUNTIME")
++    if enabled == "false":
++        for relative in ("app/KernelSUNext", "etc/unica/ksunext",
++                         "etc/init/unica_ksunext_installer.rc",
++                         "bin/unica_ksunext_installer.sh", "bin/ksu_crown", "bin/ksud"):
++            path = system / relative
++            if path.exists() or path.is_symlink():
++                raise RuntimeError("KernelSU runtime present in non-KernelSU profile: " + relative)
++        return
+     base=ROOT/"unica/patches/exynos9810_device_stack/exynos9810_finalization/kernelsu"
+     manifest=json.loads((base/"runtime_manifest.json").read_text())
+     if manifest["schema"] != 1: raise RuntimeError("Unknown KernelSU manifest")
+@@ -29,6 +31,17 @@ def verify(work: Path, target: str) -> None:
+     for name,relative in entries.items():
+         if (system/relative).read_bytes()!=(base/name).read_bytes():
+             raise RuntimeError("Stale/missing permanent KernelSU runtime: "+relative)
++
++def verify(work: Path, target: str) -> None:
++    if target not in ("starlte","star2lte","crownlte"): raise RuntimeError("Unsupported target")
++    system=work/"system/system"
++    with zipfile.ZipFile(system/"framework/services.jar") as z:
++        if z.read("classes3.dex") != load_release_bridge():
++            raise RuntimeError("Staged face bridge differs from verified source release")
++    props=(system/"build.prop").read_text().splitlines()
++    for prop in ["ro.un1ca.faceunlockfix.builtin=1","persist.sys.unica.pif=true","persist.sys.pif.version=20261011"]:
++        if prop not in props: raise RuntimeError("Required release default absent: "+prop)
++    verify_kernelsu_runtime(system, os.environ.get("EXYNOS9810_ENABLE_KERNELSU_RUNTIME", "true"))
+     catalog=json.loads((ROOT/"unica/mods/s9_infinity_Wallpaper/source/resources_info.json").read_text())
+     defaults=[entry for entry in catalog["phone"] if entry.get("isDefault")]
+     if len(defaults)!=1 or defaults[0]["type_params"]["service_settings"]["filename"]!="video_001.mp4":
+@@ -51,7 +64,7 @@ def verify(work: Path, target: str) -> None:
+     spec=importlib.util.spec_from_file_location("factory_live_default",checker)
+     module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+     module.verify(system/"framework/services.jar")
+-    print("PASS "+target+": source-matched face removal/prompt bridge, permanent trusted KernelSU, Blue Infinity, Bixby and PIF defaults")
++    print("PASS "+target+": source-matched face removal/prompt bridge, selected KernelSU runtime profile, Blue Infinity, Bixby and PIF defaults")
+ if __name__=="__main__":
+     p=argparse.ArgumentParser(description=__doc__);p.add_argument("--work-dir",type=Path,required=True);p.add_argument("--target",required=True)
+     a=p.parse_args();verify(a.work_dir,a.target)
+diff --git a/target/star2lte/config.sh b/target/star2lte/config.sh
+index 88435d7..c27f3ee 100644
+--- a/target/star2lte/config.sh
++++ b/target/star2lte/config.sh
+@@ -17,7 +17,29 @@ case "$TARGET_SIM_VARIANT" in
+         ;;
+ esac
+ TARGET_PLATFORM="exynos9810"
+-TARGET_FIRMWARE="SM-G965F/PHN/352966091234565"
++TARGET_FIRMWARE="${STAR2LTE_TARGET_FIRMWARE:-SM-G965F/PHN/352966091234565}"
++# Model selection is independent of EFS-based physical SIM topology.
++case "${STAR2LTE_BUILD_MODEL:-auto}" in
++    auto) ;;
++    SM-G965F)
++        [[ "$TARGET_FIRMWARE" == SM-G965F/* ]] || {
++            printf 'G965F profile requires G965F target firmware.\n' >&2
++            return 1
++        }
++        TARGET_ASSERT_MODEL=("SM-G965F" "SM-G965F/DS" "SM-G965FD")
++        ;;
++    SM-G965N)
++        [[ "$TARGET_FIRMWARE" == SM-G965N/* ]] || {
++            printf 'G965N profile requires explicit G965N target firmware.\n' >&2
++            return 1
++        }
++        TARGET_ASSERT_MODEL=("SM-G965N")
++        ;;
++    *)
++        printf 'Unsupported STAR2LTE_BUILD_MODEL.\n' >&2
++        return 1
++        ;;
++esac
+ TARGET_EXTRA_FIRMWARES=()
+ TARGET_PLATFORM_SDK_VERSION="${EXYNOS9810_TARGET_PLATFORM_SDK_VERSION:-31}"
+ TARGET_PRODUCT_SHIPPING_API_LEVEL=26
+diff --git a/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh b/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
+index 02ddae5..a015711 100644
+--- a/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
+@@ -2025,6 +2025,27 @@ _EXYNOS9810_FINAL_STAGE_GOOGLE_DATA_REPAIR()
+ 
+ _EXYNOS9810_FINAL_STAGE_KERNELSU_NEXT()
+ {
++    local REL
++    case "${EXYNOS9810_ENABLE_KERNELSU_RUNTIME:-true}" in
++        false)
++            LOG "- Removing KernelSU runtime for the selected non-KernelSU kernel"
++            for REL in \
++                system/app/KernelSUNext \
++                system/etc/unica/ksunext \
++                system/etc/init/unica_ksunext_installer.rc \
++                system/bin/unica_ksunext_installer.sh \
++                system/bin/ksu_crown \
++                system/bin/ksud; do
++                _EXYNOS9810_FINAL_DELETE_SYSTEM_ENTRY "$REL" || return 1
++            done
++            return 0
++            ;;
++        true) ;;
++        *)
++            LOGE "Invalid EXYNOS9810_ENABLE_KERNELSU_RUNTIME (expected true or false)"
++            return 1
++            ;;
++    esac
+ 
+     # KernelSU Next's legacy kernel scanner only crowns a manager found as a
+     # normal /data/app/.../base.apk. An otherwise byte-identical APK placed in
+diff --git a/target/star2lte/profiles/m1-g965f-no-ksu.sh b/target/star2lte/profiles/m1-g965f-no-ksu.sh
+new file mode 100644
+index 0000000..bbe6d40
+--- /dev/null
++++ b/target/star2lte/profiles/m1-g965f-no-ksu.sh
+@@ -0,0 +1,19 @@
++# Source this file from the existing fork before sourcing buildenv.sh.
++# M1 keeps the S22 donor and Hybrid Vendor. The user selected the original
++# duhansysl OneUI7 enforcing prebuilt without KernelSU; no kernel is rebuilt.
++_STAR2LTE_M1_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)"
++export STAR2LTE_BUILD_MODEL="SM-G965F"
++export EXYNOS9810_TARGET_OS_FILE_SYSTEM_TYPE="ext4"
++export EXYNOS9810_BUILD_KERNELSU_RUNTIME="false"
++export EXYNOS9810_KERNEL_ZIP="$_STAR2LTE_M1_ROOT/../inputs/kernels/DS-ACK-V1.12-08.05.2026-Enforcing-OneUI7.zip"
++export EXYNOS9810_EXPECTED_KERNEL_SHA256="9a6bad44f3a1a14d43f108fcebeeedfc1b924685f7f13931d902077bceb5c072"
++if [ ! -f "$EXYNOS9810_KERNEL_ZIP" ]; then
++    printf 'Missing the pinned duhansysl non-KernelSU prebuilt.\n' >&2
++    return 1
++fi
++_STAR2LTE_M1_HASH="$(sha256sum "$EXYNOS9810_KERNEL_ZIP")"
++if [ "${_STAR2LTE_M1_HASH%% *}" != "$EXYNOS9810_EXPECTED_KERNEL_SHA256" ]; then
++    printf 'The selected duhansysl prebuilt does not match the pinned SHA-256.\n' >&2
++    return 1
++fi
++unset _STAR2LTE_M1_ROOT _STAR2LTE_M1_HASH

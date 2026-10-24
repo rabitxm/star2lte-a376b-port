@@ -1,0 +1,31 @@
+Reason: M2 attempt2.txt:905 aborts SOURCE_CAMERA_CONFIG_ACTION_CLASSIFIER empty / TARGET 1,0. The inherited target floating-feature file claims an optional Single Take classifier absent from verified AZH4 XML and its native classifier libraries. Do not fabricate source support or load an absent implementation.
+Affected: unica/patches/camera/customize.sh.
+Verify: Actual module block plus fork FF read/write helpers on copied donor XML; verified absent case removes only the unsupported claim; unknown donor/platform/native payload/dangling native link still stop at the original review guard. Five fixtures PASS, evidence camera-classifier-fixtures.json in logs/20261021-m2-build. Full build/boot pending.
+Rollback: reverse patch, restoring the existing guard/claim and stopping M2 at it. No source flags, hardware blobs, radio, kernel or phones altered. Optional action-classification remains unavailable pending a real implementation.
+
+--- a/unica/patches/camera/customize.sh
++++ b/unica/patches/camera/customize.sh
+@@ -141,8 +141,21 @@
+     fi
+ else
+     if [ "$TARGET_CAMERA_CONFIG_ACTION_CLASSIFIER" ]; then
+-        # TODO handle this condition
+-        LOG_MISSING_PATCHES "SOURCE_CAMERA_CONFIG_ACTION_CLASSIFIER" "TARGET_CAMERA_CONFIG_ACTION_CLASSIFIER"
++        if [ "$TARGET_PLATFORM" = "exynos9810" ] && \
++                [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] && \
++                [ ! -e "$FW_DIR/$SOURCE_FIRMWARE_PATH/system/system/lib64/libVideoClassifier.camera.samsung.so" ] && \
++                [ ! -L "$FW_DIR/$SOURCE_FIRMWARE_PATH/system/system/lib64/libVideoClassifier.camera.samsung.so" ] && \
++                [ ! -e "$FW_DIR/$SOURCE_FIRMWARE_PATH/system/system/lib64/libtensorflowLite2_11_0_dynamic_camera.so" ] && \
++                [ ! -L "$FW_DIR/$SOURCE_FIRMWARE_PATH/system/system/lib64/libtensorflowLite2_11_0_dynamic_camera.so" ]; then
++            # The inherited S22/legacy floating-feature file advertises a
++            # classifier absent from verified A376B AZH4. Do not advertise
++            # this optional Single Take feature without its implementation.
++            LOG "- Disabling inherited optional action-classifier claim absent from A376B donor"
++            SET_FLOATING_FEATURE_CONFIG "SEC_FLOATING_FEATURE_CAMERA_CONFIG_ACTION_CLASSIFIER" --delete
++            TARGET_CAMERA_CONFIG_ACTION_CLASSIFIER=""
++        else
++            LOG_MISSING_PATCHES "SOURCE_CAMERA_CONFIG_ACTION_CLASSIFIER" "TARGET_CAMERA_CONFIG_ACTION_CLASSIFIER"
++        fi
+     fi
+ fi
+ 

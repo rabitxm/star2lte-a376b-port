@@ -1,0 +1,24 @@
+# Local proprietary inputs and generated artifacts; never publish these.
+*.zip
+*.img
+*.tar
+*.tar.md5
+*.tar.gz
+*.lz4
+/inputs/
+/work/
+/out/
+/keys/
+/backups/
+/logs/
+/sharing/
+*.cpio
+*.bin
+*.raw
+**/efs/
+**/cpefs/
+**/keybox*
+# Independent upstream checkout. Pin its revision and export textual patches.
+/rom/
+/kernel/
+__pycache__/

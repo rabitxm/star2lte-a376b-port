@@ -1,0 +1,25 @@
+From: Codex M2 early-boot diagnostic
+Subject: [PATCH] Persist isolated PID1 probe output on G965F CACHE
+
+Reason: probe04's pmsg RAM self-test survived a recovery reboot, but its
+marker and kernel records were absent after repeated M2 system bootloops.
+The pmsg buffer therefore did not provide usable evidence for this test.
+
+Files: rom/platform/exynos9810/installer/bootlogger_pid1_probe.c.
+The optional child monitor now reads the runtime major:minor for sda21,
+creates a block node inside its private tmpfs /dev, mounts ext4 CACHE
+within that private mount namespace, and writes/fsyncs only
+`m2-early-boot-probe05.log`. It does not format CACHE or modify PID1's
+mount table. Normal ROM builds and the pinned kernel do not include this
+diagnostic source.
+
+Verification: static AArch64 link succeeded. TWRP warm/cold namespace and
+fork/wait/exec/env tests all returned 0; the parent mount-table hash stayed
+unchanged. `--cache-write-test` returned PROBE-CACHE-WRITE-PASS, and the
+marker survived a recovery reboot in /cache/m2-early-boot-probe05.log.
+Full diagnostic BOOT SHA256:
+fc54c3b87d3667cdf565d8074629e1c1486808c4c7ede4196b261467e02fe236.
+Independent review confirmed kernel, DTB, cmdline, footer and padding;
+only the ramdisk changed. G965F serial/model/bootloader guards and complete
+BOOT readback passed. Runtime result is logged separately in
+logs/20261022-m2-early-diag/pid1-probe-05/.

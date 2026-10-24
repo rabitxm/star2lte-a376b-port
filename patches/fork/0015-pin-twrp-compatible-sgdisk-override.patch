@@ -1,0 +1,74 @@
+Reason: bundled Android35 sgdisk fails on live Android9 TWRP: CANNOT LINK EXECUTABLE, missing libc++ basic_stringstream symbol and unsupported RELR tags. The selected static ARM64 GPT fdisk 1.0.5 reads/verifies real 4096-byte-sector GPT and passes the unchanged fork repartition script on a RAM file.
+Affected: platform/exynos9810/installer/customize.sh override selection/hash guard; M1 F profile pins local tool; verify_exynos9810_flashable.sh checks embedded tool hash.
+Verify: missing/hash-mismatched profile rejected; explicit override prioritized and must match pin; existing default bundled hash kept; bash -n; live readonly print/verify; RAM GPT fixture target sizes and prefix1-17 CRC/bytes PASS; final ZIP verifier.
+Rollback: reverse patch; old bundled utility is incompatible with this recovery, so do not repartition using it. No build system/kernel changes; only local utility input from pinned upstream repository.
+
+--- a/platform/exynos9810/installer/customize.sh
++++ b/platform/exynos9810/installer/customize.sh
+@@ -55,6 +55,12 @@
+ 
+ find_exynos9810_sgdisk()
+ {
++    # An explicit recovery-compatible tool must not silently fall back.
++    if [ -n "${REPARTITIONER_SGDISK:-}" ]; then
++        [ -f "$REPARTITIONER_SGDISK" ] || return 1
++        echo "$REPARTITIONER_SGDISK"
++        return 0
++    fi
+     for bin in \
+         "$SRC_DIR/platform/exynos9810/installer/repartition/sgdisk" \
+         "${REPARTITIONER_SGDISK:-}" \
+@@ -80,6 +86,16 @@
+         LOGE "Bundled Exynos9810 sgdisk failed SHA-256 verification"
+         exit 1
+     }
++else
++    [ -n "${EXYNOS9810_EXPECTED_SGDISK_SHA256:-}" ] || {
++        LOGE "An explicit sgdisk override requires a pinned SHA-256"
++        exit 1
++    }
++    EXYNOS9810_SOURCE_SGDISK_SHA256="$(sha256sum "$REPARTITIONER_SGDISK_BIN" | awk '{print $1}')"
++    [ "$EXYNOS9810_SOURCE_SGDISK_SHA256" = "$EXYNOS9810_EXPECTED_SGDISK_SHA256" ] || {
++        LOGE "Explicit Exynos9810 sgdisk failed SHA-256 verification"
++        exit 1
++    }
+ fi
+ LOG "- Bundling Exynos9810 sgdisk repartitioner binary"
+ cp -a "$REPARTITIONER_SGDISK_BIN" "$TMP_DIR/exynos9810/sgdisk"
+--- a/target/star2lte/profiles/m1-g965f-no-ksu.sh
++++ b/target/star2lte/profiles/m1-g965f-no-ksu.sh
+@@ -17,4 +17,17 @@
+     printf 'The selected duhansysl prebuilt does not match the pinned SHA-256.\n' >&2
+     return 1
+ fi
++# Static ARM64 GPT fdisk 1.0.5, pinned from evdenis/disk commit
++# 903e56c2d61e276c9d500bbda7c634842993613c; live TWRP/GPT fixture verified.
++export REPARTITIONER_SGDISK="$_STAR2LTE_M1_ROOT/../inputs/tooling/sgdisk-compatible/sgdisk"
++export EXYNOS9810_EXPECTED_SGDISK_SHA256="84d08da6871b5e4f2c4f7499f1896f11549cb036c8d3ed204c1f2f96d4e89785"
++if [ ! -f "$REPARTITIONER_SGDISK" ]; then
++    printf 'Missing the pinned TWRP-compatible sgdisk.\n' >&2
++    return 1
++fi
++_STAR2LTE_M1_HASH="$(sha256sum "$REPARTITIONER_SGDISK")"
++if [ "${_STAR2LTE_M1_HASH%% *}" != "$EXYNOS9810_EXPECTED_SGDISK_SHA256" ]; then
++    printf 'The selected sgdisk does not match the pinned SHA-256.\n' >&2
++    return 1
++fi
+ unset _STAR2LTE_M1_ROOT _STAR2LTE_M1_HASH
+--- a/scripts/internal/verify_exynos9810_flashable.sh
++++ b/scripts/internal/verify_exynos9810_flashable.sh
+@@ -68,6 +68,14 @@
+     exit 1
+ }
+ 
++if [ -n "${EXYNOS9810_EXPECTED_SGDISK_SHA256:-}" ]; then
++    unzip -p "$ZIP_FILE" exynos9810/sgdisk > "$VERIFY_TMP/sgdisk"
++    [ "$(sha256sum "$VERIFY_TMP/sgdisk" | awk '{print $1}')" = "$EXYNOS9810_EXPECTED_SGDISK_SHA256" ] || {
++        echo "Exynos9810 flashable verification: wrong pinned sgdisk" >&2
++        exit 1
++    }
++fi
++
+ unzip -p "$ZIP_FILE" exynos9810/kernel.zip > "$VERIFY_TMP/kernel.zip"
+ ACTUAL_KERNEL_SHA256="$(sha256sum "$VERIFY_TMP/kernel.zip" | awk '{print $1}')"
+ if [ "$ACTUAL_KERNEL_SHA256" != "$EXPECTED_KERNEL_SHA256" ]; then

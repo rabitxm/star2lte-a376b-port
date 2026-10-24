@@ -1,0 +1,143 @@
+From: Codex M2 boot diagnostics
+Subject: [PATCH] Add opt-in M2 bootstrap compatibility overlay
+
+Reason: Direct execution on the pinned DS-ACK 4.9.337 aborts in the A37
+Android 16 bootstrap linker with `MADV_WIPEONFORK` returning EINVAL. A same-CPU
+read-only control using the M1 Android 16 bootstrap stack listed the A37 init
+and executed its shell successfully. Add an opt-in, hash-pinned overlay only for
+star2lte / A376B Android 16 M2 so a distinct diagnostic artifact can capture
+whether init gets past linker startup.
+
+Files: `unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh`,
+`target/star2lte/profiles/m1-g965f-no-ksu.sh`, and the new diagnostic profile
+`target/star2lte/profiles/m2-g965f-a376b-android16-no-ksu-bootstrap-compat.sh`.
+The overlay replaces only bootstrap linker64 and bootstrap libc/libm/libdl/
+libdl_android from the hash-pinned S22 Android 16 donor. It does not change the
+kernel, framework, Hybrid Vendor VNDK33, RIL/blob, modem, EFS, or bootloader.
+
+Verification: exact source and staged SHA256 checks, metadata fixture, shell
+syntax, strict M1=false/M2=true profile fixture, complete local patch replay,
+clean M2 diagnostic build, then verify final SYSTEM files/hashes/fs_config/
+file_context and runtime CACHE markers. This patch only prepares a candidate;
+no diagnostic image has been flashed.
+
+diff --git a/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh b/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
+--- a/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
+@@ -7109,6 +7109,84 @@
+ }
+ 
+ 
++_EXYNOS9810_FINAL_APPLY_M2_BOOTSTRAP_COMPAT()
++{
++    [ "${EXYNOS9810_M2_BOOTSTRAP_COMPAT:-false}" = "true" ] || return 0
++    [ "$TARGET_CODENAME" = "star2lte" ] && \
++        [ "${ROM_MILESTONE:-}" = "M2" ] && \
++        [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] || {
++            LOGE "M2 bootstrap compatibility overlay is restricted to star2lte/A376B Android16 M2"
++            return 1
++        }
++
++    local REL SRC DST EXPECTED ACTUAL
++    local ROOT="$FW_DIR/SM-S901B_EUX/system"
++    LOG "- Applying diagnostic M2 Android16 bootstrap compatibility overlay from pinned S22 donor"
++
++    for REL in \
++        system/bin/bootstrap/linker64 \
++        system/lib64/bootstrap/libc.so \
++        system/lib64/bootstrap/libm.so \
++        system/lib64/bootstrap/libdl.so \
++        system/lib64/bootstrap/libdl_android.so; do
++        SRC="$ROOT/$REL"
++        [ -s "$SRC" ] || {
++            LOGE "M2 bootstrap donor file is missing: $SRC"
++            return 1
++        }
++
++        case "$REL" in
++            system/bin/bootstrap/linker64)
++                EXPECTED="1cd65a1bda38eef0a14eee4686c69230ee78e4841df00e105ad3b161a7c149e8" ;;
++            system/lib64/bootstrap/libc.so)
++                EXPECTED="3b918ece91963cf1b39588d063430f5328d5ade3640db9917d1651e293efaaa6" ;;
++            system/lib64/bootstrap/libm.so)
++                EXPECTED="3f833b504e6a265d061ee5a045f8ec9d5fb3fbd573e17311ffb31a6ffd6f50d7" ;;
++            system/lib64/bootstrap/libdl.so)
++                EXPECTED="adaff8d5f89138bd1f8ae9f7a3363b6243aebe903a0466a7da4634859ad7e399" ;;
++            system/lib64/bootstrap/libdl_android.so)
++                EXPECTED="65ed07337e363a0e0ace5a0ab587f28837d3b61e843a888ed388a975b633ea19" ;;
++        esac
++        ACTUAL="$(sha256sum "$SRC")"
++        ACTUAL="${ACTUAL%% *}"
++        [ "$ACTUAL" = "$EXPECTED" ] || {
++            LOGE "Pinned M1 bootstrap donor hash mismatch for $REL: $ACTUAL"
++            return 1
++        }
++
++        DST="$WORK_DIR/system/$REL"
++        mkdir -p "$(dirname "$DST")"
++        cp -af "$SRC" "$DST" || return 1
++        [ "$(sha256sum "$DST" | cut -d' ' -f1)" = "$EXPECTED" ] || {
++            LOGE "M2 bootstrap overlay copy verification failed for $REL"
++            return 1
++        }
++
++        case "$REL" in
++            system/bin/bootstrap/linker64)
++                _EXYNOS9810_FINAL_SET_METADATA system "$REL" \
++                    0 2000 755 "u:object_r:system_linker_exec:s0" || return 1 ;;
++            *)
++                _EXYNOS9810_FINAL_SET_METADATA system "$REL" \
++                    0 0 644 "u:object_r:system_lib_file:s0" || return 1 ;;
++        esac
++    done
++
++    for REL in \
++        system/bin/bootstrap/linker64 \
++        system/lib64/bootstrap/libc.so \
++        system/lib64/bootstrap/libm.so \
++        system/lib64/bootstrap/libdl.so \
++        system/lib64/bootstrap/libdl_android.so; do
++        DST="$WORK_DIR/system/$REL"
++        [ -s "$DST" ] || {
++            LOGE "M2 bootstrap compatibility output is missing: $DST"
++            return 1
++        }
++    done
++}
++
++
+ _EXYNOS9810_FINAL_RESTORE_STOCK_LED_DEFAULTS()
+ {
+     # Stock S9 framework resources: blue, 500 ms on / 5000 ms off.
+@@ -7200,6 +7278,7 @@
+ _EXYNOS9810_FINAL_VERIFY_ENFORCING_BOOT_STATE || return 1
+ _EXYNOS9810_FINAL_REMOVE_STALE_SYSTEM_BOOT_DEBUG
+ _EXYNOS9810_FINAL_RESTORE_BASE_MDF_STACK || return 1
++_EXYNOS9810_FINAL_APPLY_M2_BOOTSTRAP_COMPAT || return 1
+ _EXYNOS9810_FINAL_RESTORE_FACE_HIDL_ABI || return 1
+ _EXYNOS9810_FINAL_SELECT_HIDL_FACE_VINTF || return 1
+ if [ "${EXYNOS9810_FACE_UNLOCK_DISABLED:-false}" = "true" ]; then
+diff --git a/target/star2lte/profiles/m1-g965f-no-ksu.sh b/target/star2lte/profiles/m1-g965f-no-ksu.sh
+--- a/target/star2lte/profiles/m1-g965f-no-ksu.sh
++++ b/target/star2lte/profiles/m1-g965f-no-ksu.sh
+@@ -8,6 +8,7 @@
+ export EXYNOS9810_FACEUNLOCKFIX_BUILTIN="false"
+ export STAR2LTE_M2_FIXED_RESOLUTION="false"
+ export STAR2LTE_M2_KEEP_DONOR_WIFI_UI="false"
++export EXYNOS9810_M2_BOOTSTRAP_COMPAT="false"
+ export UN1CA_DONOR_CONFIG="essi"
+ export STAR2LTE_BUILD_MODEL="SM-G965F"
+ export EXYNOS9810_TARGET_OS_FILE_SYSTEM_TYPE="ext4"
+diff --git a/target/star2lte/profiles/m2-g965f-a376b-android16-no-ksu-bootstrap-compat.sh b/target/star2lte/profiles/m2-g965f-a376b-android16-no-ksu-bootstrap-compat.sh
+new file mode 100644
+--- /dev/null
++++ b/target/star2lte/profiles/m2-g965f-a376b-android16-no-ksu-bootstrap-compat.sh
+@@ -0,0 +1,8 @@
++# Diagnostic-only M2 profile: run A37 Android 16 bootstrap executables with the
++# known-compatible M1 Android 16 bootstrap linker and bionic on DS-ACK 4.9.
++# Reason: A37 linker aborts at MADV_WIPEONFORK with EINVAL on the pinned kernel.
++# Files affected: /system/bin/bootstrap/linker64 and bootstrap libc/libm/libdl.
++# Verify exact donor hashes, final fs_config/file_context, linker --list and
++# init phase logs; this is a diagnostic build, not a release profile.
++source "$(dirname -- "${BASH_SOURCE[0]}")/m2-g965f-a376b-android16-no-ksu-pstore-trace.sh" || return 1
++export EXYNOS9810_M2_BOOTSTRAP_COMPAT="true"

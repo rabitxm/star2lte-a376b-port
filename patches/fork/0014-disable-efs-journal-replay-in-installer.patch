@@ -1,0 +1,18 @@
+Reason: installer reads only SIM topology from EFS; ext4 ro alone may replay the journal. Preserve the no-EFS-writes requirement during authorized flash.
+Affected: platform/exynos9810/installer/repartition/vendor_bootfix.sh, two EFS mount attempts only.
+Verify: sh -n, exact mount-options/source audit and live ro,noload SIM-key-only preflight; final embedded script equals source. No EFS content or identity written to logs.
+Rollback: reverse patch; EFS must remain write-protected. No kernel/blob change.
+
+--- a/platform/exynos9810/installer/repartition/vendor_bootfix.sh
++++ b/platform/exynos9810/installer/repartition/vendor_bootfix.sh
+@@ -174,8 +174,8 @@
+         /dev/block/bootdevice/by-name/EFS \
+         /dev/block/by-name/EFS; do
+         [ -e "$_efs_block" ] || continue
+-        if mount -t ext4 -o ro "$_efs_block" "$EFS_MNT" 2>/dev/null || \
+-            mount -o ro "$_efs_block" "$EFS_MNT" 2>/dev/null; then
++        if mount -t ext4 -o ro,noload "$_efs_block" "$EFS_MNT" 2>/dev/null || \
++            mount -o ro,noload "$_efs_block" "$EFS_MNT" 2>/dev/null; then
+             EFS_TEMP_MOUNTED=true
+             for _efs_prop in \
+                 "$EFS_MNT/imei/factory.prop" \

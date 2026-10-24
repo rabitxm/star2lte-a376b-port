@@ -1,0 +1,32 @@
+{
+  "date": "2026-10-24",
+  "m2_installed_artifact": "attempt50 bootstrap compatibility",
+  "recovery_kernel": "4.9.118-g36e6ddff22b9",
+  "m1_kernel": "4.9.337-DS-ACK-V1.12-G965F-08.05.2026",
+  "compiler": "A37 secilc installed on M2",
+  "bootstrap": "pinned M1 linker/bionic from attempt50",
+  "input_sha256": {
+    "/system/bin/secilc": "bfe67d86a1c73696c72b844461251045e451904d47b5512eb473891d444a4ffc",
+    "/system/etc/selinux/plat_sepolicy.cil": "75d4c68bab5f722ec8b26c153314b600e887250b0d4739f4c15de504e7746420",
+    "/system/etc/selinux/mapping/33.0.cil": "8f686832ceee3a3fb318d4f33a1bcb92d01ec4d3ac305422390e904887fc9bee",
+    "/system/etc/selinux/mapping/33.0.compat.cil": "6e714552caaebe111b0bd6f43e850c82f5c3b2b22edc1e15eba188b34d75ff5a",
+    "/system_ext/etc/selinux/system_ext_sepolicy.cil": "13d3bd50a93b4946c2bdc1fa34c138e6c0ca26c4d39a6131c14d659619b42d58",
+    "/system_ext/etc/selinux/mapping/33.0.cil": "d3a52ae2dfa5da9e72e3fbb0a4aaeafa52599950556a1a0d26f1a94cc24835df",
+    "/system_ext/etc/selinux/mapping/33.0.compat.cil": "b5c9626715569105f6eee32f42510466df6fb57ff1055af195d64a3cc95ba50c",
+    "/product/etc/selinux/product_sepolicy.cil": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+    "/product/etc/selinux/mapping/33.0.cil": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "/vendor/etc/selinux/plat_pub_versioned.cil": "d3cf5d99818c2e482ab0e746aa56d2dcbc7e294e935cba47d0ba9c9f32f0110e",
+    "/vendor/etc/selinux/vendor_sepolicy.cil": "8037f91678064c88c3605021e2e81a9b986418e3e49d52688cce1c4f1f040969"
+  },
+  "recovery_exit": 0,
+  "m1_exit": 0,
+  "compiled_policy_size": 1528889,
+  "recovery_policy_sha256": "4725362524566498a968fe0fd379668ed1b10b85cc01edd212e3cd70e455dc4b",
+  "m1_policy_sha256": "4725362524566498a968fe0fd379668ed1b10b85cc01edd212e3cd70e455dc4b",
+  "same_policy": true,
+  "policy_loaded": false,
+  "m1_temporary_files_removed": true,
+  "m1_boot_completed": "1",
+  "probe11_pid1_boot_tested": false,
+  "boot_remains_baseline": "cc618abc72e8e568e56a8c643c906cff0d7b9143dfc77d86dc645f55776ed01d"
+}
