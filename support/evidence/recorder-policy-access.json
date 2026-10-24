@@ -1,0 +1,227 @@
+{
+  "method": "libsepol user-space access-vector query, no kernel policy load",
+  "policy_sha256": "4725362524566498a968fe0fd379668ed1b10b85cc01edd212e3cd70e455dc4b",
+  "runtime_process_domain_and_file_labels_confirmed": false,
+  "queries": [
+    {
+      "source": "u:r:kernel:s0",
+      "target": "u:object_r:cache_file:s0",
+      "class": "file",
+      "permission": "append",
+      "exit": 7,
+      "decision": "requested permission append denied by te-rule",
+      "stderr": ""
+    },
+    {
+      "source": "u:r:kernel:s0",
+      "target": "u:object_r:cache_file:s0",
+      "class": "file",
+      "permission": "write",
+      "exit": 7,
+      "decision": "requested permission write denied by te-rule",
+      "stderr": ""
+    },
+    {
+      "source": "u:r:kernel:s0",
+      "target": "u:object_r:cache_file:s0",
+      "class": "file",
+      "permission": "open",
+      "exit": 7,
+      "decision": "requested permission open denied by te-rule",
+      "stderr": ""
+    },
+    {
+      "source": "u:r:kernel:s0",
+      "target": "u:object_r:cache_file:s0",
+      "class": "file",
+      "permission": "getattr",
+      "exit": 7,
+      "decision": "requested permission getattr denied by te-rule",
+      "stderr": ""
+    },
+    {
+      "source": "u:r:kernel:s0",
+      "target": "u:object_r:unlabeled:s0",
+      "class": "file",
+      "permission": "append",
+      "exit": 7,
+      "decision": "requested permission append denied by te-rule",
+      "stderr": ""
+    },
+    {
+      "source": "u:r:kernel:s0",
+      "target": "u:object_r:unlabeled:s0",
+      "class": "file",
+      "permission": "write",
+      "exit": 7,
+      "decision": "requested permission write denied by te-rule",
+      "stderr": ""
+    },
+    {
+      "source": "u:r:kernel:s0",
+      "target": "u:object_r:tmpfs:s0",
+      "class": "chr_file",
+      "permission": "read",
+      "exit": 7,
+      "decision": "requested permission read denied by te-rule",
+      "stderr": ""
+    },
+    {
+      "source": "u:r:kernel:s0",
+      "target": "u:object_r:tmpfs:s0",
+      "class": "chr_file",
+      "permission": "write",
+      "exit": 0,
+      "decision": "requested permission write allowed",
+      "stderr": ""
+    },
+    {
+      "source": "u:r:kernel:s0",
+      "target": "u:object_r:kmsg_device:s0",
+      "class": "chr_file",
+      "permission": "read",
+      "exit": 0,
+      "decision": "requested permission read allowed",
+      "stderr": ""
+    },
+    {
+      "source": "u:r:kernel:s0",
+      "target": "u:object_r:kmsg_device:s0",
+      "class": "chr_file",
+      "permission": "write",
+      "exit": 0,
+      "decision": "requested permission write allowed",
+      "stderr": ""
+    },
+    {
+      "source": "u:r:kernel:s0",
+      "target": "u:r:kernel:s0",
+      "class": "process",
+      "permission": "setcurrent",
+      "exit": 7,
+      "decision": "requested permission setcurrent denied by te-rule",
+      "stderr": ""
+    },
+    {
+      "source": "u:r:kernel:s0",
+      "target": "u:r:init:s0",
+      "class": "process",
+      "permission": "dyntransition",
+      "exit": 7,
+      "decision": "requested permission dyntransition denied by te-rule",
+      "stderr": ""
+    },
+    {
+      "source": "u:r:init:s0",
+      "target": "u:object_r:cache_file:s0",
+      "class": "file",
+      "permission": "append",
+      "exit": 7,
+      "decision": "requested permission append denied by te-rule",
+      "stderr": ""
+    },
+    {
+      "source": "u:r:init:s0",
+      "target": "u:object_r:cache_file:s0",
+      "class": "file",
+      "permission": "write",
+      "exit": 0,
+      "decision": "requested permission write allowed",
+      "stderr": ""
+    },
+    {
+      "source": "u:r:init:s0",
+      "target": "u:object_r:cache_file:s0",
+      "class": "file",
+      "permission": "open",
+      "exit": 0,
+      "decision": "requested permission open allowed",
+      "stderr": ""
+    },
+    {
+      "source": "u:r:init:s0",
+      "target": "u:object_r:cache_file:s0",
+      "class": "file",
+      "permission": "getattr",
+      "exit": 0,
+      "decision": "requested permission getattr allowed",
+      "stderr": ""
+    },
+    {
+      "source": "u:r:init:s0",
+      "target": "u:object_r:unlabeled:s0",
+      "class": "file",
+      "permission": "append",
+      "exit": 0,
+      "decision": "requested permission append allowed",
+      "stderr": ""
+    },
+    {
+      "source": "u:r:init:s0",
+      "target": "u:object_r:unlabeled:s0",
+      "class": "file",
+      "permission": "write",
+      "exit": 0,
+      "decision": "requested permission write allowed",
+      "stderr": ""
+    },
+    {
+      "source": "u:r:init:s0",
+      "target": "u:object_r:tmpfs:s0",
+      "class": "chr_file",
+      "permission": "read",
+      "exit": 0,
+      "decision": "requested permission read allowed",
+      "stderr": ""
+    },
+    {
+      "source": "u:r:init:s0",
+      "target": "u:object_r:tmpfs:s0",
+      "class": "chr_file",
+      "permission": "write",
+      "exit": 0,
+      "decision": "requested permission write allowed",
+      "stderr": ""
+    },
+    {
+      "source": "u:r:init:s0",
+      "target": "u:object_r:kmsg_device:s0",
+      "class": "chr_file",
+      "permission": "read",
+      "exit": 0,
+      "decision": "requested permission read allowed",
+      "stderr": ""
+    },
+    {
+      "source": "u:r:init:s0",
+      "target": "u:object_r:kmsg_device:s0",
+      "class": "chr_file",
+      "permission": "write",
+      "exit": 0,
+      "decision": "requested permission write allowed",
+      "stderr": ""
+    },
+    {
+      "source": "u:r:init:s0",
+      "target": "u:r:kernel:s0",
+      "class": "process",
+      "permission": "setcurrent",
+      "exit": 7,
+      "decision": "requested permission setcurrent denied by te-rule",
+      "stderr": ""
+    },
+    {
+      "source": "u:r:init:s0",
+      "target": "u:r:init:s0",
+      "class": "process",
+      "permission": "dyntransition",
+      "exit": 7,
+      "decision": "requested permission dyntransition denied by te-rule",
+      "stderr": ""
+    }
+  ],
+  "recovery_cache_file_xattrs": "u:object_r:unlabeled:s0 for saved probe11 and probe12 logs",
+  "actual_runtime_enforcement_subject_and_inode_sids_confirmed": false,
+  "m1_dsack_pmsg_node_present": false,
+  "interpretation": "Offline denial supports testing recorder visibility; it does not prove a runtime AVC or reset cause."
+}

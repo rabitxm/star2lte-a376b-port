@@ -64,6 +64,14 @@ Do not modify EFS/CPEFS, modem or bootloader. G965N has not been flashed.
    Recorder loss of access is a hypothesis that must be tested, not an observed
    AVC or proof that policy loading succeeds or fails.
 
+10. Offline libsepol queries of the actual compiled policy deny kernel ->
+    unlabeled file append/write. Both saved CACHE logs have an unlabeled xattr
+    in recovery. This makes loss of recorder write access a concrete hypothesis;
+    actual runtime subject/enforcement/inode labels remain unmeasured. Booted
+    M1 DS-ACK has no pmsg node, so recovery pmsg cannot be assumed as a fallback.
+    See `diagnostics/offline-recorder-policy.md` and
+    `support/evidence/recorder-policy-access.json`.
+
 ## Useful next investigation
 
 First establish recorder visibility across policy activation: preserve a proc

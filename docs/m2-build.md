@@ -540,3 +540,14 @@ reproduces without PID1 ptrace. Next gate is recorder visibility through SELinux
 activation, not another identical ROM build. Raw evidence remains local under
 `logs/20261024-probe11/` and `logs/20261024-probe12-passive/`; selected sanitized
 text/hash summaries are under `support/evidence/`.
+
+
+24/10/2026 — offline recorder access check: user-space libsepol against the
+actual compiled M2 policy returns `requested permission append denied by
+te-rule` for kernel -> unlabeled:file, and likewise denies write. Recovery
+reports both saved probe11/12 CACHE files with an unlabeled xattr. Runtime
+monitor SID/enforcement/inode labels remain unconfirmed; this is a recorder
+visibility hypothesis, not a captured AVC or proven bootloop cause. M1 DS-ACK
+has no pmsg node, unlike recovery. No live policy load, edit, enforcement
+change, device write or reboot was performed. See
+`diagnostics/offline-recorder-policy.md` and selected query evidence.

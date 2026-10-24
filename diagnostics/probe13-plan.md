@@ -21,6 +21,13 @@ evidence.
 - The genfs ENOENT warning is not a captured panic. No kernel change is
   justified by that line alone.
 
+An offline query of the actual compiled M2 policy now confirms a denial of
+kernel -> unlabeled file append/write. The saved CACHE logs have an unlabeled
+xattr when inspected in recovery. This supports a concrete recorder access
+hypothesis but does not establish the runtime monitor domain/enforcement.
+See `offline-recorder-policy.md`. M1 DS-ACK exposes no pmsg node; recovery
+pmsg is not an established independent channel for an Android boot.
+
 ## Scope of a future probe13
 
 Only the opt-in diagnostic recorder and its ramdisk may change. Preserve the

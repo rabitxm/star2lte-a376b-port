@@ -314,3 +314,14 @@ next instrumentation gate. Source and selected evidence are prepared for the
 GitHub assistance snapshot; images, firmware and raw logs stay local.
 Live API inspection now reports the repository as public; visibility is not
 changed by this update.
+
+
+24/10/2026 — offline recorder access check: user-space libsepol against the
+actual compiled M2 policy returns `requested permission append denied by
+te-rule` for kernel -> unlabeled:file, and likewise denies write. Recovery
+reports both saved probe11/12 CACHE files with an unlabeled xattr. Runtime
+monitor SID/enforcement/inode labels remain unconfirmed; this is a recorder
+visibility hypothesis, not a captured AVC or proven bootloop cause. M1 DS-ACK
+has no pmsg node, unlike recovery. No live policy load, edit, enforcement
+change, device write or reboot was performed. See
+`diagnostics/offline-recorder-policy.md` and selected query evidence.
