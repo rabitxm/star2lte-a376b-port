@@ -1,0 +1,85 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] use PAC3 brightness scale for M4 BZI6 backlight
+
+# Reason: fresh M4-0215 evidence shows the BZI6 adapter sends Settings brightness at 1x because AUTO_BRIGHTNESS_TYPE3 disables the donor-specific 100x branch, while the pinned Exynos9810 PAC3 panel expects 100x. The pinned native HAL passes the extension value unchanged.
+# Affected: the exact BZI6 legacy SehLights patch and its SHA-256 preimage guard. Main backlight now always uses PAC3 scale 100 within the M4/G965F/SDK37 scope; other lights, SurfaceControl, auto-brightness configuration, kernel and HAL are unchanged.
+# Verify: reconstruct the pinned BZI6 smali preimage, replay the revised patch byte-for-byte, exercise wrong-scope/hash negatives, rebuild the existing fork, inspect compiled services.jar and final image, then check raw brightness at modest Settings values with off/wake behavior.
+# Rollback: remove 0216 from the series/source lock, restore the prior 0003 patch and hash guard, and rebuild; package 0215 remains the rollback image until the replacement is verified.
+
+--- a/rom/unica/patches/legacy/lights/services.jar/0003-BZI6-legacy-SehLights-backlight.patch
++++ b/rom/unica/patches/legacy/lights/services.jar/0003-BZI6-legacy-SehLights-backlight.patch
+@@ -47,7 +47,7 @@
+      and-int/lit16 p1, p1, 0xff
+  
+      shl-int/lit8 p2, p1, 0x10
+-@@ -87,11 +85,65 @@
++@@ -87,11 +85,55 @@
+      or-int/2addr p2, p3
+  
+      or-int/2addr p1, p2
+@@ -79,18 +79,8 @@
+ +
+ +    mul-float/2addr v0, p2
+ +
+-+    sget-boolean p2, Lcom/android/server/power/PowerManagerUtil;->USE_PERSONAL_AUTO_BRIGHTNESS_V3:Z
+-+
+-+    if-eqz p2, :cond_4
+-+
+ +    const/16 p2, 0x64
+ +
+-+    goto :goto_1
+-+
+-+    :cond_4
+-+    const/4 p2, 0x1
+-+
+-+    :goto_1
+ +    int-to-float p2, p2
+ +
+ +    mul-float/2addr v0, p2
+@@ -113,7 +103,7 @@
+  
+      monitor-exit p0
+  
+-@@ -106,18 +158,18 @@
++@@ -106,18 +148,18 @@
+  
+      throw p1
+  
+@@ -138,7 +128,7 @@
+  
+      iget-object p1, p0, Lcom/android/server/display/LocalDisplayAdapter$BacklightAdapter;->mSurfaceControlProxy:Lcom/android/server/display/LocalDisplayAdapter$SurfaceControlProxy;
+  
+-@@ -129,7 +181,7 @@
++@@ -129,7 +171,7 @@
+  
+      return-void
+  
+@@ -147,7 +137,7 @@
+      const-string/jumbo v0, "LocalDisplayAdapter"
+  
+      new-instance v1, Ljava/lang/StringBuilder;
+-@@ -160,16 +212,16 @@
++@@ -160,16 +202,16 @@
+  
+      iget-boolean v2, p0, Lcom/android/server/display/LocalDisplayAdapter$BacklightAdapter;->mIsFirstDisplay:Z
+  
+@@ -169,7 +159,7 @@
+      invoke-virtual {v1, v2}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+  
+      const-string v2, " +"
+-@@ -220,16 +272,16 @@
++@@ -220,16 +262,16 @@
+  
+      iget-boolean p0, p0, Lcom/android/server/display/LocalDisplayAdapter$BacklightAdapter;->mIsFirstDisplay:Z
+  
+--- a/rom/unica/patches/legacy/lights/patch_bzi6_sehlights.py
++++ b/rom/unica/patches/legacy/lights/patch_bzi6_sehlights.py
+@@ -69,7 +69,7 @@
+         if sha256(path.read_bytes()).hexdigest() != digest:
+             raise RuntimeError("Unreviewed BZI6 lights class: " + relative)
+         texts[relative] = path.read_text()
+-    if sha256(backlight_patch.read_bytes()).hexdigest() != "c56f85d1af62f0433b14adb5d97fd6b6da53dcf0a98d2370eb654ca46ac3c975":
++    if sha256(backlight_patch.read_bytes()).hexdigest() != "1bc4307b1c21dac6acf6ff63835d496f4dcf19ef5bb7511cedafb74c94a63e67":
+         raise RuntimeError("Reviewed BZI6 backlight diff changed")
+ 
+     # Patch only a temporary copy; all input/transform checks finish before

@@ -1,0 +1,200 @@
+# Reason: runtime attempt0223 still sends unsupported HFP DBFW+ startup subcommands 32 01 and 3f before its FDF1 timeout.
+# Files: existing FDF1 helper/lock and combined native-backend final-hash lock.
+# Verify: pinned BL targets and per-site contexts; donor/previous-candidate fixtures; no changes outside two extra BL instructions; combined final hash; runtime ON/restarts/toggle gates.
+# Rollback: original 26585f22 JNI; no changes to key stores, replies, SCO transport, vendor or kernel.
+--- a/unica/patches/bluetooth/a376b_android17_fdf1_skip.py
++++ b/unica/patches/bluetooth/a376b_android17_fdf1_skip.py
+@@ -1,5 +1,10 @@
+ #!/usr/bin/env python3
+-"""Skip the locked BZI6 DBFW+ 0xFDF1 send on M4/G965F only."""
++"""Skip the three measured optional BZI6 DBFW+ sends on M4/G965F only.
++
++Reason: attempt0223 still times out on the two HFP startup sends; the previous
++adapter covered only A2DP StateOpened. Do not alter replies, key storage or SCO
++audio transport. Verify per-site context/BL, full output hashes and runtime.
++"""
+ 
+ from __future__ import annotations
+ 
+@@ -90,10 +95,10 @@
+     raise Fdf1Error("JNI GNU Build ID is missing")
+ 
+ 
+-def context_offsets(data: bytes) -> tuple[int, int]:
+-    lock = lock_data()
+-    start = int(lock["context_start_va"], 16)
+-    end = int(lock["context_end_va_exclusive"], 16)
++def context_offsets(data: bytes, site: dict | None = None) -> tuple[int, int]:
++    site = lock_data() if site is None else site
++    start = int(site["context_start_va"], 16)
++    end = int(site["context_end_va_exclusive"], 16)
+     return file_offset_for_va(data, start), file_offset_for_va(data, end - 1) + 1
+ 
+ 
+@@ -101,23 +106,28 @@
+     lock = lock_data()
+     if build_id(data) != lock["gnu_build_id"]:
+         raise Fdf1Error("JNI Build ID differs from the pinned BZI6 donor")
+-    call_offset = file_offset_for_va(data, int(lock["send_call_va"], 16))
+-    preimage = bytes.fromhex(lock["send_call_preimage_hex"])
+-    replacement = bytes.fromhex(lock["send_call_replacement_hex"])
+-    context_start, context_end = context_offsets(data)
+-    context_hash = hashlib.sha256(data[context_start:context_end]).hexdigest()
+-    if (data[call_offset:call_offset + 4] == replacement and
+-            context_hash == lock["context_output_sha256"]):
+-        return data, "already-patched"
+-    if (data[call_offset:call_offset + 4] != preimage or
+-            context_hash != lock["context_preimage_sha256"]):
+-        raise Fdf1Error("BZI6 FDF1 sender context/preimage changed")
+-    updated = data[:call_offset] + replacement + data[call_offset + 4:]
+-    if hashlib.sha256(updated[context_start:context_end]).hexdigest() != lock["context_output_sha256"]:
+-        raise Fdf1Error("Patched sender context differs from the locked result")
+-    if updated[:call_offset] != data[:call_offset] or updated[call_offset + 4:] != data[call_offset + 4:]:
+-        raise Fdf1Error("Patch changed bytes outside the single HCI enqueue call")
+-    return updated, "patched"
++    updated = data
++    sites = [lock] + lock["additional_senders"]
++    allowed = set()
++    for site in sites:
++        call_offset = file_offset_for_va(data, int(site["send_call_va"], 16))
++        allowed.update(range(call_offset, call_offset + 4))
++        preimage = bytes.fromhex(site["send_call_preimage_hex"])
++        replacement = bytes.fromhex(site["send_call_replacement_hex"])
++        start, end = context_offsets(updated, site)
++        context_hash = hashlib.sha256(updated[start:end]).hexdigest()
++        if (updated[call_offset:call_offset + 4] == replacement and
++                context_hash == site["context_output_sha256"]):
++            continue
++        if (updated[call_offset:call_offset + 4] != preimage or
++                context_hash != site["context_preimage_sha256"]):
++            raise Fdf1Error("BZI6 FDF1 sender context/preimage changed: " + site["sender"])
++        updated = updated[:call_offset] + replacement + updated[call_offset + 4:]
++        if hashlib.sha256(updated[start:end]).hexdigest() != site["context_output_sha256"]:
++            raise Fdf1Error("Patched sender context differs from lock: " + site["sender"])
++    if any(before != after and index not in allowed for index, (before, after) in enumerate(zip(data, updated))):
++        raise Fdf1Error("Patch changed bytes outside the three locked HCI enqueue calls")
++    return updated, "already-patched" if updated == data else "patched"
+ 
+ 
+ def extract_donor_jni() -> bytes:
+@@ -154,7 +164,7 @@
+     os.replace(temporary, path)
+     if path.read_bytes() != updated:
+         raise Fdf1Error("JNI readback differs after atomic replace")
+-    print("PASS skipped only the locked BZI6 optional 0xFDF1 HCI send")
++    print("PASS skipped only the three locked BZI6 optional 0xFDF1 HCI sends")
+ 
+ 
+ def verify(path: Path, *, expected_final_hash: bool = False) -> None:
+@@ -181,22 +191,31 @@
+         raise Fdf1Error("Donor Build ID differs from the lock")
+     output, state = patch_bytes(donor)
+     if state != "patched" or hashlib.sha256(output).hexdigest() != lock["donor_output_sha256"]:
+-        raise Fdf1Error("Donor patch output differs from the locked single-call result")
++        raise Fdf1Error("Donor patch output differs from the locked three-call result")
+     repeated, repeat_state = patch_bytes(output)
+     if repeat_state != "already-patched" or repeated != output:
+         raise Fdf1Error("Patch is not idempotent")
+-    call_offset = file_offset_for_va(donor, int(lock["send_call_va"], 16))
+-    if output[:call_offset] != donor[:call_offset] or output[call_offset + 4:] != donor[call_offset + 4:]:
+-        raise Fdf1Error("Fixture found bytes changed outside the HCI enqueue call")
+-    bad_context = bytearray(donor)
+-    context_start, _ = context_offsets(donor)
+-    bad_context[context_start] ^= 1
+-    try:
+-        patch_bytes(bytes(bad_context))
+-    except Fdf1Error:
+-        pass
+-    else:
+-        raise Fdf1Error("Changed sender context was accepted")
++    allowed = set()
++    for site in [lock] + lock["additional_senders"]:
++        call_offset = file_offset_for_va(donor, int(site["send_call_va"], 16))
++        allowed.update(range(call_offset, call_offset + 4))
++        bad_context = bytearray(donor)
++        context_start, _ = context_offsets(donor, site)
++        bad_context[context_start] ^= 1
++        try:
++            patch_bytes(bytes(bad_context))
++        except Fdf1Error:
++            pass
++        else:
++            raise Fdf1Error("Changed sender context was accepted: " + site["sender"])
++    if any(before != after and index not in allowed for index, (before, after) in enumerate(zip(donor, output))):
++        raise Fdf1Error("Fixture found bytes changed outside the three HCI enqueue calls")
++    # Upgrade the previous one-call candidate without reverting its existing fix.
++    primary = file_offset_for_va(donor, int(lock["send_call_va"], 16))
++    previous = donor[:primary] + bytes.fromhex(lock["send_call_replacement_hex"]) + donor[primary + 4:]
++    upgraded, state = patch_bytes(previous)
++    if state != "patched" or upgraded != output:
++        raise Fdf1Error("Previous one-call candidate does not upgrade to the locked result")
+     wrong_milestone = dict(os.environ)
+     wrong_milestone["ROM_MILESTONE"] = "M2"
+     try:
+@@ -213,7 +232,7 @@
+         pass
+     else:
+         raise Fdf1Error("Wrong-target fixture was accepted")
+-    print("PASS BZI6 donor hash, unique locked context, one-call patch, idempotence and negative scope/preimage checks")
++    print("PASS BZI6 donor hash, three locked calls, previous-candidate upgrade, idempotence and negative scope/preimage checks")
+ 
+ 
+ def main() -> int:
+--- a/unica/patches/bluetooth/a376b_android17_fdf1_skip.lock.json
++++ b/unica/patches/bluetooth/a376b_android17_fdf1_skip.lock.json
+@@ -9,7 +9,7 @@
+   },
+   "donor_apex_sha256": "8f7d0753689594b0d1890647ca2213c3922e8e163b2e5982c48ddeaac075484b",
+   "donor_jni_sha256": "45cf1a8eb404dbafccf0ce74de725fcbaa926931daf17325dca7d0cfb88050aa",
+-  "donor_output_sha256": "8e5e7293038e171fae1eb3482bcce45e894adc7e8df5ef75524baaf97b4c8de5",
++  "donor_output_sha256": "7858c9e61e67729edafce9d383a54f96bda9f35f0cb8eb77b1773c4be958a73e",
+   "gnu_build_id": "d98e0bf66e0d1c1cae5e2209c36e0462",
+   "sender": "BtifAvStateMachine::StateOpened::OnEnter()",
+   "context_start_va": "0x697910",
+@@ -19,6 +19,33 @@
+   "send_call_preimage_hex": "f31f0d94",
+   "send_call_replacement_hex": "1f2003d5",
+   "context_output_sha256": "0c13e7ad71a51df2b82c2634b25bb349a7aa6fcb9d00199bcff311b34806dfed",
+-  "final_work_jni_sha256": "26585f22ffb02a294578e6b652f3c14ff238989ff674f98050c2aec135db0ecf",
+-  "reason": "Attempt0222 runtime repeatedly timed out waiting for HCI opcode 0xfdf1. The M4 build log showed its Android16 signatures did not match BZI6; disassembly pins the still-active BZI6 call in StateOpened::OnEnter. Skip only this unsupported optional vendor-debug HCI send on the exact M4/G965F BZI6 profile; do not fabricate a reply or modify other Bluetooth operations."
++  "final_work_jni_sha256": "4413788f0aee41e603ecafb4d097dcca0f5ae57b263774a3859a0bc3f7a92481",
++  "reason": "Attempt0223 loads the patched JNI but still sends DBFW+ HFP startup subcommands 32 01 and 3f, then hits the same FDF1 HCI timeout. Pin both measured startup calls in addition to the existing A2DP StateOpened skip. Keep SCO transport, replies, keys, kernel and vendor unchanged.",
++  "additional_senders": [
++    {
++      "sender": "btif_hf_dbfw_plus_sco_packet_type",
++      "runtime_subopcode": "32 01",
++      "context_start_va": "0x70c138",
++      "context_end_va_exclusive": "0x70c19c",
++      "context_preimage_sha256": "966d9094bcbe876d22b7bfc0cd0ed19cb2e19000358fdc337c8bf46ba6bdbbe1",
++      "send_call_va": "0x70c190",
++      "send_call_preimage_hex": "094e0b94",
++      "send_call_replacement_hex": "1f2003d5",
++      "context_output_sha256": "05f4bb072207044f17fa6ce4ba4725c3250522179a6c74196e3f5ccd732d5fbe",
++      "enqueue_target_va": "0x9df9b4"
++    },
++    {
++      "sender": "btif_hf_dbfw_plus_sco_supported_features",
++      "runtime_subopcode": "3f",
++      "context_start_va": "0x70c19c",
++      "context_end_va_exclusive": "0x70c1fc",
++      "context_preimage_sha256": "25feb3f36ec15a9dfb04fd58464ecc357f3cb76d10401cc33420f26e2fc5acbc",
++      "send_call_va": "0x70c1f4",
++      "send_call_preimage_hex": "f04d0b94",
++      "send_call_replacement_hex": "1f2003d5",
++      "context_output_sha256": "afb06d786cb730c03b4a262574269349bb4bb7c556d99b28c44da120116c26cb",
++      "enqueue_target_va": "0x9df9b4"
++    }
++  ],
++  "previous_final_work_jni_sha256": "26585f22ffb02a294578e6b652f3c14ff238989ff674f98050c2aec135db0ecf"
+ }
+--- a/unica/patches/bluetooth/a376b_android17_native_backend.lock.json
++++ b/unica/patches/bluetooth/a376b_android17_native_backend.lock.json
+@@ -10,7 +10,7 @@
+   "donor_apex_sha256": "8f7d0753689594b0d1890647ca2213c3922e8e163b2e5982c48ddeaac075484b",
+   "donor_jni_sha256": "45cf1a8eb404dbafccf0ce74de725fcbaa926931daf17325dca7d0cfb88050aa",
+   "donor_native_output_sha256": "eb29ceb4eb948ee8ae8202020bbb5c0afbd1c57071984480e6ceb1ba93b30a9f",
+-  "final_work_jni_sha256": "26585f22ffb02a294578e6b652f3c14ff238989ff674f98050c2aec135db0ecf",
++  "final_work_jni_sha256": "4413788f0aee41e603ecafb4d097dcca0f5ae57b263774a3859a0bc3f7a92481",
+   "gnu_build_id": "d98e0bf66e0d1c1cae5e2209c36e0462",
+   "branch_va": "0x7aac04",
+   "preimage_hex": "8816523948050037",

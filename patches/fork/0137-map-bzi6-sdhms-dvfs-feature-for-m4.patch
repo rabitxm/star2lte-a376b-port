@@ -1,0 +1,61 @@
+--- a/unica/patches/dvfs/customize.sh
++++ b/unica/patches/dvfs/customize.sh
+@@ -63,11 +63,43 @@
+         EVAL "cp -a \"$MODPATH/assets/siop_default.xml\" \"$APKTOOL_DIR/system/priv-app/SamsungDeviceHealthManagerService/SamsungDeviceHealthManagerService.apk/assets/ssrm_default.xml\""
+     fi
+ 
+-    # com/sec/android/sdhms/util/Feature. A376B AZH4 is obfuscated as o5/w;
+-    # use this reviewed mapping only for that donor/SDK and keep the fork path for others.
+-    if [[ "$SOURCE_FIRMWARE" == "SM-A376B/XXV/LOCAL" ]] && \
++    # AZH4 and BZI6 move/rename the SDHMS feature initializer independently.
++    # Keep each donor mapping scoped and pinned to its no-debug-info decode.
++    if [[ "${ROM_SOURCE_CONFIG:-}" == "essi_a376b_android16" ]] && \
+             [[ "$SOURCE_PLATFORM_SDK_VERSION" == "36" ]]; then
+         _SDHMS_FEATURE_SMALI="smali/o5/w.smali"
++    elif [[ "${ROM_SOURCE_CONFIG:-}" == "essi_a376b_android17" ]]; then
++        IS_A376B_M4_BOOT_TEST && \
++                [ "${EXYNOS9810_M4_RUNTIME_COMPAT:-false}" = "true" ] || {
++            LOGE "BZI6 SDHMS DVFS patch is restricted to the reviewed M4 G965F profile"
++            return 1
++        }
++        [ "$SOURCE_DVFSAPP_CONFIG_SSRM_POLICY_FILENAME" = "siop_a37x_s5e8845" ] && \
++                [ "$TARGET_DVFSAPP_CONFIG_SSRM_POLICY_FILENAME" = "ssrm_default" ] || {
++            LOGE "Unreviewed BZI6 SDHMS SSRM policy transition"
++            return 1
++        }
++        _SDHMS_SOURCE_APK="$FW_DIR/$SOURCE_FIRMWARE_PATH/system/system/priv-app/SamsungDeviceHealthManagerService/SamsungDeviceHealthManagerService.apk"
++        [ -f "$_SDHMS_SOURCE_APK" ] || {
++            LOGE "BZI6 SamsungDeviceHealthManagerService.apk is missing"
++            return 1
++        }
++        [ "$(sha256sum "$_SDHMS_SOURCE_APK" | cut -d ' ' -f 1)" = \
++                "53c76a214d5e325ed7c16e368392ad37e9de52b68568777a0b6fa29e554fe3f9" ] || {
++            LOGE "Unreviewed BZI6 SamsungDeviceHealthManagerService.apk hash"
++            return 1
++        }
++        _SDHMS_FEATURE_SMALI="smali/n5/i0.smali"
++        _SDHMS_FEATURE_PATH="$APKTOOL_DIR/system/priv-app/SamsungDeviceHealthManagerService/SamsungDeviceHealthManagerService.apk/$_SDHMS_FEATURE_SMALI"
++        [ -f "$_SDHMS_FEATURE_PATH" ] && \
++                [ "$(sha256sum "$_SDHMS_FEATURE_PATH" | cut -d ' ' -f 1)" = \
++                  "39ff200b94cf1e141c3d02aed62709850648d3b914d12f0931c80f02a14afdd6" ] && \
++                grep -Fxq '.class public abstract Ln5/i0;' "$_SDHMS_FEATURE_PATH" && \
++                [ "$(grep -Fxc '    const-string v5, "siop_a37x_s5e8845"' "$_SDHMS_FEATURE_PATH")" = "1" ] || {
++            LOGE "Unreviewed BZI6 SDHMS Feature class n5/i0 preimage"
++            return 1
++        }
++        LOG "Using pinned BZI6 SDHMS Feature class n5/i0 for the SSRM policy transition"
+     else
+         _SDHMS_FEATURE_SMALI="smali/U1/w.smali"
+     fi
+@@ -76,6 +108,11 @@
+         "<clinit>()V" \
+         "$SOURCE_DVFSAPP_CONFIG_SSRM_POLICY_FILENAME" \
+         "$TARGET_DVFSAPP_CONFIG_SSRM_POLICY_FILENAME"
++    if [[ "${ROM_SOURCE_CONFIG:-}" == "essi_a376b_android17" ]] && \
++            grep -Fq '"siop_a37x_s5e8845"' "$_SDHMS_FEATURE_PATH"; then
++        LOGE "BZI6 SDHMS Feature still selects the A37 SSRM policy after patching"
++        return 1
++    fi
+ fi
+ 
+ if [ -f "$SRC_DIR/target/$TARGET_CODENAME/dvfs/siop_model.xml" ]; then

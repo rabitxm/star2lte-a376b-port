@@ -621,3 +621,55 @@ logs/20261024-m2-integrated-build. Existing complete releases are retained.
 
 
 24/10/2026 — Attempt52 fresh G965F M2 runtime profile reaches Android second-stage/SystemServer but fails before boot completion: logcat line74018 reports missing `android.permission.RANGING`; init line4590/6042 shows aconfig storage creation failing on read-only `/metadata`. BOOT rolled back to baseline and protected partitions match. Patch0104 enables only the previously proven volatile 16MiB metadata tmpfs in the opt-in G965F M2 diagnostic. Attempt53 is rebuilding through the fork; no acceptance or M4/G965N transition until fresh runtime evidence.
+
+
+25/10/2026 — Attempt54 fresh G965F install and runtime check. On verified G965F
+`M2_G965F_SERIAL` / `G965FXXUHFVG6`, all eight signed ZIP32 stages passed with
+RC=0 and correct markers. USERDATA was fresh; protected EFS/CPEFS/RADIO/RECOVERY/
+BOTA hashes matched before/after and BOOT matched the diagnostic package. First
+boot reached `sys.boot_completed=1` after 204s; second boot after 80.5s. Fresh
+ADB is enabled (`adb_enabled=1`, `ro.adb.secure=0`), Rampart is off (`0`), and
+SELinux is Enforcing. `/metadata` is ext4 on `/dev/block/sda21`; a temporary
+marker hash survived one reboot and was removed. RangingService registered; the
+missing-RANGING gate did not recur. SystemServer remained one PID/start through
+a 90-second sample.
+
+Open runtime findings: `boot2-logcat.txt:7840,7848` reports `gpuMem.bpf` and
+`gpuWork.bpf: Invalid argument`; `:164304-164367` and `:181425-181482` record
+no SELinux seapp match for `com.samsung.android.kgclient`, followed by child
+zygote SIGABRT. `:168661-168680` is a Bixby agent `IllegalStateException: No
+matching ComponentResult found!`. They did not prevent `sys.boot_completed=1`,
+but full stability/hardware acceptance remains open. The CACHE logger was not
+enabled in this artifact: build-config lacks `EXYNOS9810_ENABLE_INIT_DEBUG`,
+live VENDOR lacks both init-debug files, and `/cache/unica` is absent; this run
+did not verify patch0095. See `docs/m2-integrated-runtime-build.md` and local
+raw logs in `logs/20261025-m2-attempt54/`. No M1/G965N or protected-partition
+write occurred; the production kernel choice is unchanged.
+
+
+## 25 October 2026 — attempt55 completed, CACHE logger partially verified
+
+Fresh install passed8/8 signed ZIP32 stages; USERDATA changed and protected
+partition hashes stayed unchanged. Corrected patch0106 profile/config and
+actual final/installed VENDOR logger metadata checks passed. Fresh/reboot
+completed in180.7s/79.7s under Enforcing. A temporary CACHE-backed /metadata
+marker survived reboot and was removed. Fresh ADB/debugging are enabled/keyless,
+Rampart off. First-boot SystemServer stayed one PID/start through uptime662.79s;
+second-boot sampled PID/start stayed unchanged. This is diagnostic M2 evidence,
+not full hardware or long-run stability acceptance, nor M4/G965N readiness.
+
+/cache/unica now contains post-fs/post-fs-data/completed markers and nonempty
+start/15s/60s logcat on both boots. props/dmesg snapshots remain empty under the
+init service context, reproduced after late restart and read-only runcon;
+root ADB captures work. That snapshot gap has no proven root cause yet.
+BPF remains `gpuMem.bpf: Invalid argument (os error 22)` / gpuWork.bpf
+(boot2/logcat-all.txt:7879,7887); kgclient has `No match for app with uid 5959`
+with `username oem_5959` (:152556) and child `Fatal signal 6 (SIGABRT)` (:153275).
+Bixby still throws `No matching ComponentResult found!` (:156141).
+Raw paths are under logs/20261025-m2-attempt55. Do not claim these issues fixed.
+
+The next scoped investigations are vendor_kg account-name integration (existing
+seapp rule survives) and BPF program-type/tracepoint/helper/map ABI compatibility
+(minimal TRACEPOINT/PERF_EVENT tests return EINVAL). No broad SELinux exception
+or speculative production kernel change is justified. Complete artifact/hash,
+files/reasons/checks and limits: docs/m2-integrated-runtime-build.md.

@@ -1,0 +1,357 @@
+diff --git a/unica/patches/legacy/customize.sh b/unica/patches/legacy/customize.sh
+--- a/unica/patches/legacy/customize.sh
++++ b/unica/patches/legacy/customize.sh
+@@ -401,7 +401,9 @@
+     if [ -f "$WORK_DIR/vendor/bin/hw/vendor.samsung.hardware.light-service" ] && \
+             ! xxd -p -c 4 "$WORK_DIR/vendor/bin/hw/vendor.samsung.hardware.light-service" | grep -q "1853$"; then
+         PATCHED=true
+-        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++            EVAL "python3 \"$MODPATH/lights/patch_bzi6_sehlights.py\" \"$APKTOOL_DIR/system/framework/services.jar\" \"$MODPATH/lights/services.jar/0003-BZI6-legacy-SehLights-backlight.patch\"" || return 1
++        elif [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
+             LOG "- Adapting existing legacy SehLights bridge for A376B Android 16 VintfHalCache"
+             APPLY_PATCH "system" "system/framework/services.jar" \
+                 "$MODPATH/lights/services.jar/0002-A376B-legacy-SehLights-backlight.patch"
+diff --git a/unica/patches/legacy/lights/patch_bzi6_sehlights.py b/unica/patches/legacy/lights/patch_bzi6_sehlights.py
+--- /dev/null
++++ b/unica/patches/legacy/lights/patch_bzi6_sehlights.py
+@@ -0,0 +1,142 @@
++#!/usr/bin/env python3
++"""Extend BZI6's split/mutable lights API for the pinned legacy SehLights HAL."""
++from hashlib import sha256
++from pathlib import Path
++import os
++import re
++import subprocess
++import sys
++import tempfile
++
++
++LIGHT = "Lcom/android/server/lights/LightsService$LightImpl;"
++PROXY = "Lvendor/samsung/hardware/light/ISehLights$Stub$Proxy;"
++EXT = "mLegacyExtendedBrightness:I"
++FILES = {
++    "smali/com/android/server/display/LocalDisplayAdapter$BacklightAdapter.smali":
++        "a673e484f7471dc6529d0e3e0ae518086692c021336bfa2ed35e5c31b3b90c88",
++    "smali/com/android/server/lights/LightsService$LightImpl.smali":
++        "138130e1d78cc59bda8e32c36d2838ea112022263175203702187c7b9df5e4dd",
++    "smali_classes2/vendor/samsung/hardware/light/ISehLights$Stub$Proxy.smali":
++        "d58686d0991004576adc28df56ac45d0f5f848a81537321fcb53bd12c1b3cbef",
++    "smali_classes2/com/android/server/power/PowerManagerUtil.smali":
++        "4aa994fe4caec4e1edbe4bd7aca8726db962ec386018f8baf00bd68395861ee2",
++}
++
++
++def method(text, name):
++    matches = list(re.finditer(
++        r"(?ms)^\.method[^\n]* " + re.escape(name) + r"\n.*?^\.end method$", text))
++    if len(matches) != 1:
++        raise RuntimeError("Expected one BZI6 light method: " + name)
++    return matches[0]
++
++
++def once(text, old, new):
++    if text.count(old) != 1:
++        raise RuntimeError("BZI6 lights preimage changed: " + old)
++    return text.replace(old, new, 1)
++
++
++def wrapper(name, extended):
++    return f""".method public final {name}(IIII)V
++    .locals 6
++
++    move-object v0, p0
++    move v1, p1
++    const/4 v2, -0x1
++{extended}
++    move v3, p2
++    move v4, p3
++    move v5, p4
++    invoke-virtual/range {{v0 .. v5}}, {LIGHT}->{name}(IIIII)V
++    return-void
++.end method"""
++
++
++def adapt(root, backlight_patch):
++    for key, value in {
++        "ROM_SOURCE_CONFIG": "essi_a376b_android17", "ROM_MILESTONE": "M4",
++        "TARGET_CODENAME": "star2lte", "STAR2LTE_BUILD_MODEL": "SM-G965F",
++        "SOURCE_PLATFORM_SDK_VERSION": "37",
++        "SOURCE_FIRMWARE_CACHE_SUFFIX": "A376BXXU5BZI6",
++    }.items():
++        if os.environ.get(key) != value:
++            raise RuntimeError("Unreviewed BZI6 SehLights scope: " + key)
++    texts = {}
++    for relative, digest in FILES.items():
++        path = root / relative
++        if sha256(path.read_bytes()).hexdigest() != digest:
++            raise RuntimeError("Unreviewed BZI6 lights class: " + relative)
++        texts[relative] = path.read_text()
++    if sha256(backlight_patch.read_bytes()).hexdigest() != "c56f85d1af62f0433b14adb5d97fd6b6da53dcf0a98d2370eb654ca46ac3c975":
++        raise RuntimeError("Reviewed BZI6 backlight diff changed")
++
++    # Patch only a temporary copy; all input/transform checks finish before
++    # any class in the actual decoded artifact is changed.
++    backlight, light_rel, proxy_rel, power_rel = FILES
++    with tempfile.TemporaryDirectory(prefix="bzi6-backlight-") as directory:
++        temporary = Path(directory) / backlight
++        temporary.parent.mkdir(parents=True)
++        temporary.write_text(texts[backlight])
++        subprocess.run(["patch", "--batch", "--forward", "--fuzz=0", "-d", directory,
++                        "-p1", "-i", str(backlight_patch.resolve())], check=True,
++                       stdout=subprocess.PIPE, stderr=subprocess.PIPE)
++        texts[backlight] = temporary.read_text()
++
++    light = texts[light_rel]
++    constructor = method(light, "<init>(Lcom/android/server/lights/LightsService;Landroid/hardware/light/HwLight;)V")
++    body = once(constructor.group(), "    .locals 0", "    .locals 1")
++    body = once(body, "    return-void", f"    const/4 v0, -0x1\n\n    iput v0, p0, {LIGHT}->{EXT}\n\n    return-void")
++    light = light[:constructor.start()] + body + light[constructor.end():]
++    light = once(light, "# instance fields\n", "# instance fields\n.field public " + EXT + "\n\n")
++    for name in ("setLightLocked", "setLightUnchecked"):
++        old = method(light, name + "(IIII)V")
++        body = once(old.group(), name + "(IIII)V", name + "(IIIII)V")
++        # Match the fork's existing extension API order:
++        # color, extended brightness, flash mode, on ms, off ms.
++        body = re.sub(r"\bp[234]\b", lambda m: "p" + str(int(m.group()[1]) + 1), body)
++        if name == "setLightLocked":
++            anchor = f"    iget-boolean v0, v1, Lcom/android/server/lights/LightsService;->mIsSvcLightChanged:Z"
++            body = once(body, anchor,
++                f"    iget v0, p0, {LIGHT}->{EXT}\n\n    if-ne p2, v0, :cond_0\n\n" + anchor)
++            body = once(body, "    :cond_0\n", f"    :cond_0\n    iput p2, p0, {LIGHT}->{EXT}\n\n")
++            body = once(body,
++                f"    invoke-virtual {{p0, p1, p3, p4, p5}}, {LIGHT}->setLightUnchecked(IIII)V",
++                f"    invoke-virtual/range {{p0 .. p5}}, {LIGHT}->setLightUnchecked(IIIII)V")
++            compatibility = wrapper(name, "")
++        else:
++            body = once(body,
++                f"    invoke-virtual {{p1, p0, v2}}, {PROXY}->setLightState(ILandroid/hardware/light/HwLightState;)V",
++                f"    invoke-virtual {{p1, p0, v2, p2}}, {PROXY}->setLightState(ILandroid/hardware/light/HwLightState;I)V")
++            # Mute writes color0 without changing cached extended brightness;
++            # the existing unmute path replays the cached value for nonzero color.
++            compatibility = wrapper(name,
++                f"    if-eqz p1, :legacy_unchecked_ready\n    iget v2, p0, {LIGHT}->{EXT}\n    :legacy_unchecked_ready\n")
++        light = light[:old.start()] + compatibility + "\n\n" + body + light[old.end():]
++    texts[light_rel] = light
++
++    proxy = texts[proxy_rel]
++    old = method(proxy, "setLightState(ILandroid/hardware/light/HwLightState;)V")
++    body = once(old.group(), "setLightState(ILandroid/hardware/light/HwLightState;)V",
++                "setLightState(ILandroid/hardware/light/HwLightState;I)V")
++    body = once(body,
++        "    const/4 p2, -0x1\n\n    invoke-virtual {v0, p2}, Landroid/os/Parcel;->writeInt(I)V",
++        "    invoke-virtual {v0, p3}, Landroid/os/Parcel;->writeInt(I)V")
++    compatibility = f""".method public final setLightState(ILandroid/hardware/light/HwLightState;)V
++    .locals 1
++    const/4 v0, -0x1
++    invoke-virtual {{p0, p1, p2, v0}}, {PROXY}->setLightState(ILandroid/hardware/light/HwLightState;I)V
++    return-void
++.end method"""
++    texts[proxy_rel] = proxy[:old.start()] + compatibility + "\n\n" + body + proxy[old.end():]
++    power = texts[power_rel]
++    anchor = "    sput-boolean v0, Lcom/android/server/power/PowerManagerUtil;->SEC_FEATURE_USE_LIGHTS_HAL_EXTENSION:Z"
++    texts[power_rel] = once(power, anchor, "    const/4 v0, 0x1\n\n" + anchor)
++    for relative, text in texts.items():
++        (root / relative).write_text(text)
++    print("PASS BZI6 SehLights: LogicalLight, mute/cache state, extension Parcel and compatibility overloads")
++
++
++if __name__ == "__main__":
++    adapt(Path(sys.argv[1]), Path(sys.argv[2]))
+diff --git a/unica/patches/legacy/lights/services.jar/0003-BZI6-legacy-SehLights-backlight.patch b/unica/patches/legacy/lights/services.jar/0003-BZI6-legacy-SehLights-backlight.patch
+--- /dev/null
++++ b/unica/patches/legacy/lights/services.jar/0003-BZI6-legacy-SehLights-backlight.patch
+@@ -0,0 +1,193 @@
++From: Local adaptation of the reviewed fork SehLights backlight bridge
++Subject: [PATCH] Preserve BZI6 LogicalLight and brightness conversion API
++
++--- a/smali/com/android/server/display/LocalDisplayAdapter$BacklightAdapter.smali
+++++ b/smali/com/android/server/display/LocalDisplayAdapter$BacklightAdapter.smali
++@@ -19,22 +19,22 @@
++ 
++ # virtual methods
++ .method public final setBacklight(FFFFII)V
++-    .locals 3
+++    .locals 6
++ 
++     iget-boolean v0, p0, Lcom/android/server/display/LocalDisplayAdapter$BacklightAdapter;->mUseSurfaceControlBrightness:Z
++ 
++-    if-nez v0, :cond_4
+++    if-nez v0, :cond_6
++ 
++     iget-boolean v0, p0, Lcom/android/server/display/LocalDisplayAdapter$BacklightAdapter;->mForceSurfaceControl:Z
++ 
++     if-eqz v0, :cond_0
++ 
++-    goto :goto_0
+++    goto :goto_2
++ 
++     :cond_0
++     iget-object p0, p0, Lcom/android/server/display/LocalDisplayAdapter$BacklightAdapter;->mBacklight:Lcom/android/server/lights/LogicalLight;
++ 
++-    if-eqz p0, :cond_3
+++    if-eqz p0, :cond_5
++ 
++     check-cast p0, Lcom/android/server/lights/LightsService$LightImpl;
++ 
++@@ -66,14 +66,12 @@
++     monitor-enter p0
++ 
++     :try_start_0
+++    move/from16 v0, p3
+++
++     invoke-static {p3}, Landroid/hardware/display/DisplayManagerInternal;->convertBrightnessFloatToInt(F)I
++ 
++     move-result p1
++ 
++-    const/16 p2, 0xff
++-
++-    if-gt p1, p2, :cond_2
++-
++     and-int/lit16 p1, p1, 0xff
++ 
++     shl-int/lit8 p2, p1, 0x10
++@@ -87,11 +85,65 @@
++     or-int/2addr p2, p3
++ 
++     or-int/2addr p1, p2
+++
+++    iget-object p2, p0, Lcom/android/server/lights/LightsService$LightImpl;->mHwLight:Landroid/hardware/light/HwLight;
+++
+++    iget-byte p2, p2, Landroid/hardware/light/HwLight;->type:B
+++
+++    if-eqz p2, :cond_3
+++
+++    const/16 v0, 0x9
+++
+++    if-ne p2, v0, :cond_2
+++
+++    goto :goto_0
++ 
++     :cond_2
++     const/4 p2, 0x0
++ 
++     invoke-virtual {p0, p1, p2, p2, p2}, Lcom/android/server/lights/LightsService$LightImpl;->setLightLocked(IIII)V
+++
+++    monitor-exit p0
+++
+++    return-void
+++
+++    :cond_3
+++    :goto_0
+++    const/high16 p2, 0x437f0000    # 255.0f
+++
+++    mul-float/2addr v0, p2
+++
+++    sget-boolean p2, Lcom/android/server/power/PowerManagerUtil;->USE_PERSONAL_AUTO_BRIGHTNESS_V3:Z
+++
+++    if-eqz p2, :cond_4
+++
+++    const/16 p2, 0x64
+++
+++    goto :goto_1
+++
+++    :cond_4
+++    const/4 p2, 0x1
+++
+++    :goto_1
+++    int-to-float p2, p2
+++
+++    mul-float/2addr v0, p2
+++
+++    invoke-static {v0}, Ljava/lang/Math;->round(F)I
+++
+++    move-result v2
+++
+++    const/4 v3, 0x0
+++
+++    const/4 v4, 0x0
+++
+++    const/4 v5, 0x0
+++
+++    move-object v0, p0
+++
+++    move v1, p1
+++
+++    invoke-virtual/range {v0 .. v5}, Lcom/android/server/lights/LightsService$LightImpl;->setLightLocked(IIIII)V
++ 
++     monitor-exit p0
++ 
++@@ -106,18 +158,18 @@
++ 
++     throw p1
++ 
++-    :cond_3
++-    return-void
++-
++-    :cond_4
++-    :goto_0
+++    :cond_5
+++    return-void
+++
+++    :cond_6
+++    :goto_2
++     const/high16 v0, 0x7fc00000    # Float.NaN
++ 
++     invoke-static {p1, v0}, Lcom/android/internal/display/BrightnessSynchronizer;->floatEquals(FF)Z
++ 
++     move-result v0
++ 
++-    if-eqz v0, :cond_5
+++    if-eqz v0, :cond_7
++ 
++     iget-object p1, p0, Lcom/android/server/display/LocalDisplayAdapter$BacklightAdapter;->mSurfaceControlProxy:Lcom/android/server/display/LocalDisplayAdapter$SurfaceControlProxy;
++ 
++@@ -129,7 +181,7 @@
++ 
++     return-void
++ 
++-    :cond_5
+++    :cond_7
++     const-string/jumbo v0, "LocalDisplayAdapter"
++ 
++     new-instance v1, Ljava/lang/StringBuilder;
++@@ -160,16 +212,16 @@
++ 
++     iget-boolean v2, p0, Lcom/android/server/display/LocalDisplayAdapter$BacklightAdapter;->mIsFirstDisplay:Z
++ 
++-    if-eqz v2, :cond_6
+++    if-eqz v2, :cond_8
++ 
++     const-string/jumbo v2, "main"
++ 
++-    goto :goto_1
++-
++-    :cond_6
+++    goto :goto_3
+++
+++    :cond_8
++     const-string/jumbo v2, "sub"
++ 
++-    :goto_1
+++    :goto_3
++     invoke-virtual {v1, v2}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
++ 
++     const-string v2, " +"
++@@ -220,16 +272,16 @@
++ 
++     iget-boolean p0, p0, Lcom/android/server/display/LocalDisplayAdapter$BacklightAdapter;->mIsFirstDisplay:Z
++ 
++-    if-eqz p0, :cond_7
+++    if-eqz p0, :cond_9
++ 
++     const-string/jumbo p0, "main"
++ 
++-    goto :goto_2
++-
++-    :cond_7
+++    goto :goto_4
+++
+++    :cond_9
++     const-string/jumbo p0, "sub"
++ 
++-    :goto_2
+++    :goto_4
++     invoke-virtual {p4, p0}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
++ 
++     const-string p0, " -"

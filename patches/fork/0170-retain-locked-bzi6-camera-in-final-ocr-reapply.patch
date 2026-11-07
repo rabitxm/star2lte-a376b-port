@@ -1,0 +1,33 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] retain locked bzi6 camera in final ocr reapply
+
+# Reason: finalization-preflight-0169b.txt:13 reports missing MakerCallbackManager.smali after the locked Android17 camera has been restored. The Android16 OCR patch must not mutate this different donor camera.
+# Affected: exynos9810_finalization/customize.sh legacy OCR reapply function
+# Verify: Actual M4 finalization, wrong-model scope failure, runtime lock verification, shell syntax and full replay; clean image audit required.
+# Rollback: Remove0170 and restore previous function; no kernel/vendor/radio change.
+
+--- a/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
+@@ -3041,6 +3041,22 @@
+ 
+ _EXYNOS9810_FINAL_PATCH_CAMERA_LEGACY_OCR()
+ {
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++        # The preceding native-camera restore verifies the locked BZI6 stack.
++        # Recheck the complete runtime here before bypassing legacy OCR Smali.
++        [ "${ROM_MILESTONE:-}" = "M4" ] && \
++            [ "${TARGET_CODENAME:-}" = "star2lte" ] && \
++            [ "${STAR2LTE_BUILD_MODEL:-}" = "SM-G965F" ] && \
++            [ "${SOURCE_PLATFORM_SDK_VERSION:-}" = "37" ] && \
++            [ "${SOURCE_FIRMWARE_CACHE_SUFFIX:-}" = "A376BXXU5BZI6" ] || {
++            LOGE "Unreviewed BZI6 legacy camera bypass scope"
++            return 1
++        }
++        python3 "$SRC_DIR/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_runtime_compat.py" \
++            verify --work-dir "$WORK_DIR" --donor-root "$FW_DIR/$EXYNOS9810_SOURCE_CACHE_KEY" || return 1
++        LOG "- Keeping locked BZI6 donor camera; legacy Scene/OCR patch does not apply"
++        return 0
++    fi
+     [ "$TARGET_PLATFORM_SDK_VERSION" -lt "34" ] || return 0
+ 
+     # The native Camera APK is restored after the generic legacy patches, so

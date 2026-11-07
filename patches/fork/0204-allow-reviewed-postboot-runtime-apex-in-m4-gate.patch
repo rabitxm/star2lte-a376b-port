@@ -1,0 +1,58 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] verify measured M4 postboot runtime APEX in release gate
+
+# Reason: the diagnostic profile intentionally replaces only the BZI6 tethering APEX with the measured compatibility output; the generic M4 verifier still demanded the donor hash. This rejected the exact, locked diagnostic output after its own postboot verifier had passed.
+# Affected: compiled release-default verification for the explicit M4/G965F diagnostic profile.
+# Verify: donor-native runtime check remains strict for all other profiles; for M4 diagnostic, allow only the APEX exception after exact runtime-compat validation and require the postboot helper to verify both locked outputs. Run the compiled release gate and final ext4 image gate.
+# Rollback: reverse this gate exception; the diagnostic profile then cannot package the measured APEX.
+
+--- a/rom/scripts/internal/verify_exynos9810_release_defaults.py
++++ b/rom/scripts/internal/verify_exynos9810_release_defaults.py
+@@ -3,6 +3,7 @@
+ from pathlib import Path
+ from hashlib import sha256
+ import argparse,json,os,sys,zipfile
++import importlib.util
+ ROOT=Path(__file__).resolve().parents[2]
+ sys.path.insert(0,str(ROOT/"scripts/internal/FaceunlockFix"))
+ from release_bridge import load_release_bridge
+@@ -53,7 +54,22 @@
+         subprocess.run([sys.executable,str(native32),"verify","--work-dir",str(work)],check=True)
+         runtime=ROOT/"unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_runtime_compat.py"
+         donor=ROOT/"out/fw/SM-A376B_XXV_A376BXXU5BZI6"
+-        subprocess.run([sys.executable,str(runtime),"verify","--compiled-camera","--work-dir",str(work),"--donor-root",str(donor)],check=True)
++        postboot_diagnostic = os.environ.get("EXYNOS9810_M4_POSTBOOT_DIAGNOSTIC", "false") == "true"
++        if postboot_diagnostic:
++            if (target, os.environ.get("ROM_MILESTONE"),
++                    os.environ.get("STAR2LTE_BUILD_MODEL"),
++                    os.environ.get("EXYNOS9810_M4_RUNTIME_COMPAT")) != (
++                    "star2lte", "M4", "SM-G965F", "true"):
++                raise RuntimeError("Post-boot runtime exception is restricted to reviewed M4/G965F diagnostic profile")
++        spec=importlib.util.spec_from_file_location("a376b_android17_runtime_compat",runtime)
++        runtime_module=importlib.util.module_from_spec(spec);spec.loader.exec_module(runtime_module)
++        runtime_module.verify(work, donor, compiled_camera=True,
++                              allow_postboot_network=postboot_diagnostic)
++        if postboot_diagnostic:
++            postboot=ROOT/"unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_postboot_diagnostic.py"
++            pspec=importlib.util.spec_from_file_location("a376b_android17_postboot_diagnostic",postboot)
++            postboot_module=importlib.util.module_from_spec(pspec);pspec.loader.exec_module(postboot_module)
++            postboot_module.verify(work, donor)
+         donor_apps=ROOT/"unica/patches/exynos9810_device_stack/exynos9810_finalization/verify_bzi6_final_apps.py"
+         subprocess.run([sys.executable,str(donor_apps),str(work),"--all"],check=True)
+     if os.environ.get("ROM_SOURCE_CONFIG") == "essi_a376b_android16":
+@@ -88,7 +104,6 @@
+     for prop in required_props:
+         if prop not in props: raise RuntimeError("Required release default absent: "+prop)
+     verify_kernelsu_runtime(system, os.environ.get("EXYNOS9810_ENABLE_KERNELSU_RUNTIME", "true"))
+-    import importlib.util
+     adb_checker=ROOT/"unica/patches/exynos9810_device_stack/exynos9810_finalization/adb_defaults.py"
+     adb_spec=importlib.util.spec_from_file_location("adb_defaults",adb_checker)
+     adb_module=importlib.util.module_from_spec(adb_spec);adb_spec.loader.exec_module(adb_module)
+@@ -135,7 +150,6 @@
+                 raise RuntimeError(selection+" original Samsung vendor keylayout changed")
+         elif not any(contains(data,"unica_bixby_action") for data in compiled_xml):
+             raise RuntimeError("Compiled Bixby button selector absent")
+-    import importlib.util
+     checker=ROOT/"unica/mods/s9_infinity_Wallpaper/source/verify_factory_live_default.py"
+     spec=importlib.util.spec_from_file_location("factory_live_default",checker)
+     module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)

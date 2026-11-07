@@ -1,0 +1,16 @@
+# Reason: Attempt15 config generated TARGET_PLATFORM_SDK_VERSION=31, so the prior 29 guard fell through to stock sidecar copies.
+# Affected: unica/patches/nfc/customize.sh only.
+# Verify: positive exact profile at SDK31; negative SDK29/model/hash cases; full ordered patch replay.
+# Rollback: remove this patch from patches/fork/series and sources.lock.json.
+
+--- a/unica/patches/nfc/customize.sh
++++ b/unica/patches/nfc/customize.sh
+@@ -63,7 +63,7 @@
+     fi
+ elif [ -f "$FW_DIR/$TARGET_FIRMWARE_PATH/system/system/lib64/libnfc_nci_jni.so" ]; then
+     ADD_TO_WORK_DIR "$TARGET_FIRMWARE" "system" "system/lib64/libnfc_nci_jni.so" 0 0 644 "u:object_r:system_lib_file:s0"
+-    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ] &&             [ "${ROM_MILESTONE:-}" = "M4" ] &&             [ "${TARGET_CODENAME:-}" = "star2lte" ] &&             [ "${STAR2LTE_BUILD_MODEL:-}" = "SM-G965F" ] &&             [ "${SOURCE_PLATFORM_SDK_VERSION:-}" = "37" ] &&             [ "${TARGET_PLATFORM_SDK_VERSION:-}" = "29" ] &&             [ "${SOURCE_FIRMWARE_CACHE_SUFFIX:-}" = "A376BXXU5BZI6" ] &&             [ "${TARGET_FIRMWARE:-}" = "SM-G965F/PHN/352966091234565" ]; then
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ] &&             [ "${ROM_MILESTONE:-}" = "M4" ] &&             [ "${TARGET_CODENAME:-}" = "star2lte" ] &&             [ "${STAR2LTE_BUILD_MODEL:-}" = "SM-G965F" ] &&             [ "${SOURCE_PLATFORM_SDK_VERSION:-}" = "37" ] &&             [ "${TARGET_PLATFORM_SDK_VERSION:-}" = "31" ] &&             [ "${SOURCE_FIRMWARE_CACHE_SUFFIX:-}" = "A376BXXU5BZI6" ] &&             [ "${TARGET_FIRMWARE:-}" = "SM-G965F/PHN/352966091234565" ]; then
+         _M4_NFC_SOURCE_LIBDIR="$FW_DIR/$TARGET_FIRMWARE_PATH/system/system/lib64"
+         _M4_NFC_DONOR_LIBDIR="$FW_DIR/$(GET_FIRMWARE_CACHE_KEY "$SOURCE_FIRMWARE")/system/system/lib64"
+         [ "$(sha256sum "$_M4_NFC_SOURCE_LIBDIR/libnfc_nci_jni.so" | cut -d ' ' -f 1)" =             "ed74c2fc3c76a835d0fe88043366b3e8c86a920c503cf247355cc84f94efa042" ] || {

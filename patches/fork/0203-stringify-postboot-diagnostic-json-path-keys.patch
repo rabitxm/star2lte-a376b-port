@@ -1,0 +1,21 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] stringify postboot diagnostic JSON path keys
+
+# Reason: attempt0202 completed postboot output hash verification but failed only while serializing pathlib.Path dictionary keys to JSON.
+# Affected: existing postboot diagnostic helper.
+# Verify: run its scoped verify command against the completed attempt0202 work tree; assert JSON output and both locked hashes. Then resume with the fork's --resume-after-mods and rerun compiled/image gates.
+# Rollback: reverse this serialization-only change; staged bytes and runtime semantics are unchanged.
+
+--- a/rom/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_postboot_diagnostic.py
++++ b/rom/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_postboot_diagnostic.py
+@@ -96,7 +96,9 @@
+             raise ValueError("M4 post-boot diagnostic output mismatch: " + str(rel))
+     if runtime_lock["files"][str(APEX_REL)] == expected[APEX_REL]:
+         raise ValueError("Diagnostic Tethering output unexpectedly equals donor")
+-    return expected
++    # JSON reports are written into the build log; stringify the Path keys
++    # only after all filesystem checks have used their native Path objects.
++    return {str(rel): digest for rel, digest in expected.items()}
+ 
+ 
+ def apply(work, donor, scratch_root):

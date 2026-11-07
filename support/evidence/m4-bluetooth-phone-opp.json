@@ -1,0 +1,27 @@
+{
+  "status": "PASS_PAIRING_AND_TWO_INCOMING_FILES",
+  "scope": "G965F M4 BZI6 runtime patches0221-0224",
+  "samples": 34,
+  "sample_window_seconds": 337.03,
+  "stable_boot_and_core_pids": true,
+  "system_server_start_count": 1,
+  "bluetooth_crashes": 0,
+  "fdf1_timeouts": 0,
+  "crash_buffer_unchanged": true,
+  "not_yet_tested": [
+    "A2DP playback",
+    "AVRCP media/volume controls",
+    "HFP call audio",
+    "audio accessory reconnect",
+    "outgoing file transfer"
+  ],
+  "partitions_written": false,
+  "peer_type": "another phone; user confirmed",
+  "user_reported_images_transferred": 2,
+  "incoming_file_termination_statuses": [
+    200,
+    200
+  ],
+  "session_complete_status": 200,
+  "physical_welcome_and_manual_reboot_user_confirmed": true
+}

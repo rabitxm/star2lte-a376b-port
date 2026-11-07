@@ -1,0 +1,28 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] verify native bzi6 setupwizard selection
+
+# Reason: m4-build-attempt37.txt boot contract fails missing UN1CA SetupWizard navigation-step patch, although user chose retaining donor Setup Wizard UI and0166 skips that whole module for exact M4. Verify the raw BZI6 SetupWizard APK hash/signature preservation instead; all Settings/PIF/ADB and other contract checks remain mandatory.
+# Affected: scripts/internal/verify_exynos9810_boot_contract.sh SetupWizard check
+# Verify: Actual clean attempt37 native APK and donor SHA equality; full boot contract and wrong-payload negative; M1/M2 old marker checks unchanged.
+# Rollback: Remove0181 to restore previous SetupWizard gate.
+
+--- a/scripts/internal/verify_exynos9810_boot_contract.sh
++++ b/scripts/internal/verify_exynos9810_boot_contract.sh
+@@ -225,7 +225,16 @@
+ require_final_string "$SERVICES_JAR" "com/android/server/policy/PhoneWindowManager\$UnicaBixbyRunnable" "UN1CA Bixby remapper"
+ fi
+ require_final_string "$SERVICES_JAR" "io/mesalabs/unica/PlayIntegrityHooks" "UN1CA services Play Integrity hooks"
+-require_final_string "$SEC_SETUP" "this_string_does_not_exist" "UN1CA SetupWizard navigation-step patch"
++if $A376B_M4; then
++    require_file "$SEC_SETUP"
++    [ "$(sha256sum "$SEC_SETUP" | cut -d ' ' -f 1)" = "f49e71b5c65f990d5d5726f28d4024265b36d7e078c67b7eda1199ccc2a6fc2f" ] || {
++        echo "Exynos9810 boot contract: retained BZI6 SetupWizard payload/signature changed" >&2
++        exit 1
++    }
++    echo "PASS M4 native SetupWizard retained with donor payload/signature"
++else
++    require_final_string "$SEC_SETUP" "this_string_does_not_exist" "UN1CA SetupWizard navigation-step patch"
++fi
+ 
+ if $A376B_M2; then
+     # M2 keeps the complete AZH4 Knox stack (patch0065). S22's SDP runtime

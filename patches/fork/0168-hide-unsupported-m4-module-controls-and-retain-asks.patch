@@ -1,0 +1,165 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] Keep M4 optional module controls and defaults truthful
+
+# Reason: settings-rest-after-0167.txt:32 fails optional ASKSManagerService hooks. Preserve donor ASKS and hide its control. M4 HMA/keybox/PIF modules are omitted, but their seven controls and the inherited PIF=true default remained; remove only those controls, seed false in final property files after vendor restore, and make compiled release checks reject stale hooks/controls. Mandatory ADB/Auto Blocker verification is unchanged.
+# Affected: scripts/internal/apply_modules.sh; scripts/internal/verify_exynos9810_release_defaults.py; unica/mods/settings/a376b_android17_boot_limits.py; exynos9810_finalization/customize.sh.
+# Verify: source XML positive/negative fixtures, actual property copies and scope checks; M2 selection unchanged; compiled output guards, hash-lock/replay and clean build.
+# Rollback: remove0168 from series/source lock and restore previous files.
+
+--- a/scripts/internal/apply_modules.sh
++++ b/scripts/internal/apply_modules.sh
+@@ -236,7 +236,8 @@
+                 */settings/smali/system/framework/services.jar/0001-Allow-disabling-secure-windows.patch|\
+                 */settings/smali/system/framework/services.jar/0002-Allow-app-downgrade.patch|\
+                 */settings/smali/system/framework/services.jar/0003-Allow-app-target-SDK-bypass.patch|\
+-                */settings/smali/system/framework/services.jar/0004-Allow-disable-screen-capture-detection.patch)
++                */settings/smali/system/framework/services.jar/0004-Allow-disable-screen-capture-detection.patch|\
++                */settings/smali/system/framework/services.jar/0005-Allow-disable-ASKS.patch)
+                     LOGW "M4 initial selection: retain donor behavior and hide its unsupported UN1CA control: ${p##*/}"
+                     continue
+                     ;;
+--- a/unica/mods/settings/a376b_android17_boot_limits.py
++++ b/unica/mods/settings/a376b_android17_boot_limits.py
+@@ -18,8 +18,10 @@
+ COLLECTOR = "com/samsung/android/settings/intelligence/search/categorizing/TopLevelKeysCollector"
+ CONSTRUCTOR = "<init>(Landroid/content/Context;)V"
+ OMITTED = ("unica_allow_downgrade", "unica_allow_sdkbypass", "unica_secure_ss",
+-           "unica_ss_detection", "unica_gphotos", "unica_bixby_action")
++           "unica_ss_detection", "unica_gphotos", "unica_bixby_action", "unica_asks")
+ 
++OMITTED_SPOOF = ("unica_keybox", "unica_keybox_load", "unica_keybox_clear",
++                 "unica_pif", "unica_pif_update", "unica_pif_custom", "unica_hma")
+ 
+ def scope():
+     PRODUCT.scope()
+@@ -31,26 +33,49 @@
+             raise RuntimeError("Unreviewed BZI6 initial feature selection: " + key)
+ 
+ 
++def optional_xml(root):
++    outputs = []
++    for name, keys in (("unica_extra_settings.xml", OMITTED),
++                       ("unica_spoof_settings.xml", OMITTED_SPOOF)):
++        path = root / "res/xml" / name
++        text = path.read_text()
++        ET.fromstring(text)
++        for key in keys:
++            text, count = re.subn(r'^.*android:key="' + re.escape(key) + r'"[^\n]*\n', "", text, flags=re.M)
++            if count != 1:
++                raise RuntimeError("Unexpected BZI6 optional Settings control: " + key)
++        ET.fromstring(text)
++        outputs.append((path, text))
++    if "unica_bixby_app" in outputs[0][1] or 'android:key="unica_games_spoof"' not in outputs[0][1] or \
++            'android:key="unica_hide_dev"' not in outputs[1][1]:
++        raise RuntimeError("BZI6 optional Settings positive/negative control mismatch")
++    return outputs
++
++
+ def settings(root):
+     scope()
+-    path = root / "res/xml/unica_extra_settings.xml"
+-    text = path.read_text()
+-    ET.fromstring(text)
+-    for key in OMITTED:
+-        text, count = re.subn(r'^.*android:key="' + re.escape(key) + r'"[^\n]*\n', "", text, flags=re.M)
+-        if count != 1:
+-            raise RuntimeError("Unexpected BZI6 optional Settings control: " + key)
+-    ET.fromstring(text)
+-    if "unica_bixby_app" in text or 'android:key="unica_games_spoof"' not in text:
+-        raise RuntimeError("BZI6 optional Settings positive/negative control mismatch")
++    outputs = optional_xml(root)
+     spec = importlib.util.spec_from_file_location("a376b_search", HERE / "a376b_search.py")
+     search = importlib.util.module_from_spec(spec)
+     spec.loader.exec_module(search)
+-    # XML is validated first; the search helper validates every preimage before
+-    # writing either Smali class. No unrelated preference is removed.
+     search.stage(root)
+-    path.write_text(text)
+-    print("PASS BZI6 Settings: hide five unsupported options and Bixby remap; retain other controls")
++    for path, text in outputs:
++        path.write_text(text)
++    print("PASS BZI6 Settings: hide unsupported options, ASKS, Bixby and omitted spoof modules; retain supported controls")
++
++
++def final_props(work):
++    scope()
++    count = 0
++    for partition in ("system", "vendor", "odm"):
++        for path in (work / partition).rglob("build.prop"):
++            lines = [line for line in path.read_text().splitlines()
++                     if not line.startswith(("persist.sys.unica.pif=", "persist.sys.unica.keybox="))]
++            path.write_text("\n".join(lines + ["persist.sys.unica.pif=false", "persist.sys.unica.keybox=false"]) + "\n")
++            count += 1
++    if not count:
++        raise RuntimeError("Missing M4 build properties")
++    print("PASS BZI6 omitted PIF/keybox defaults are false in " + str(count) + " property files")
+ 
+ 
+ def intelligence(root):
+@@ -98,7 +123,17 @@
+             if re.fullmatch(r"classes\d*\.dex", name) and \
+                     b"Lcom/android/server/policy/PhoneWindowManager$UnicaBixbyRunnable;" in archive.read(name):
+                 raise RuntimeError("Omitted M4 Bixby remapper restored in compiled services")
+-    print("PASS compiled BZI6 search: 211 donor +4 UN1CA providers;36 donor +1 top-level keys")
++    for jar_name in ("framework.jar", "services.jar"):
++        with zipfile.ZipFile(work / "system/system/framework" / jar_name) as archive:
++            for name in archive.namelist():
++                if not re.fullmatch(r"classes\d*\.dex", name):
++                    continue
++                data = archive.read(name)
++                for desc in (b"Lio/mesalabs/unica/PlayIntegrityHooks;", b"Lio/mesalabs/unica/KeyboxImitationHooks;",
++                             b"Lio/mesalabs/unica/HideAppListUtils;", b"Lio/mesalabs/unica/KnoxPatchHooks;"):
++                    if desc in data:
++                        raise RuntimeError("Omitted M4 module hook present in compiled " + jar_name + ": " + desc.decode())
++    print("PASS compiled BZI6 search and omitted module hook absence")
+ 
+ 
+ if __name__ == "__main__":
+@@ -106,6 +141,8 @@
+         scope()
+     elif len(sys.argv) == 3 and sys.argv[1] in ("settings", "intelligence"):
+         (settings if sys.argv[1] == "settings" else intelligence)(Path(sys.argv[2]))
++    elif len(sys.argv) == 3 and sys.argv[1] == "final-props":
++        final_props(Path(sys.argv[2]))
+     elif len(sys.argv) == 4 and sys.argv[1] == "verify-compiled":
+         verify_compiled(Path(sys.argv[2]), Path(sys.argv[3]))
+     else:
+--- a/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
+@@ -7381,6 +7381,13 @@
+ grep -q '^persist.sys.unica.bixby_action ' "$BIXBY_CONTEXTS" ||     printf '%s\n' 'persist.sys.unica.bixby_action u:object_r:system_prop:s0 exact uint' >> "$BIXBY_CONTEXTS"
+ unset BIXBY_CONTEXTS
+ 
++# Optional M4 spoof integrations are omitted; keep UI/defaults consistent
++# after the final vendor baseline restore. Mandatory ADB rules remain below.
++if [ "${ROM_SOURCE_CONFIG:-}" = essi_a376b_android17 ]; then
++    python3 "$SRC_DIR/unica/mods/settings/a376b_android17_boot_limits.py" \
++        final-props "$WORK_DIR" || return 1
++fi
++
+ # Project defaults apply to every later 9810 donor/profile, including release.
+ # Seed once through SettingsProvider; retain Settings/Rampart controls and text.
+ DECODE_APK "system" "system/priv-app/SettingsProvider/SettingsProvider.apk" || return 1
+--- a/scripts/internal/verify_exynos9810_release_defaults.py
++++ b/scripts/internal/verify_exynos9810_release_defaults.py
+@@ -79,7 +79,9 @@
+             if z.read("classes3.dex") != load_release_bridge():
+                 raise RuntimeError("Staged face bridge differs from verified source release")
+     props=(system/"build.prop").read_text().splitlines()
+-    required_props = ["persist.sys.unica.pif=true", "persist.sys.pif.version=20261011"]
++    required_props = (["persist.sys.unica.pif=false", "persist.sys.unica.keybox=false"]
++                      if os.environ.get("ROM_SOURCE_CONFIG") == "essi_a376b_android17"
++                      else ["persist.sys.unica.pif=true", "persist.sys.pif.version=20261011"])
+     if not face_disabled:
+         required_props.append("ro.un1ca.faceunlockfix.builtin=1")
+     for prop in required_props:
+@@ -109,6 +111,9 @@
+             selection="M4" if os.environ.get("ROM_SOURCE_CONFIG")=="essi_a376b_android17" else "M2"
+             omitted=("unica_bixby_action", "unica_bixby_app", "unica_allow_downgrade",
+                      "unica_allow_sdkbypass", "unica_secure_ss", "unica_ss_detection", "unica_gphotos")
++            if selection == "M4":
++                omitted += ("unica_asks", "unica_keybox", "unica_keybox_load", "unica_keybox_clear",
++                            "unica_pif", "unica_pif_update", "unica_pif_custom", "unica_hma")
+             for key in omitted:
+                 if any(contains(data,key) for data in compiled_xml):
+                     raise RuntimeError("Unsupported "+selection+" compiled control present: "+key)

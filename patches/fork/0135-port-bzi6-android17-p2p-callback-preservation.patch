@@ -1,0 +1,38 @@
+--- a/unica/patches/exynos9810_device_stack/customize.sh
++++ b/unica/patches/exynos9810_device_stack/customize.sh
+@@ -477,6 +477,15 @@
+ 
+     if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] && \
+             [ "$TARGET_CODENAME" = "star2lte" ] && [ "${ROM_MILESTONE:-}" = "M2" ]; then
++        DECODE_APK "system" "system/framework/semwifi-service.jar" || return 1
++        python3 "$PATCHER" --smali \
++            "$APKTOOL_DIR/system/framework/semwifi-service.jar/smali/com/samsung/android/server/wifi/p2p/SemSupplicantP2pIfaceHalHidlImpl.smali" || return 1
++    elif [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++        IS_A376B_M4_BOOT_TEST && \
++            [ "${EXYNOS9810_M4_RUNTIME_COMPAT:-false}" = "true" ] || {
++            LOGE "Android 17 P2P callback handling is restricted to the reviewed M4 G965F profile"
++            return 1
++        }
+         DECODE_APK "system" "system/framework/semwifi-service.jar" || return 1
+         python3 "$PATCHER" --smali \
+             "$APKTOOL_DIR/system/framework/semwifi-service.jar/smali/com/samsung/android/server/wifi/p2p/SemSupplicantP2pIfaceHalHidlImpl.smali" || return 1
+--- a/platform/exynos9810/tools/patch_semwifi_p2p_callback.py
++++ b/platform/exynos9810/tools/patch_semwifi_p2p_callback.py
+@@ -71,7 +71,7 @@
+ 
+ 
+ def patch_smali(path: Path) -> None:
+-    """Make the same callback selection in decoded M2 code before rebuild."""
++    """Make the reviewed callback selection in decoded Samsung code before rebuild."""
+     text = path.read_text()
+     owner = "Lcom/samsung/android/server/wifi/p2p/SemSupplicantP2pIfaceHalHidlImpl;"
+     if not text.splitlines()[0].endswith(owner):
+@@ -86,7 +86,7 @@
+         raise RuntimeError("Unreviewed P2P standard callback registration")
+     body = method.group().replace(old, "    const/4 v0, 0x1", 1)
+     path.write_text(text[:method.start()] + body + text[method.end():])
+-    print("Patched decoded Samsung P2P callback selection; Seh registration retained")
++    print("Patched decoded Samsung Wi-Fi Direct callback selection; Seh registration retained")
+ 
+ 
+ def main() -> int:

@@ -1,0 +1,381 @@
+diff --git a/scripts/utils/common_utils.sh b/scripts/utils/common_utils.sh
+--- a/scripts/utils/common_utils.sh
++++ b/scripts/utils/common_utils.sh
+@@ -25,6 +25,18 @@
+     fi
+ 
+     return 0
++}
++
++# Explicit initial M4 feature selection. Call only for individually reviewed
++# branches; this predicate does not make every M2 workaround valid for M4.
++IS_A376B_M4_BOOT_TEST()
++{
++    [ "${ROM_SOURCE_CONFIG:-}" = essi_a376b_android17 ] && \
++        [ "${ROM_MILESTONE:-}" = M4 ] && [ "${TARGET_CODENAME:-}" = star2lte ] && \
++        [ "${STAR2LTE_BUILD_MODEL:-}" = SM-G965F ] && \
++        [ "${SOURCE_PLATFORM_SDK_VERSION:-}" = 37 ] && \
++        [ "${SOURCE_FIRMWARE_CACHE_SUFFIX:-}" = A376BXXU5BZI6 ] && \
++        [ "${STAR2LTE_M4_BOOT_LIMITS:-false}" = true ]
+ }
+ 
+ # GET_FIRMWARE_CACHE_KEY <firmware> returns the existing model/CSC cache key,
+diff --git a/scripts/internal/apply_modules.sh b/scripts/internal/apply_modules.sh
+--- a/scripts/internal/apply_modules.sh
++++ b/scripts/internal/apply_modules.sh
+@@ -118,6 +118,20 @@
+         local FILE="$TARGET"
+         if [[ "$PARTITION" != "system" ]]; then
+             FILE="$(cut -d "/" -f 2- -s <<< "$FILE")"
++        fi
++
++        if IS_A376B_M4_BOOT_TEST; then
++            case "$p" in
++                */miscs/smali/system/framework/services.jar/0002-Add-UN1CA-Bixby-key-remap.patch|\
++                */settings/smali/system/framework/framework.jar/0001-Allow-unlimited-storage-for-Google-Photos.patch|\
++                */settings/smali/system/framework/services.jar/0001-Allow-disabling-secure-windows.patch|\
++                */settings/smali/system/framework/services.jar/0002-Allow-app-downgrade.patch|\
++                */settings/smali/system/framework/services.jar/0003-Allow-app-target-SDK-bypass.patch|\
++                */settings/smali/system/framework/services.jar/0004-Allow-disable-screen-capture-detection.patch)
++                    LOGW "M4 initial selection: retain donor behavior and hide its unsupported UN1CA control: ${p##*/}"
++                    continue
++                    ;;
++            esac
+         fi
+ 
+         if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] && \
+diff --git a/scripts/internal/verify_exynos9810_release_defaults.py b/scripts/internal/verify_exynos9810_release_defaults.py
+--- a/scripts/internal/verify_exynos9810_release_defaults.py
++++ b/scripts/internal/verify_exynos9810_release_defaults.py
+@@ -47,6 +47,8 @@
+         subprocess.run([sys.executable,str(ese_checker),"verify-compiled",str(work),str(ROOT/"out/tools")],check=True)
+         wifi_ui_checker=ROOT/"unica/patches/product_feature/wifi/a376b_android17_ui.py"
+         subprocess.run([sys.executable,str(wifi_ui_checker),"verify-compiled",str(work),str(ROOT/"out/tools")],check=True)
++        settings_checker=ROOT/"unica/mods/settings/a376b_android17_boot_limits.py"
++        subprocess.run([sys.executable,str(settings_checker),"verify-compiled",str(work),str(ROOT/"out/tools")],check=True)
+     if os.environ.get("ROM_SOURCE_CONFIG") == "essi_a376b_android16":
+         if (target, os.environ.get("ROM_MILESTONE")) != ("star2lte", "M2"):
+             raise RuntimeError("Unreviewed native32 A376B release profile")
+@@ -62,7 +64,8 @@
+             rmod.verify(work,ROOT/"out/tools")
+     face_disabled = os.environ.get("EXYNOS9810_FACE_UNLOCK_DISABLED", "false") == "true"
+     if face_disabled:
+-        if (target, os.environ.get("ROM_SOURCE_CONFIG"), os.environ.get("ROM_MILESTONE")) != ("star2lte", "essi_a376b_android16", "M2"):
++        selected=(target, os.environ.get("ROM_SOURCE_CONFIG"), os.environ.get("ROM_MILESTONE"))
++        if selected not in (("star2lte", "essi_a376b_android16", "M2"), ("star2lte", "essi_a376b_android17", "M4")):
+             raise RuntimeError("Unreviewed Face omission profile")
+         from verify_face_omission import verify as verify_face_omission
+         verify_face_omission(work)
+@@ -97,23 +100,24 @@
+     with zipfile.ZipFile(system/"priv-app/SecSettings/SecSettings.apk") as z:
+         compiled_xml = [z.read(name) for name in z.namelist()
+                         if name.startswith("res/") and name.endswith(".xml")]
+-        if os.environ.get("ROM_SOURCE_CONFIG") == "essi_a376b_android16":
++        if os.environ.get("ROM_SOURCE_CONFIG") in ("essi_a376b_android16", "essi_a376b_android17"):
++            selection="M4" if os.environ.get("ROM_SOURCE_CONFIG")=="essi_a376b_android17" else "M2"
+             omitted=("unica_bixby_action", "unica_bixby_app", "unica_allow_downgrade",
+                      "unica_allow_sdkbypass", "unica_secure_ss", "unica_ss_detection", "unica_gphotos")
+             for key in omitted:
+                 if any(contains(data,key) for data in compiled_xml):
+-                    raise RuntimeError("Unsupported M2 compiled control present: "+key)
++                    raise RuntimeError("Unsupported "+selection+" compiled control present: "+key)
+             if not any(contains(data,"unica_games_spoof") for data in compiled_xml):
+-                raise RuntimeError("Compiled M2 Extra Settings positive control absent")
++                raise RuntimeError("Compiled "+selection+" Extra Settings positive control absent")
+             import re
+             carriers=[]
+             for path in (system/"usr/keylayout").glob("*.kl"):
+                 carriers.extend(re.findall(r"(?m)^key\s+703\s+(\S+)",path.read_text()))
+             if not carriers or set(carriers)!={"WINK"}:
+-                raise RuntimeError("M2 key703 must retain original WINK mapping")
++                raise RuntimeError(selection+" key703 must retain original WINK mapping")
+             donor_kl=system/"usr/keylayout/Vendor_0075_Product_0100.kl"
+             if sha256(donor_kl.read_bytes()).hexdigest()!="f5cacb4896c414de1c8497d00a7d8bc8287c80bbb9b55e3c09d6473587a15dd8":
+-                raise RuntimeError("M2 original Samsung vendor keylayout changed")
++                raise RuntimeError(selection+" original Samsung vendor keylayout changed")
+         elif not any(contains(data,"unica_bixby_action") for data in compiled_xml):
+             raise RuntimeError("Compiled Bixby button selector absent")
+     import importlib.util
+diff --git a/scripts/internal/verify_exynos9810_boot_contract.sh b/scripts/internal/verify_exynos9810_boot_contract.sh
+--- a/scripts/internal/verify_exynos9810_boot_contract.sh
++++ b/scripts/internal/verify_exynos9810_boot_contract.sh
+@@ -12,6 +12,12 @@
+ VENDOR_PROP="$WORK/vendor/build.prop"
+ 
+ A376B_M2=false
++A376B_M4=false
++if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++    python3 "$(dirname "$0")/../../unica/mods/settings/a376b_android17_boot_limits.py" scope
++    A376B_M4=true
++    python3 "$(dirname "$0")/verify_face_omission.py" verify "$WORK"
++fi
+ if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
+     if [ "${ROM_MILESTONE:-}" != "M2" ] || [ "${TARGET_CODENAME:-}" != "star2lte" ] || \
+             [ "${EXYNOS9810_FACE_UNLOCK_DISABLED:-false}" != "true" ]; then
+@@ -77,12 +83,12 @@
+ require_file "$WORK/vendor/bin/hw/vendor.samsung.hardware.biometrics.face-service"
+ require_file "$WORK/vendor/etc/init/mobicore.rc"
+ require_file "$WORK/vendor/etc/init/pa_daemon_kinibi.rc"
+-if ! $A376B_M2; then
++if ! $A376B_M2 && ! $A376B_M4; then
+     require_file "$WORK/vendor/etc/init/face-default-sec.rc"
+ fi
+ require_file "$WORK/vendor/etc/init/vendor.samsung.hardware.authfw@1.0-service.rc"
+ require_file "$WORK/vendor/etc/sysconfig/vendor-apex-allowlist.xml"
+-if ! $A376B_M2; then
++if ! $A376B_M2 && ! $A376B_M4; then
+     require_file "$WORK/vendor/etc/vintf/manifest/face-default-sec.xml"
+ fi
+ 
+@@ -213,7 +219,7 @@
+ require_final_string "$SEC_SETTINGS_INTELLIGENCE" "top_level_unica" "UN1CA Settings search key"
+ require_final_string "$FRAMEWORK_JAR" "io/mesalabs/unica/SamsungPropsHooks" "UN1CA SamsungProps hooks"
+ require_final_string "$FRAMEWORK_JAR" "io/mesalabs/unica/PlayIntegrityHooks" "UN1CA Play Integrity hooks"
+-if $A376B_M2; then
++if $A376B_M2 || $A376B_M4; then
+     require_final_absent "$SERVICES_JAR" "com/android/server/policy/PhoneWindowManager\$UnicaBixbyRunnable" "omitted M2 Bixby remapper"
+ else
+ require_final_string "$SERVICES_JAR" "com/android/server/policy/PhoneWindowManager\$UnicaBixbyRunnable" "UN1CA Bixby remapper"
+diff --git a/scripts/make_rom.sh b/scripts/make_rom.sh
+--- a/scripts/make_rom.sh
++++ b/scripts/make_rom.sh
+@@ -13,11 +13,15 @@
+                 export EXYNOS9810_FACEUNLOCKFIX_EXPERIMENTAL_BUILD=true
+                 export EXYNOS9810_FACEUNLOCKFIX_BUILTIN=true
+             else
++                if IS_A376B_M4_BOOT_TEST; then
++                    python3 "$SRC_DIR/unica/mods/settings/a376b_android17_boot_limits.py" scope || exit 1
++                else
+                 [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] && \
+                     [ "$TARGET_CODENAME" = "star2lte" ] && [ "${ROM_MILESTONE:-}" = "M2" ] || {
+                     LOGE "Face omission is reviewed only for M2 A376B16 star2lte"
+                     exit 1
+                 }
++                fi
+                 export EXYNOS9810_FACEUNLOCKFIX_EXPERIMENTAL_BUILD=false
+                 export EXYNOS9810_FACEUNLOCKFIX_BUILTIN=false
+             fi
+diff --git a/target/star2lte/profiles/m1-g965f-no-ksu.sh b/target/star2lte/profiles/m1-g965f-no-ksu.sh
+--- a/target/star2lte/profiles/m1-g965f-no-ksu.sh
++++ b/target/star2lte/profiles/m1-g965f-no-ksu.sh
+@@ -10,6 +10,7 @@
+ export STAR2LTE_M4_FIXED_RESOLUTION="false"
+ export STAR2LTE_M2_KEEP_DONOR_WIFI_UI="false"
+ export STAR2LTE_M4_KEEP_DONOR_WIFI_UI="false"
++export STAR2LTE_M4_BOOT_LIMITS="false"
+ export EXYNOS9810_M2_BOOTSTRAP_COMPAT="false"
+ export UN1CA_DONOR_CONFIG="essi"
+ export SOURCE_FIRMWARE_CACHE_SUFFIX=""
+diff --git a/unica/mods/settings/a376b_search.py b/unica/mods/settings/a376b_search.py
+--- a/unica/mods/settings/a376b_search.py
++++ b/unica/mods/settings/a376b_search.py
+@@ -1,6 +1,7 @@
+ #!/usr/bin/env python3
+ """Preserve AZH4's inlined search factory and append UN1CA providers."""
+ import hashlib
++import os
+ from pathlib import Path
+ import sys
+ 
+@@ -12,6 +13,18 @@
+         "SearchIndexableResourcesMobile.smali": "70e3a838e87f87e5833edde809ef1a010263a68df1f67c550738f415ec2c30b4",
+         "UnicaSearchIndexableResources.smali": "890ffd06e7aefb03d7656980b4a342b9475e3de73e636c545b82e3cbd75ca503",
+     }
++    a17 = os.environ.get("ROM_SOURCE_CONFIG") == "essi_a376b_android17"
++    if a17:
++        for key, value in {"ROM_MILESTONE": "M4", "TARGET_CODENAME": "star2lte",
++                           "STAR2LTE_BUILD_MODEL": "SM-G965F", "SOURCE_PLATFORM_SDK_VERSION": "37",
++                           "SOURCE_FIRMWARE_CACHE_SUFFIX": "A376BXXU5BZI6", "STAR2LTE_M4_BOOT_LIMITS": "true"}.items():
++            if os.environ.get(key) != value:
++                raise ValueError("Unreviewed BZI6 search scope: " + key)
++        expected.update({
++            "SearchFeatureProviderImpl$$ExternalSyntheticLambda0.smali": "fb62790ddd882854a867d19514f825581dac5e128c1e064e3a60228bad552e74",
++            "SearchIndexableResourcesBase.smali": "701bacd60543bcf5b279daefc412b65b6f6d27b3fb625f94fd0886954d569912",
++            "SearchIndexableResourcesMobile.smali": "bbd6be3ba5bcbf7095f2c9dfa732934c289a99d6ce167735d5f667dac77b22b7",
++        })
+     sources = {}
+     for name, digest in expected.items():
+         matches = list(root.glob("smali*/**/" + name))
+@@ -46,7 +59,7 @@
+     # Validate every input before either write; keep all 211 donor registrations.
+     path.write_text(patched_factory)
+     helper_path.write_text(patched_helper)
+-    print("PASS AZH4 search factory: 211 donor registrations + 4 UN1CA providers")
++    print("PASS " + ("BZI6" if a17 else "AZH4") + " search factory: 211 donor registrations + 4 UN1CA providers")
+ 
+ 
+ if __name__ == "__main__":
+diff --git a/unica/mods/settings/a376b_android17_boot_limits.py b/unica/mods/settings/a376b_android17_boot_limits.py
+--- /dev/null
++++ b/unica/mods/settings/a376b_android17_boot_limits.py
+@@ -0,0 +1,112 @@
++#!/usr/bin/env python3
++"""Wire the reviewed initial M4 Settings/search selection without false controls."""
++from hashlib import sha256
++from pathlib import Path
++import importlib.util
++import os
++import re
++import sys
++import xml.etree.ElementTree as ET
++import zipfile
++
++HERE = Path(__file__).resolve().parent
++SPEC = importlib.util.spec_from_file_location("bzi6_product", HERE.parent.parent / "patches/product_feature/a376b_android17_product.py")
++PRODUCT = importlib.util.module_from_spec(SPEC)
++SPEC.loader.exec_module(PRODUCT)
++FACTORY = "com/android/settings/search/SearchFeatureProviderImpl$$ExternalSyntheticLambda0"
++PROVIDERS = "io/mesalabs/unica/search/UnicaSearchIndexableResources"
++COLLECTOR = "com/samsung/android/settings/intelligence/search/categorizing/TopLevelKeysCollector"
++CONSTRUCTOR = "<init>(Landroid/content/Context;)V"
++OMITTED = ("unica_allow_downgrade", "unica_allow_sdkbypass", "unica_secure_ss",
++           "unica_ss_detection", "unica_gphotos", "unica_bixby_action")
++
++
++def scope():
++    PRODUCT.scope()
++    for key, value in {
++        "STAR2LTE_M4_BOOT_LIMITS": "true", "EXYNOS9810_FACE_UNLOCK_DISABLED": "true",
++        "STAR2LTE_M2_FIXED_RESOLUTION": "false", "STAR2LTE_M2_KEEP_DONOR_WIFI_UI": "false",
++    }.items():
++        if os.environ.get(key) != value:
++            raise RuntimeError("Unreviewed BZI6 initial feature selection: " + key)
++
++
++def settings(root):
++    scope()
++    path = root / "res/xml/unica_extra_settings.xml"
++    text = path.read_text()
++    ET.fromstring(text)
++    for key in OMITTED:
++        text, count = re.subn(r'^.*android:key="' + re.escape(key) + r'"[^\n]*\n', "", text, flags=re.M)
++        if count != 1:
++            raise RuntimeError("Unexpected BZI6 optional Settings control: " + key)
++    ET.fromstring(text)
++    if "unica_bixby_app" in text or 'android:key="unica_games_spoof"' not in text:
++        raise RuntimeError("BZI6 optional Settings positive/negative control mismatch")
++    spec = importlib.util.spec_from_file_location("a376b_search", HERE / "a376b_search.py")
++    search = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(search)
++    # XML is validated first; the search helper validates every preimage before
++    # writing either Smali class. No unrelated preference is removed.
++    search.stage(root)
++    path.write_text(text)
++    print("PASS BZI6 Settings: hide five unsupported options and Bixby remap; retain other controls")
++
++
++def intelligence(root):
++    scope()
++    paths = list(root.glob("smali*/" + COLLECTOR + ".smali"))
++    if len(paths) != 1:
++        raise RuntimeError("Expected one BZI6 top-level Settings key collector")
++    path = paths[0]
++    text = path.read_text()
++    current = PRODUCT.method(text, CONSTRUCTOR)
++    body = current.group()
++    if sha256(body.encode()).hexdigest() != "c0750fd5bfea79bffaf4b8aea42ecc1cefdf0be430d98fb8726b8b6a50d619e2":
++        raise RuntimeError("Unreviewed BZI6 top-level collector constructor")
++    if body.count("    .locals 37") != 1 or re.search(r"\bv37\b", body):
++        raise RuntimeError("BZI6 collector local-register layout changed")
++    before = "    filled-new-array/range {v1 .. v36}, [Ljava/lang/String;"
++    if body.count(before) != 1 or '"top_level_buds_unite"' not in body:
++        raise RuntimeError("BZI6 donor key array changed")
++    body = body.replace("    .locals 37", "    .locals 38", 1).replace(before,
++        '    const-string v37, "top_level_unica"\n\n'
++        '    filled-new-array/range {v1 .. v37}, [Ljava/lang/String;', 1)
++    path.write_text(text[:current.start()] + body + text[current.end():])
++    print("PASS BZI6 Settings Intelligence: retain36 donor keys including Buds; append UN1CA with a fresh local")
++
++
++def verify_compiled(work, tools):
++    scope()
++    settings_apk = work / "system/system/priv-app/SecSettings/SecSettings.apk"
++    factory = PRODUCT.method(PRODUCT.compiled_class(settings_apk, FACTORY, tools), "invoke()Ljava/lang/Object;").group()
++    hook = "L" + PROVIDERS + ";->register(Lcom/android/settingslib/search/SearchIndexableResourcesBase;)V"
++    if factory.count("->addIndex(") != 211 or factory.count(hook) != 1:
++        raise RuntimeError("Compiled BZI6 donor/UN1CA search registrations mismatch")
++    helper = PRODUCT.compiled_class(settings_apk, PROVIDERS, tools)
++    if helper.count("Lcom/android/settingslib/search/SearchIndexableResourcesBase;->addIndex(") != 4 or \
++            ".super Ljava/lang/Object;" not in helper:
++        raise RuntimeError("Compiled BZI6 static UN1CA search provider mismatch")
++    intel = work / "system/system/priv-app/SecSettingsIntelligence/SecSettingsIntelligence.apk"
++    body = PRODUCT.method(PRODUCT.compiled_class(intel, COLLECTOR, tools), CONSTRUCTOR).group()
++    if not PRODUCT.has_instruction(body, 'const-string v37, "top_level_unica"') or \
++            "filled-new-array/range {v1 .. v37}, [Ljava/lang/String;" not in body or \
++            '"top_level_buds_unite"' not in body or body.count("const-string") != 37:
++        raise RuntimeError("Compiled BZI6 top-level donor/UN1CA key array mismatch")
++    with zipfile.ZipFile(work / "system/system/framework/services.jar") as archive:
++        for name in archive.namelist():
++            if re.fullmatch(r"classes\d*\.dex", name) and \
++                    b"Lcom/android/server/policy/PhoneWindowManager$UnicaBixbyRunnable;" in archive.read(name):
++                raise RuntimeError("Omitted M4 Bixby remapper restored in compiled services")
++    print("PASS compiled BZI6 search: 211 donor +4 UN1CA providers;36 donor +1 top-level keys")
++
++
++if __name__ == "__main__":
++    if len(sys.argv) == 2 and sys.argv[1] == "scope":
++        scope()
++    elif len(sys.argv) == 3 and sys.argv[1] in ("settings", "intelligence"):
++        (settings if sys.argv[1] == "settings" else intelligence)(Path(sys.argv[2]))
++    elif len(sys.argv) == 4 and sys.argv[1] == "verify-compiled":
++        verify_compiled(Path(sys.argv[2]), Path(sys.argv[3]))
++    else:
++        raise SystemExit("usage: a376b_android17_boot_limits.py scope | settings|intelligence DECODED | verify-compiled WORK TOOLS")
+diff --git a/unica/mods/settings/customize.sh b/unica/mods/settings/customize.sh
+--- a/unica/mods/settings/customize.sh
++++ b/unica/mods/settings/customize.sh
+@@ -79,7 +79,10 @@
+ done < <(find "$MODPATH/SecSettings.apk" -type f)
+ 
+ # Add UN1CA Settings SearchIndexableData registrations
+-if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++    python3 "$MODPATH/a376b_android17_boot_limits.py" settings \
++        "$APKTOOL_DIR/system/priv-app/SecSettings/SecSettings.apk" || return 1
++elif [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
+     python3 "$MODPATH/a376b_search.py" \
+         "$APKTOOL_DIR/system/priv-app/SecSettings/SecSettings.apk" || exit 1
+     python3 - "$APKTOOL_DIR/system/priv-app/SecSettings/SecSettings.apk/res/xml/unica_extra_settings.xml" <<'PYM2EXTRA'
+@@ -121,6 +124,10 @@
+ fi
+ 
+ DECODE_APK "system" "system/priv-app/SecSettingsIntelligence/SecSettingsIntelligence.apk"
++if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++    python3 "$MODPATH/a376b_android17_boot_limits.py" intelligence \
++        "$APKTOOL_DIR/system/priv-app/SecSettingsIntelligence/SecSettingsIntelligence.apk" || return 1
++else
+ LOG "- Patching \"smali_classes2/com/samsung/android/settings/intelligence/search/categorizing/TopLevelKeysCollector.smali\" in /system/system/priv-app/SecSettingsIntelligence/SecSettingsIntelligence.apk"
+ SMALI_PATCH "system" "system/priv-app/SecSettingsIntelligence/SecSettingsIntelligence.apk" \
+     "smali_classes2/com/samsung/android/settings/intelligence/search/categorizing/TopLevelKeysCollector.smali" "replace" \
+@@ -134,6 +141,7 @@
+     'filled-new-array/range {v1 .. v35}, [Ljava/lang/String;' \
+     '    const-string v36, "top_level_unica"\n\n    filled-new-array/range {v1 .. v36}, [Ljava/lang/String;' \
+     > /dev/null
++fi
+ 
+ # Show Vulkan renderer toggle if required
+ if [[ "$(GET_PROP "ro.hwui.use_vulkan")" != "true" ]]; then
+diff --git a/unica/patches/exynos9810_device_stack/customize.sh b/unica/patches/exynos9810_device_stack/customize.sh
+--- a/unica/patches/exynos9810_device_stack/customize.sh
++++ b/unica/patches/exynos9810_device_stack/customize.sh
+@@ -593,7 +593,7 @@
+ key 703   USER
+ EOF
+ 
+-    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] || IS_A376B_M4_BOOT_TEST; then
+         # Stock G965F Generic.kl and AZH4 Samsung vendor layout map703 to WINK.
+         sed -i 's/^key 703   USER$/key 703   WINK/' "$KL_DIR/gpio_keys.kl"
+     fi
+diff --git a/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh b/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
+--- a/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
+@@ -3315,7 +3315,7 @@
+     local FILE
+     local COUNT=0
+     local KEYCODE="USER"
+-    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] || IS_A376B_M4_BOOT_TEST; then
+         KEYCODE="WINK"
+     fi
+ 

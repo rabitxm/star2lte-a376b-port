@@ -1,0 +1,48 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] synchronize M4 Tethering APEX manifests
+
+# Replay record correction28/10: recount malformed unified-diff hunk lengths so the existing manifest-match report hunk is applied; intended source and payload bytes are unchanged.
+# Reason: attempt0208 logcat lines 6203-6205 report `Manifest inside filesystem does not match manifest outside it`; apexd rejects the diagnostic Tethering APEX, and init then runs the `/system/bin/false` fallback bpfloader and reboots. Patch0207 updated only the filesystem manifest when adding libnetd_resolv.so.
+# Affected: existing M4 Android17 network APEX composition helper and its output lock. No vendor, radio, kernel, or normal M4 profile change.
+# Verify: build the signed APEX twice and require the outer apex_manifest.pb to byte-match the payload manifest, preserve provideNativeLibs, verify AVB/container v3/alignment and exact output hash; on device confirm apexd activates Tethering and netd resolves libnetd_resolv.so.
+# Rollback: reverse patch0209 and restore the previous locked APEX hash; this returns to the known attempt0208 apexd verification failure.
+
+--- a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_network_native.py
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_network_native.py
+@@ -117,15 +117,18 @@
+ with zipfile.ZipFile(O/'s22.apex') as src,zipfile.ZipFile(unsigned,'w',compression=zipfile.ZIP_STORED) as dst:
+  for entry in src.infolist():
+-  if entry.filename.startswith('META-INF/') or entry.filename in ('apex_payload.img','apex_pubkey'):continue
++  if entry.filename.startswith('META-INF/') or entry.filename in ('apex_payload.img','apex_pubkey','apex_manifest.pb'):continue
+   dst.writestr(entry,src.read(entry))
+- dst.write(image,'apex_payload.img');dst.write(K/'apex_pubkey','apex_pubkey')
++ dst.write(image,'apex_payload.img');dst.write(K/'apex_pubkey','apex_pubkey');dst.write(merged/manifest_rel,'apex_manifest.pb')
+ run([T/'signapk','-a','4096','--align-file-size','--min-sdk-version','36',K/'container.x509.pem',K/'container.pk8',unsigned,signed])
+ java=O/'VerifyApex.java';java.write_text('import java.io.File; import com.android.apksig.ApkVerifier; public class VerifyApex { public static void main(String[] a) throws Exception { var r=new ApkVerifier.Builder(new File(a[0])).build().verify(); System.out.println("verified="+r.isVerified()+" v3="+r.isVerifiedUsingV3Scheme()+" errors="+r.getErrors()); if(!r.isVerified() || !r.isVerifiedUsingV3Scheme()) System.exit(1); }}')
+ verification=run(['java','--class-path',T/'signapk.jar',java,signed])
+ with zipfile.ZipFile(signed) as z:
++ assert z.read('apex_manifest.pb')==(verified/manifest_rel).read_bytes()
++ assert protobuf_strings(z.read('apex_manifest.pb'),7)==protobuf_strings(s22_manifest_bytes,7)+['libnetd_resolv.so']
+  i=z.getinfo('apex_payload.img')
+  with signed.open('rb') as f:f.seek(i.header_offset+26);n,e=struct.unpack('<HH',f.read(4))
+  offset=i.header_offset+30+n+e;assert offset%4096==0 and i.compress_type==0
+  with zipfile.ZipFile(O/'s22.apex') as src:
+   for entry in src.infolist():
+-   if not entry.filename.startswith('META-INF/') and entry.filename not in ('apex_payload.img','apex_pubkey'):assert z.read(entry.filename)==src.read(entry.filename),entry.filename
++   if entry.filename=='apex_manifest.pb':assert z.read(entry.filename)==(verified/manifest_rel).read_bytes()
++   elif not entry.filename.startswith('META-INF/') and entry.filename not in ('apex_payload.img','apex_pubkey'):assert z.read(entry.filename)==src.read(entry.filename),entry.filename
+@@ -133,4 +136,4 @@
+ if sha(signed)!=expected['output_sha256'] or signed.stat().st_size!=expected['output_bytes']:
+  raise RuntimeError('M4 native networking APEX reproducibility/hash gate failed')
+-report={'java_stats':stats_report,'java_l4s':java_report,'result':'PASS','changed_payload_files':changed,'metadata_paths_verified':len(metadata),'old_native_sha256':sha(old),'new_native_sha256':sha(new),'libnetd_resolv_sha256':sha(verified/resolv_rel),'apex_manifest_provided_libs':protobuf_strings((verified/manifest_rel).read_bytes(),7),'output_sha256':sha(signed),'bytes':signed.stat().st_size,'payload_avb':'PASS','container_v3':verification.strip(),'payload_zip_offset':offset,'other_container_metadata_unchanged':True,'signing_identity':'explicit existing local native32 diagnostic keys; not Samsung original signing','phone_deployed':False,'network_acceptance':False}
++report={'java_stats':stats_report,'java_l4s':java_report,'result':'PASS','changed_payload_files':changed,'metadata_paths_verified':len(metadata),'old_native_sha256':sha(old),'new_native_sha256':sha(new),'libnetd_resolv_sha256':sha(verified/resolv_rel),'apex_manifest_provided_libs':protobuf_strings((verified/manifest_rel).read_bytes(),7),'container_manifest_matches_payload':'PASS','output_sha256':sha(signed),'bytes':signed.stat().st_size,'payload_avb':'PASS','container_v3':verification.strip(),'payload_zip_offset':offset,'other_container_metadata_unchanged':True,'signing_identity':'explicit existing local native32 diagnostic keys; not Samsung original signing','phone_deployed':False,'network_acceptance':False}
+ (O/'report.json').write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report,indent=2),flush=True)
+--- a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_network_native.lock.json
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_network_native.lock.json
+@@ -33,5 +33,5 @@
+   "stats_compat": {
+     "scope": "diagnostic; donor stats overloads and complete shared transport/template/identity persistence unit; legacy entry points retained; adds BZI6 libnetd_resolv.so and APEX provideNativeLibs entry required by A37 netd",
+-    "output_sha256": "03a0fbcdd952df34795a6b3648583ae7feb6b49ab785a3cd074db85f7fb2a2ba",
++    "output_sha256": "0698d84c1d8306a0dbc30871fccd37505d43ab5a5de397d65319a117065f6853",
+     "output_bytes": 67911680,
+     "java_jar_sha256": {

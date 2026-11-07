@@ -1,0 +1,18 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] record release verifier import scope correction
+
+# Reason: complete-series audit after0212 found the live verifier's already-required fix was missing from the exported series. A branch-local importlib binding shadows the module-level import for the entire function, including M4 branches.
+# Affected: scripts/internal/verify_exynos9810_release_defaults.py only; remove one redundant local import, keep the existing module import and all gates. This records current tested source, with no new APK/image/device change.
+# Verify: Python syntax and complete pinned-fork replay byte-identical to the working tree; compiled/image gates remain required for the next full package.
+# Rollback: restore the local import; this restores the previous source scope defect.
+
+--- a/scripts/internal/verify_exynos9810_release_defaults.py
++++ b/scripts/internal/verify_exynos9810_release_defaults.py
+@@ -75,7 +75,6 @@
+     if os.environ.get("ROM_SOURCE_CONFIG") == "essi_a376b_android16":
+         if (target, os.environ.get("ROM_MILESTONE")) != ("star2lte", "M2"):
+             raise RuntimeError("Unreviewed native32 A376B release profile")
+-        import importlib.util
+         adapter=ROOT/"unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_native32.py"
+         spec=importlib.util.spec_from_file_location("a376b_native32",adapter)
+         module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)

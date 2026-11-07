@@ -1,0 +1,35 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] Retain BZI6 donor Hide My Applist behavior
+
+# Reason: attempt33 lines1232 and1245 report failed Hide My Applist hunks in BZI6 ComputerEngine.smali:9954 and ActivityStarter.smali:5341 after earlier hunks matched. This is an optional legacy framework integration; preserve the donor methods coherently rather than partially applying stale hooks.
+# Affected: scripts/internal/apply_modules.sh.
+# Verify: exact M4/G965F/star2lte/SDK37/board API33/BZI6 route retains donor behavior; wrong model/milestone fail closed; AZH4 M2 route remains unchanged; unrelated modules remain active; shell syntax, all151 ordered patch hashes/replay and clean attempt34.
+# Rollback: remove patch0161 from patches/fork/series and sources.lock.json, then restore the prior dispatcher.
+
+--- a/scripts/internal/apply_modules.sh
++++ b/scripts/internal/apply_modules.sh
+@@ -12,6 +12,24 @@
+     local MODPATH="$1"
+     local MODNAME
+     local MODAUTH
++
++    # BZI6 changed the PackageManager/ActivityStarter methods targeted by the
++    # optional Hide My Applist integration; keep the complete donor behavior.
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ] && \
++            [[ "$MODPATH" == */mods/hma ]]; then
++        if [ "${ROM_MILESTONE:-}" != M4 ] || [ "${TARGET_CODENAME:-}" != star2lte ] || \
++                [ "${STAR2LTE_BUILD_MODEL:-}" != SM-G965F ] || \
++                [ "${SOURCE_PLATFORM_SDK_VERSION:-}" != 37 ] || \
++                [ "${TARGET_PLATFORM_SDK_VERSION:-}" != 31 ] || \
++                [ "${TARGET_BOARD_API_LEVEL:-}" != 33 ] || \
++                [ "${SOURCE_FIRMWARE_CACHE_SUFFIX:-}" != A376BXXU5BZI6 ] || \
++                [ "${SOURCE_FIRMWARE:-}" != SM-A376B/XXV/LOCAL ]; then
++            LOGE "Unreviewed BZI6 Hide My Applist donor-retention scope"
++            return 1
++        fi
++        LOGW "BZI6 PackageManager/ActivityStarter code differs; retaining donor Hide My Applist behavior for M4"
++        return 0
++    fi
+ 
+     # AZH4 moved Knox framework internals across several classes. Applying the
+     # older Nuke Knox module partially would leave the donor's Knox stack split.

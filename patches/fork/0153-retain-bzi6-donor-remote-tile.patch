@@ -1,0 +1,34 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] Retain BZI6 donor Remote management tile
+
+# Reason: attempt25 line1181 fails because the legacy CSC mod requires TopLevelRemoteSupportPreferenceController.smali, which BZI6 SecSettings does not contain. The optional hide-tile edit is not ported for Android17, so keep donor visibility only on the exact M4 G965F BZI6 profile.
+# Affected: unica/mods/csc/customize.sh.
+# Verify: exact M4/G965F/BZI6 dispatch calls no unsupported Settings patch; wrong target/milestone fail closed; AZH4 legacy path still calls the patch; shell and source replay checks; clean M4 attempt26.
+# Rollback: remove patch0153 from series and sources.lock.json and restore the prior CSC customizer.
+
+--- a/unica/mods/csc/customize.sh
++++ b/unica/mods/csc/customize.sh
+@@ -7,6 +7,20 @@
+     'isSupportPowerOffLock()Z' 'true'
+ 
+ # Hide Remote management tile in Settings app
+-SMALI_PATCH "system" "system/priv-app/SecSettings/SecSettings.apk" \
+-    "smali_classes4/com/samsung/android/settings/homepage/TopLevelRemoteSupportPreferenceController.smali" "return" \
+-    'getAvailabilityStatus()I' '3'
++if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++    if [ "${ROM_MILESTONE:-}" != M4 ] || [ "${TARGET_CODENAME:-}" != star2lte ] || \
++            [ "${STAR2LTE_BUILD_MODEL:-}" != SM-G965F ] || \
++            [ "${SOURCE_PLATFORM_SDK_VERSION:-}" != 37 ] || \
++            [ "${TARGET_PLATFORM_SDK_VERSION:-}" != 31 ] || \
++            [ "${TARGET_BOARD_API_LEVEL:-}" != 33 ] || \
++            [ "${SOURCE_FIRMWARE_CACHE_SUFFIX:-}" != A376BXXU5BZI6 ] || \
++            [ "${SOURCE_FIRMWARE:-}" != SM-A376B/XXV/LOCAL ]; then
++        LOGE "Unreviewed BZI6 Remote management tile scope"
++        return 1
++    fi
++    LOGW "BZI6 has no legacy TopLevelRemoteSupportPreferenceController; retaining donor Settings tile behavior"
++else
++    SMALI_PATCH "system" "system/priv-app/SecSettings/SecSettings.apk" \
++        "smali_classes4/com/samsung/android/settings/homepage/TopLevelRemoteSupportPreferenceController.smali" "return" \
++        'getAvailabilityStatus()I' '3'
++fi

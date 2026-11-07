@@ -1,0 +1,49 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] verify donor-native BZI6 camera for M4
+
+# Reason: package0206 failed at `star2lte: final Samsung Photo/QR repair is not applied`; M4 deliberately keeps the BZI6 Android17 camera implementation, so the legacy One UI8 smali repair is the wrong contract.
+# Affected: Exynos9810 camera matrix gate only.
+# Verify: strict M4/G965F/BZI6 diagnostic-scope check, then run the existing compiled BZI6 camera/OMX verifier; keep legacy Photo/QR checks for other source configurations. Run the real package gates afterward.
+# Rollback: reverse0206; M4 package preflight will again demand an inapplicable One UI8 Photo/QR smali transformation.
+
+diff --git a/scripts/internal/verify_exynos9810_camera_matrix.sh b/scripts/internal/verify_exynos9810_camera_matrix.sh
+index b83b21c..20ae1cc 100755
+--- a/scripts/internal/verify_exynos9810_camera_matrix.sh
++++ b/scripts/internal/verify_exynos9810_camera_matrix.sh
+@@ -4,6 +4,7 @@ set -euo pipefail
+ 
+ SRC_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
+ CUSTOMIZE="$SRC_DIR/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh"
++BUILD_TARGET_CODENAME="${TARGET_CODENAME:-}"
+ 
+ for TARGET_CODENAME in starlte star2lte crownlte; do
+     TARGET_WORK_DIR="$SRC_DIR/out/target/$TARGET_CODENAME/work_dir"
+@@ -82,6 +83,23 @@ for TARGET_CODENAME in starlte star2lte crownlte; do
+     echo "OK $TARGET_CODENAME camera runtime matrix is present"
+ done
+ 
++# M4 intentionally retains the BZI6 Android17 Camera APK/cameraserver pair.
++# The legacy One UI8 Photo/QR repair below targets a different SamsungCamera
++# implementation and must not be applied to the donor-native M4 camera.
++if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++    [ "${ROM_MILESTONE:-}" = "M4" ] && \
++        [ "$BUILD_TARGET_CODENAME" = "star2lte" ] && \
++        [ "${STAR2LTE_BUILD_MODEL:-}" = "SM-G965F" ] && \
++        [ "${EXYNOS9810_M4_RUNTIME_COMPAT:-false}" = "true" ] && \
++        [ "${SOURCE_FIRMWARE_CACHE_SUFFIX:-}" = "A376BXXU5BZI6" ] || {
++        echo "Unreviewed BZI6 native camera verification scope" >&2
++        exit 1
++    }
++    export TARGET_CODENAME="$BUILD_TARGET_CODENAME"
++    python3 "$SRC_DIR/unica/patches/legacy/a376b_android17_media.py" \
++        verify-compiled "$SRC_DIR/out/target/star2lte/work_dir" "$SRC_DIR/out/tools"
++    echo "OK star2lte: hash-pinned BZI6 Android17 camera and reviewed OMX rebuild"
++else
+ # Validate the current final photo repair, not historical inline patch markers.
+ # AutoBeauty must use Samsung Photo routing and must not emit a duplicate shutter.
+ python3 -B - "$SRC_DIR" <<'PYCAMERA'
+@@ -107,3 +125,4 @@ for target in ("starlte", "star2lte", "crownlte"):
+         raise SystemExit(f"{target}: final Samsung Photo/QR repair is not applied")
+     print(f"OK {target}: Samsung Photo routing, QR bypass and single shutter callback")
+ PYCAMERA
++fi

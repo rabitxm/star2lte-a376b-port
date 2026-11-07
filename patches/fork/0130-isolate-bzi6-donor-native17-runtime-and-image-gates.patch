@@ -1,0 +1,842 @@
+--- /dev/null
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_runtime_compat.lock.json
+@@ -0,0 +1,46 @@
++{
++  "schema": 1,
++  "scope": "M4 BZI6 Android17 star2lte G965F runtime preservation",
++  "source_firmware_marker": "A376BXXU5BZI6/A376BOLM5BZI6/A376BXXU5BZI6",
++  "files": {
++    "system/system/bin/cameraserver": "45a6c90b8a6a2b157c747f41a9e08fe7dcfa7a527c85a7403039516dd672d3cf",
++    "system/system/priv-app/SamsungCamera/SamsungCamera.apk": "21a830e6d2f4d73456f6837a73edf8170ddc84222ff710b71fb1318ae7fc61c1",
++    "system/system/lib64/libaudiobase.so": "39f603158036fd83e76862417450a34881f875bdd8aa20147309bb3d78cb5e0a",
++    "system/system/lib64/libaudioclient.so": "49f02170d4508048f57205528fa87cb7a0494221afe2c4f60abbc0475d1d884a",
++    "system/system/lib64/android.hardware.graphics.common-V7-ndk.so": "20da3d67521e859760936e22c0b868544331d93799a7a891f3a785f2acf420d4",
++    "system/system/apex/com.google.android.tethering_compressed.apex": "540ee27099939f2d1e698228ced265b2505dca1f82af2d785c43b37e0c2b652d",
++    "system/system/etc/init/aconfigd.rc": "78d6bb311aa7126384da4b59780d4a87d9b321c4fd211d04e1339fbd8975447b",
++    "system/system/etc/aconfig/package.map": "c7304b750adcd8df2f2b4bcd888f5003688320ae78585a5b8234bec70c2d8bce",
++    "system/system/etc/aconfig/flag.map": "c20b4e762dc2b3e0b296b3740806f154cfdeb81a8e2e4ce367fb1727dba6e0a2",
++    "system/system/etc/aconfig/flag.val": "aaacc25e8be2438811ef292a6f77e99921b350d7b4ff01dd24de152eb7148d1e",
++    "system/system/etc/aconfig/flag.info": "7645310bfc5ecb3d6b97ad3148ddfd3fd56445fe79f2ffc02915264b598a85d7"
++  },
++  "adb_source_files": {
++    "system/system/framework/services.jar": "efb433ade1059327c8a591731839899e7f6a6da1d7e7895f6e5bc996a182170e",
++    "system/system/priv-app/SettingsProvider/SettingsProvider.apk": "df6935fa0953e74e822a1aaee5e12fb8ad7cc2357fbdbe1fd63ee1a118e2206b"
++  },
++  "vendor_kg_accounts": {
++    "passwd_sha256": "a14026a68a5674d57d5a2c77b5900a3702390bc622ed658683893a2a1b5717b8",
++    "passwd_line": "vendor_kg::5959:5959::/:/bin/sh",
++    "group_sha256": "1b25c9cf8338905b5d71f3154e83030589fa4fadcbf5a91236cd90cb9cf0a5ba",
++    "group_line": "vendor_kg::5959:"
++  },
++  "aconfig_v2": {
++    "container": "system",
++    "vendor_source_directory": "vendor/etc/aconfig",
++    "vendor_source_absent": true,
++    "vendor_output_files": ["package.map", "flag.map", "flag.val", "flag.info"]
++  },
++  "graphics": {
++    "required_interface": "android.hardware.graphics.common-V7-ndk.so",
++    "legacy_v6_64bit_source": "absent"
++  },
++  "audio_symbols": {
++    "provider": "system/system/lib64/libaudiobase.so",
++    "exports": [
++      "_ZN7android11AudioSystem26getAttributesForStreamTypeE19audio_stream_type_tR18audio_attributes_t",
++      "_ZN7android11AudioSystem13getParametersEiRKNS_7String8E"
++    ]
++  },
++  "tethering_policy": "retain BZI6 Android17 APEX; do not use the Android16 S22 APEX without M4 runtime evidence"
++}
+--- /dev/null
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_runtime_compat.py
+@@ -0,0 +1,318 @@
++#!/usr/bin/env python3
++"""Stage and verify the donor-native M4 runtime boundary.
++
++Reason: keep BZI6 camera/audio/graphics/Tethering ABI paired at Android 17 while
++adding only the reviewed vendor_kg account and an empty vendor aconfig v2 set.
++Files: exact files in the M4 lock, vendor passwd/group and vendor/etc/aconfig.
++Verify source marker/hashes, aconfig v2 provenance, final work tree and scope.
++"""
++from pathlib import Path
++import argparse
++import hashlib
++import importlib.util
++import json
++import os
++import shutil
++import struct
++
++HERE = Path(__file__).resolve().parent
++LOCK = HERE / "a376b_android17_runtime_compat.lock.json"
++
++
++def manifest():
++    return json.loads(LOCK.read_text())
++
++
++def digest(path):
++    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
++
++
++def scope():
++    expected = {
++        "ROM_SOURCE_CONFIG": "essi_a376b_android17",
++        "ROM_MILESTONE": "M4",
++        "TARGET_CODENAME": "star2lte",
++        "TARGET_PLATFORM": "exynos9810",
++        "STAR2LTE_BUILD_MODEL": "SM-G965F",
++        "SOURCE_PLATFORM_SDK_VERSION": "37",
++        "TARGET_PLATFORM_SDK_VERSION": "31",
++        "SOURCE_PRODUCT_SHIPPING_API_LEVEL": "36",
++        "TARGET_PRODUCT_SHIPPING_API_LEVEL": "26",
++        "TARGET_BOARD_API_LEVEL": "33",
++        "SOURCE_FIRMWARE": "SM-A376B/XXV/LOCAL",
++        "SOURCE_FIRMWARE_CACHE_SUFFIX": "A376BXXU5BZI6",
++        "TARGET_OS_FILE_SYSTEM_TYPE": "ext4",
++        "EXYNOS9810_M4_RUNTIME_COMPAT": "true",
++        "EXYNOS9810_ENABLE_METADATA_BIND": "true",
++        "EXYNOS9810_ENABLE_KERNELSU_RUNTIME": "false",
++    }
++    for key, value in expected.items():
++        if os.environ.get(key) != value:
++            raise ValueError("Unreviewed M4 runtime scope: " + key)
++    for key in ("EXYNOS9810_M2_RUNTIME_COMPAT", "EXYNOS9810_M2_BOOTSTRAP_COMPAT"):
++        if os.environ.get(key, "false") != "false":
++            raise ValueError("Mixed M2/M4 runtime selection: " + key)
++
++
++def source_root(path):
++    root = Path(path)
++    expected = manifest()["source_firmware_marker"]
++    marker = root / ".extracted"
++    if not marker.is_file() or marker.read_text().strip() != expected:
++        raise ValueError("BZI6 runtime donor marker mismatch")
++    return root
++
++
++def verify_source(donor):
++    m = manifest()
++    donor = source_root(donor)
++    for rel, expected in m["files"].items():
++        if digest(donor / rel) != expected:
++            raise ValueError("BZI6 runtime source hash mismatch: " + rel)
++    for rel, expected in m.get("adb_source_files", {}).items():
++        if digest(donor / rel) != expected:
++            raise ValueError("BZI6 ADB donor source hash mismatch: " + rel)
++    vendor_aconfig = donor / "vendor/etc/aconfig"
++    if m["aconfig_v2"]["vendor_source_absent"] and vendor_aconfig.exists():
++        raise ValueError("BZI6 unexpectedly contains vendor aconfig input")
++    for rel in ("system/system/etc/aconfig/package.map",
++                "system/system/etc/aconfig/flag.map",
++                "system/system/etc/aconfig/flag.val",
++                "system/system/etc/aconfig/flag.info"):
++        data = (donor / rel).read_bytes()
++        if len(data) < 15 or struct.unpack_from("<I", data, 0)[0] != 2:
++            raise ValueError("BZI6 aconfig table is not storage v2: " + rel)
++        if data[8:14] != b"system":
++            raise ValueError("BZI6 aconfig table container mismatch: " + rel)
++    print("PASS BZI6 marker, locked Android17 inputs and system aconfig v2 provenance")
++
++
++def donor_account_rows(donor):
++    expected = manifest()["vendor_kg_accounts"]
++    rows = {}
++    for kind in ("passwd", "group"):
++        path = donor / "vendor/etc" / kind
++        if digest(path) != expected[kind + "_sha256"]:
++            raise ValueError("BZI6 vendor " + kind + " source hash mismatch")
++        wanted = expected[kind + "_line"]
++        lines = path.read_text().splitlines()
++        named = [line for line in lines if line.split(":", 1)[0] == "vendor_kg"]
++        identified = []
++        for line in lines:
++            fields = line.split(":")
++            try:
++                uid_or_gid = int(fields[2])
++            except (IndexError, ValueError):
++                continue
++            if uid_or_gid == 5959:
++                identified.append(line)
++        if named != [wanted] or identified != [wanted]:
++            raise ValueError("BZI6 vendor " + kind + " has an unreviewed vendor_kg row")
++        rows[kind] = wanted
++    return rows
++
++
++def merge_account(path, kind, wanted):
++    path = Path(path)
++    lines = path.read_text().splitlines() if path.exists() else []
++    named = []
++    identified = []
++    for line in lines:
++        fields = line.split(":")
++        try:
++            uid_or_gid = int(fields[2])
++        except (IndexError, ValueError):
++            continue
++        if fields[0] == "vendor_kg":
++            named.append(line)
++        if uid_or_gid == 5959:
++            identified.append(line)
++    if named or identified:
++        if named == [wanted] and identified == [wanted]:
++            return
++        raise ValueError("Hybrid Vendor " + kind + " has a conflicting vendor_kg UID/GID 5959")
++    prefix = "\n" if lines and path.read_bytes()[-1:] != b"\n" else ""
++    path.parent.mkdir(parents=True, exist_ok=True)
++    with path.open("a") as output:
++        output.write(prefix + wanted + "\n")
++
++
++def verify_vendor_account(work):
++    expected = manifest()["vendor_kg_accounts"]
++    for kind in ("passwd", "group"):
++        lines = (Path(work) / "vendor/etc" / kind).read_text().splitlines()
++        wanted = expected[kind + "_line"]
++        named = [line for line in lines if line.split(":", 1)[0] == "vendor_kg"]
++        identified = []
++        for line in lines:
++            fields = line.split(":")
++            try:
++                uid_or_gid = int(fields[2])
++            except (IndexError, ValueError):
++                continue
++            if uid_or_gid == 5959:
++                identified.append(line)
++        if named != [wanted] or identified != [wanted]:
++            raise ValueError("Final M4 Hybrid Vendor " + kind + " account row mismatch")
++
++
++def empty_vendor_flags():
++    spec = importlib.util.spec_from_file_location(
++        "a376b_empty_vendor_flags", HERE / "a376b_empty_vendor_flags.py")
++    module = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(module)
++    return module.empty_files()
++
++
++def stage_vendor_flags(work):
++    destination = Path(work) / "vendor/etc/aconfig"
++    files = empty_vendor_flags()
++    if destination.exists():
++        if destination.is_symlink() or not destination.is_dir():
++            raise ValueError("Unreviewed M4 vendor aconfig destination")
++        if any(p.name not in files for p in destination.iterdir()):
++            raise ValueError("Unknown M4 vendor aconfig file")
++        for name, data in files.items():
++            path = destination / name
++            if path.exists() and (path.is_symlink() or path.read_bytes() != data):
++                raise ValueError("Refusing to overwrite nonempty vendor aconfig " + name)
++    destination.mkdir(parents=True, exist_ok=True)
++    for name, data in files.items():
++        path = destination / name
++        if not path.exists():
++            path.write_bytes(data)
++        path.chmod(0o444)
++
++
++def apply(work, donor):
++    scope()
++    donor = source_root(donor)
++    verify_source(donor)
++    work = Path(work)
++    m = manifest()
++    rows = donor_account_rows(donor)
++    for rel, expected in m["files"].items():
++        source = donor / rel
++        destination = work / rel
++        if destination.exists() or destination.is_symlink():
++            if destination.is_symlink() or digest(destination) != expected:
++                raise ValueError("Refusing unreviewed M4 runtime destination: " + rel)
++        else:
++            destination.parent.mkdir(parents=True, exist_ok=True)
++            shutil.copyfile(source, destination)
++    for kind in ("passwd", "group"):
++        merge_account(work / "vendor/etc" / kind, kind, rows[kind])
++    verify_vendor_account(work)
++    stage_vendor_flags(work)
++    print("PASS staged donor-native M4 camera/audio/V7/Tethering, vendor_kg and empty vendor aconfig v2")
++
++
++def verify(work, donor):
++    scope()
++    donor = source_root(donor)
++    verify_source(donor)
++    work = Path(work)
++    for rel, expected in manifest()["files"].items():
++        path = work / rel
++        if not path.is_file() or path.is_symlink() or digest(path) != expected:
++            raise ValueError("Final M4 runtime input mismatch: " + rel)
++    verify_vendor_account(work)
++    flags = empty_vendor_flags()
++    directory = work / "vendor/etc/aconfig"
++    if not directory.is_dir() or {p.name for p in directory.iterdir()} != set(flags):
++        raise ValueError("Final M4 vendor aconfig file set mismatch")
++    for name, data in flags.items():
++        if (directory / name).read_bytes() != data:
++            raise ValueError("Final M4 empty vendor aconfig v2 file mismatch: " + name)
++    canonical = work / "vendor/etc/init/hw/init.samsungexynos9810.rc"
++    secondary = work / "vendor/etc/init/init.samsungexynos9810.rc"
++    bind = "mount none /cache/metadata /metadata bind"
++    if canonical.read_text().count(bind) != 1:
++        raise ValueError("Final M4 persistent CACHE metadata bind missing or duplicated")
++    if bind in secondary.read_text():
++        raise ValueError("Final M4 secondary vendor init duplicates metadata bind")
++    contexts = (work / "system/system/etc/selinux/plat_file_contexts").read_text()
++    if "# UN1CA M4 CACHE metadata label aliases BEGIN" not in contexts or \
++            "# UN1CA M4 CACHE metadata label aliases END" not in contexts:
++        raise ValueError("Final M4 CACHE metadata label aliases missing")
++    print("PASS final M4 donor-native runtime closure, vendor_kg account and aconfig v2 set")
++
++
++def self_test(donor):
++    verify_source(donor)
++    import tempfile
++    with tempfile.TemporaryDirectory(prefix="m4-runtime-compat-") as td:
++        root = Path(td)
++        donor = source_root(donor)
++        for rel in manifest()["files"]:
++            dst = root / rel
++            dst.parent.mkdir(parents=True, exist_ok=True)
++            shutil.copyfile(donor / rel, dst)
++        (root / "vendor/etc").mkdir(parents=True)
++        anchor = "    mount_all /vendor/etc/fstab.${ro.hardware} --early\n"
++        canonical = root / "vendor/etc/init/hw/init.samsungexynos9810.rc"
++        secondary = root / "vendor/etc/init/init.samsungexynos9810.rc"
++        canonical.parent.mkdir(parents=True, exist_ok=True)
++        canonical.write_text("on fs\n" + anchor)
++        secondary.parent.mkdir(parents=True, exist_ok=True)
++        secondary.write_text("on fs\n" + anchor)
++        contexts = root / "system/system/etc/selinux/plat_file_contexts"
++        contexts.parent.mkdir(parents=True, exist_ok=True)
++        shutil.copyfile(donor / "system/system/etc/selinux/plat_file_contexts", contexts)
++        for kind in ("passwd", "group"):
++            (root / "vendor/etc" / kind).write_text("existing_test::5900:5900::/:/bin/sh\n"
++                                                    if kind == "passwd" else "existing_test::5900:\n")
++        apply(root, donor)
++        metadata_spec = importlib.util.spec_from_file_location(
++            "a376b_metadata_bind", HERE / "a376b_metadata_bind.py")
++        metadata_module = importlib.util.module_from_spec(metadata_spec)
++        metadata_spec.loader.exec_module(metadata_module)
++        metadata_module.apply(root, "M4")
++        first = {p.relative_to(root).as_posix(): p.read_bytes()
++                 for p in (root / "vendor/etc/aconfig").iterdir()}
++        apply(root, donor)
++        verify(root, donor)
++        if first != {p.relative_to(root).as_posix(): p.read_bytes()
++                     for p in (root / "vendor/etc/aconfig").iterdir()}:
++            raise ValueError("M4 aconfig staging is not idempotent")
++        bad = root / "system/system/bin/cameraserver"
++        bad.write_bytes(b"unreviewed camera server")
++        try:
++            apply(root, donor)
++        except ValueError:
++            pass
++        else:
++            raise ValueError("Unreviewed cameraserver overwrite accepted")
++        for kind in ("passwd", "group"):
++            path = root / "vendor/etc" / kind
++            path.write_text("collision::5959:5959::/:/bin/sh\n" if kind == "passwd"
++                            else "collision::5959:\n")
++            try:
++                merge_account(path, kind, manifest()["vendor_kg_accounts"][kind + "_line"])
++            except ValueError:
++                pass
++            else:
++                raise ValueError("vendor_kg UID/GID collision accepted for " + kind)
++        (root / "vendor/etc/aconfig/unreviewed.bin").write_bytes(b"x")
++        try:
++            stage_vendor_flags(root)
++        except ValueError:
++            pass
++        else:
++            raise ValueError("Unknown vendor aconfig input accepted")
++    print("PASS M4 apply/verify idempotence, camera replacement, account collision and unknown-table rejection")
++
++
++if __name__ == "__main__":
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("mode", choices=("apply", "verify", "self-test"))
++    parser.add_argument("--work-dir", type=Path, required=True)
++    parser.add_argument("--donor-root", type=Path, required=True)
++    args = parser.parse_args()
++    if args.mode == "apply":
++        apply(args.work_dir, args.donor_root)
++    elif args.mode == "verify":
++        verify(args.work_dir, args.donor_root)
++    else:
++        scope()
++        self_test(args.donor_root)
+--- a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_metadata_bind.py
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_metadata_bind.py
+@@ -1,8 +1,8 @@
+ #!/usr/bin/env python3
+-"""Finalize the fork's existing CACHE-backed metadata mount for M2.
++"""Finalize the fork's existing CACHE-backed metadata mount for M2 or M4.
+ Reason: vendor baseline restore removes the early recipe's metadata bind.
+ Files: canonical vendor hw init, duplicate init block if present, system file contexts.
+-Verify actual CACHE-backed /metadata, aconfig labels, flags and reboot persistence.
++Verify the milestone-specific label block and actual CACHE-backed /metadata.
+ """
+ from pathlib import Path
+ import argparse, re, json
+@@ -13,10 +13,14 @@
+     mount none /cache/metadata /metadata bind
+     restorecon_recursive /metadata
+ """
+-START = "# UN1CA M2 CACHE metadata label aliases BEGIN"
+-END = "# UN1CA M2 CACHE metadata label aliases END"
+-def apply(root):
++def markers(milestone):
++    if milestone not in ("M2", "M4"):
++        raise ValueError("Unsupported CACHE metadata profile")
++    return (f"# UN1CA {milestone} CACHE metadata label aliases BEGIN",
++            f"# UN1CA {milestone} CACHE metadata label aliases END")
++def apply(root, milestone="M2"):
+     root=Path(root)
++    start,end=markers(milestone)
+     hw=root/"vendor/etc/init/hw/init.samsungexynos9810.rc"
+     duplicate=root/"vendor/etc/init/init.samsungexynos9810.rc"
+     fc=root/"system/system/etc/selinux/plat_file_contexts"
+@@ -31,7 +35,9 @@
+         if path==hw:text=text.replace(ANCHOR, ANCHOR+BIND,1)
+         updates[path]=text
+     text=fc.read_text()
+-    text=re.sub(r"\n?"+re.escape(START)+r"\n.*?"+re.escape(END)+r"\n?", "\n", text, flags=re.S)
++    for selected in ("M2", "M4"):
++        old_start,old_end=markers(selected)
++        text=re.sub(r"\n?"+re.escape(old_start)+r"\n.*?"+re.escape(old_end)+r"\n?", "\n", text, flags=re.S)
+     metadata=[line for line in text.splitlines() if line.startswith("/metadata") and line.split()[0].startswith("/metadata")]
+     if not metadata or not any("aconfig_storage_flags_metadata_file" in s for s in metadata):
+         raise ValueError("Donor metadata/aconfig labels incomplete")
+@@ -40,9 +46,10 @@
+     aliases=["/cache"+line for line in metadata]
+     if any(line.startswith("/cache/metadata") for line in text.splitlines()):
+         raise ValueError("Unreviewed existing CACHE metadata labels")
+-    updates[fc]=text.rstrip()+"\n\n"+START+"\n"+"\n".join(aliases)+"\n"+END+"\n"
++    updates[fc]=text.rstrip()+"\n\n"+start+"\n"+"\n".join(aliases)+"\n"+end+"\n"
+     for path,data in updates.items():path.write_text(data)
+     return {"result":"PASS","mount":"/cache/metadata -> /metadata","canonical_rc":str(hw),"aliases":len(aliases)}
+ if __name__=="__main__":
+     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument("work_dir",type=Path)
+-    print(json.dumps(apply(parser.parse_args().work_dir)))
++    parser.add_argument("--milestone",choices=("M2","M4"),default="M2")
++    args=parser.parse_args();print(json.dumps(apply(args.work_dir,args.milestone)))
+--- a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/customize.sh
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/customize.sh
+@@ -1987,6 +1987,39 @@
+     SET_PROP system ro.product.cpu.abilist64 arm64-v8a
+     python3 "$MODPATH/a376b_native32.py" verify --work-dir "$WORK_DIR" || return 1
+ fi
++if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++    # Stage only the pinned donor-native Android17 runtime boundary. This is
++    # separate from M2's older S22 Tethering/V6 compatibility experiment.
++    python3 "$MODPATH/a376b_android17_runtime_compat.py" apply \
++        --work-dir "$WORK_DIR" \
++        --donor-root "$FW_DIR/$SOURCE_FIRMWARE_PATH" || return 1
++    _EXYNOS9810_SET_METADATA_SAFE system system/bin/cameraserver \
++        0 2000 755 "u:object_r:cameraserver_exec:s0"
++    _EXYNOS9810_SET_METADATA_SAFE system system/priv-app/SamsungCamera/SamsungCamera.apk \
++        0 0 644 "u:object_r:system_file:s0"
++    for M4_RUNTIME_LIB in \
++        system/lib64/libaudiobase.so \
++        system/lib64/libaudioclient.so \
++        system/lib64/android.hardware.graphics.common-V7-ndk.so; do
++        _EXYNOS9810_SET_METADATA_SAFE system "$M4_RUNTIME_LIB" \
++            0 0 644 "u:object_r:system_lib_file:s0"
++    done
++    _EXYNOS9810_SET_METADATA_SAFE system system/apex/com.google.android.tethering_compressed.apex \
++        0 0 644 "u:object_r:system_file:s0"
++    _EXYNOS9810_SET_METADATA_SAFE system system/etc/init/aconfigd.rc \
++        0 0 644 "u:object_r:system_file:s0"
++    _EXYNOS9810_SET_METADATA_SAFE vendor vendor/etc/passwd \
++        0 0 644 "u:object_r:vendor_configs_file:s0"
++    _EXYNOS9810_SET_METADATA_SAFE vendor vendor/etc/group \
++        0 0 644 "u:object_r:vendor_configs_file:s0"
++    _EXYNOS9810_SET_METADATA_SAFE vendor vendor/etc/aconfig \
++        0 0 755 "u:object_r:vendor_aconfig_storage_file:s0"
++    for M4_ACONFIG_FILE in package.map flag.map flag.val flag.info; do
++        _EXYNOS9810_SET_METADATA_SAFE vendor "vendor/etc/aconfig/$M4_ACONFIG_FILE" \
++            0 0 444 "u:object_r:vendor_aconfig_storage_file:s0"
++    done
++    unset M4_RUNTIME_LIB M4_ACONFIG_FILE
++fi
+ _EXYNOS9810_RESTORE_GRAPHICS_MAPPER_COMPAT || return 1
+ if [ "${EXYNOS9810_M2_RUNTIME_COMPAT:-false}" = "true" ]; then
+     python3 "$MODPATH/a376b_runtime_compat.py" apply --work-dir "$WORK_DIR" \
+@@ -2004,19 +2037,31 @@
+ _EXYNOS9810_APPLY_TARGET_VENDOR_IDENTITY || return 1
+ _EXYNOS9810_SANITIZE_RESTORED_TEXT
+ if [ "${EXYNOS9810_ENABLE_METADATA_BIND:-false}" = "true" ]; then
+-    [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] && \
+-        [ "$TARGET_CODENAME" = "star2lte" ] && [ "${ROM_MILESTONE:-}" = "M2" ] || {
+-        LOGE "Final CACHE metadata bind is restricted to reviewed star2lte/A376B M2"
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] && \
++            [ "$TARGET_CODENAME" = "star2lte" ] && [ "${ROM_MILESTONE:-}" = "M2" ]; then
++        M4_METADATA_SCOPE="M2"
++    elif [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ] && \
++            [ "$TARGET_CODENAME" = "star2lte" ] && [ "${ROM_MILESTONE:-}" = "M4" ] && \
++            [ "${EXYNOS9810_M4_RUNTIME_COMPAT:-false}" = "true" ]; then
++        M4_METADATA_SCOPE="M4"
++    else
++        LOGE "Final CACHE metadata bind is restricted to reviewed star2lte/A376B M2 or M4"
+         return 1
+-    }
+-    python3 "$MODPATH/a376b_metadata_bind.py" "$WORK_DIR" || return 1
+-    python3 "$MODPATH/a376b_empty_vendor_flags.py" "$WORK_DIR" || return 1
++    fi
++    if [ "$M4_METADATA_SCOPE" = "M4" ]; then
++        python3 "$MODPATH/a376b_metadata_bind.py" "$WORK_DIR" --milestone M4 || return 1
++        python3 "$MODPATH/a376b_android17_runtime_compat.py" verify \
++            --work-dir "$WORK_DIR" --donor-root "$FW_DIR/$SOURCE_FIRMWARE_PATH" || return 1
++    else
++        python3 "$MODPATH/a376b_metadata_bind.py" "$WORK_DIR" || return 1
++        python3 "$MODPATH/a376b_empty_vendor_flags.py" "$WORK_DIR" || return 1
++    fi
+     _EXYNOS9810_SET_METADATA_SAFE vendor vendor/etc/aconfig 0 0 755 "u:object_r:vendor_aconfig_storage_file:s0"
+     for ACONFIG_FILE in package.map flag.map flag.val flag.info; do
+         _EXYNOS9810_SET_METADATA_SAFE vendor "vendor/etc/aconfig/$ACONFIG_FILE" \
+             0 0 444 "u:object_r:vendor_aconfig_storage_file:s0"
+     done
+-    unset ACONFIG_FILE
++    unset ACONFIG_FILE M4_METADATA_SCOPE
+ fi
+     _EXYNOS9810_WRITE_FINAL_BOOT_TRACE
+     _EXYNOS9810_WRITE_FINAL_INIT_DEBUG
+--- a/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
+@@ -1928,6 +1928,19 @@
+     done
+ }
+ 
++_EXYNOS9810_FINAL_VERIFY_A37_ANDROID17_RUNTIME()
++{
++    [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ] || return 0
++    [ "${ROM_MILESTONE:-}" = "M4" ] && \
++        [ "${EXYNOS9810_M4_RUNTIME_COMPAT:-false}" = "true" ] || {
++        LOGE "Unreviewed BZI6 runtime verification scope"
++        return 1
++    }
++    local RUNTIME_HELPER="$SRC_DIR/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_runtime_compat.py"
++    python3 "$RUNTIME_HELPER" verify --work-dir "$WORK_DIR" \
++        --donor-root "$FW_DIR/$SOURCE_FIRMWARE_PATH"
++}
++
+ _EXYNOS9810_FINAL_TUNE_AUDIO_VOLUME_CURVES()
+ {
+     # The audio service already supplies the legacy 2.0 SoundTrigger HAL. Without
+@@ -2168,6 +2181,15 @@
+     # camera-feature copies so the Camera app does not lose the menu on starlte
+     # or crownlte builds. Do not add front UHD: the 9810 front sensor exposes
+     # 1080p60, not a stable 3840x2160 stream.
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++        [ "${ROM_MILESTONE:-}" = "M4" ] && \
++            [ "${EXYNOS9810_M4_RUNTIME_COMPAT:-false}" = "true" ] || {
++            LOGE "Unreviewed Android17 camera feature selection"
++            return 1
++        }
++        LOG "- Keeping BZI6 donor camera recording feature table for M4"
++        return 0
++    fi
+     [[ "$TARGET_CODENAME" =~ ^(starlte|star2lte|crownlte)$ ]] || return 0
+ 
+     local FEATURE="$WORK_DIR/system/system/cameradata/camera-feature.xml"
+@@ -2221,6 +2243,15 @@
+     # a second ultrawide selfie sensor. Keep the feature wired to camera id 1
+     # and do not clamp ZoomController; clamping makes the One UI 8 lens button
+     # fall into the wrong S22-style route and can freeze the preview.
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++        [ "${ROM_MILESTONE:-}" = "M4" ] && \
++            [ "${EXYNOS9810_M4_RUNTIME_COMPAT:-false}" = "true" ] || {
++            LOGE "Unreviewed Android17 camera feature selection"
++            return 1
++        }
++        LOG "- Keeping BZI6 donor front-camera behavior for M4"
++        return 0
++    fi
+     [[ "$TARGET_CODENAME" =~ ^(starlte|star2lte|crownlte)$ ]] || return 0
+ 
+     local APK_DIR="$APKTOOL_DIR/system/priv-app/SamsungCamera/SamsungCamera.apk"
+@@ -2901,6 +2932,24 @@
+ 
+ _EXYNOS9810_FINAL_INSTALL_NATIVE_CAMERA()
+ {
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++        [ "${ROM_MILESTONE:-}" = "M4" ] && \
++            [ "$TARGET_CODENAME" = "star2lte" ] && \
++            [ "${STAR2LTE_BUILD_MODEL:-}" = "SM-G965F" ] && \
++            [ "${EXYNOS9810_M4_RUNTIME_COMPAT:-false}" = "true" ] || {
++            LOGE "Unreviewed BZI6 camera preservation scope"
++            return 1
++        }
++        local RUNTIME_HELPER="$SRC_DIR/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_runtime_compat.py"
++        python3 "$RUNTIME_HELPER" apply --work-dir "$WORK_DIR" \
++            --donor-root "$FW_DIR/$SOURCE_FIRMWARE_PATH" || return 1
++        _EXYNOS9810_FINAL_SET_METADATA system system/bin/cameraserver \
++            0 2000 755 "u:object_r:cameraserver_exec:s0" || return 1
++        _EXYNOS9810_FINAL_SET_METADATA system system/priv-app/SamsungCamera/SamsungCamera.apk \
++            0 0 644 "u:object_r:system_file:s0" || return 1
++        LOG "- Retaining the BZI6 Android17 camera app/server and matching donor runtime libraries"
++        return 0
++    fi
+     # Keep the One UI 8 app/cameraserver pair, with Samsung Photo routing
+     # restored in the app rather than replacing it with the One UI 5 APK. The v2 UniHAL
+     # payload is byte-identical to the previously working build except for a
+@@ -7255,6 +7304,7 @@
+ _EXYNOS9810_FINAL_PATCH_BRIEF_HEADSUP_DEFAULT || return 1
+ _EXYNOS9810_FINAL_ENABLE_CAMERA_UHD_60FPS
+ _EXYNOS9810_FINAL_PATCH_CAMERA_FRONT_DYNAMIC_FOV
++_EXYNOS9810_FINAL_VERIFY_A37_ANDROID17_RUNTIME || return 1
+ _EXYNOS9810_FINAL_TUNE_AUDIO_VOLUME_CURVES
+ _EXYNOS9810_FINAL_STAGE_GOOGLE_DATA_REPAIR
+ _EXYNOS9810_FINAL_STAGE_KERNELSU_NEXT || return 1
+--- a/unica/patches/exynos9810_device_stack/exynos9810_finalization/adb_defaults.py
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/adb_defaults.py
+@@ -2,6 +2,7 @@
+ """Apply/verify project USB ADB defaults without overriding subsequent choices."""
+ from pathlib import Path
+ import argparse
++import os
+ import re
+ import subprocess
+ import tempfile
+@@ -81,9 +82,53 @@
+ """
+ 
+ 
+-def patch_lifecycle(text):
++M4_LIFECYCLE_READ = """    # UN1CA M4: restore the saved USB-debugging choice after the property fallback.
++    iget-object v4, p0, Lcom/android/server/adb/AdbService;->mContentResolver:Landroid/content/ContentResolver;
++
++    const-string v5, "adb_enabled"
++
++    invoke-static {v4, v5, p1}, Landroid/provider/Settings$Global;->getInt(Landroid/content/ContentResolver;Ljava/lang/String;I)I
++
++    move-result p1
++
++"""
++
++
++def is_bzi6_android17():
++    if os.environ.get("ROM_SOURCE_CONFIG") != "essi_a376b_android17":
++        return False
++    expected = {
++        "ROM_MILESTONE": "M4",
++        "TARGET_CODENAME": "star2lte",
++        "SOURCE_FIRMWARE_CACHE_SUFFIX": "A376BXXU5BZI6",
++    }
++    for key, value in expected.items():
++        if os.environ.get(key) != value:
++            raise RuntimeError("Unreviewed Android17 ADB source scope: " + key)
++    return True
++
++
++def patch_lifecycle(text, android17=False):
+     match = method(text, "onBootPhase(I)V")
+     body = match.group()
++    if android17:
++        anchor = "    iput-boolean p1, p0, Lcom/android/server/adb/AdbService;->mIsAdbUsbEnabled:Z"
++        receiver = "    iget-object p0, p0, Lcom/android/server/adb/AdbService$Lifecycle;->mAdbService:Lcom/android/server/adb/AdbService;"
++        property = '    const-string/jumbo p1, "persist.sys.usb.config"'
++        writeback = ('    const-string/jumbo v1, "adb_enabled"\n\n'
++                     '    invoke-static {p1, v1, v2}, Landroid/provider/Settings$Global;->putInt')
++        if not (".registers 8" in body or ".locals 6" in body) or body.count(receiver) != 2 or \
++                body.count(property) != 1 or body.count(anchor) != 1 or \
++                body.count("    const-string/jumbo p1, \"persist.sys.test_harness\"") != 1 or \
++                body.count(writeback) != 1 or body.index(receiver) > body.index(property) or \
++                body.index(property) > body.index(anchor):
++            raise RuntimeError("Unknown BZI6 AdbService lifecycle; review donor before building")
++        if M4_LIFECYCLE_READ not in body:
++            body = body.replace(anchor, M4_LIFECYCLE_READ + anchor, 1)
++        if body.count(M4_LIFECYCLE_READ) != 1:
++            raise RuntimeError("Unexpected BZI6 stored-choice read count")
++        return text[:match.start()] + body + text[match.end():]
++
+     # Reviewed layouts: S22 One UI 8 uses v0; A376B AZH4 One UI 8.5 uses p1.
+     # Both have six locals and p0 is the AdbService before the state write.
+     anchors = [(register, f"    iput-boolean {register}, p0, Lcom/android/server/adb/AdbService;->mIsAdbUsbEnabled:Z")
+@@ -118,7 +163,7 @@
+     lifecycle = decoded_class(apktool / "system/framework/services.jar", LIFECYCLE)
+     # Validate both donors before writing either class.
+     db_text = patch_database(database.read_text())
+-    lifecycle_text = patch_lifecycle(lifecycle.read_text())
++    lifecycle_text = patch_lifecycle(lifecycle.read_text(), is_bzi6_android17())
+     database.write_text(db_text)
+     lifecycle.write_text(lifecycle_text)
+     system = work / "system/system"
+@@ -180,16 +225,25 @@
+             raise RuntimeError("Unexpected seed SQL count: " + table)
+     text = disassemble_class(system / "framework/services.jar", LIFECYCLE, tools)
+     body = method(text, "onBootPhase(I)V").group()
+-    needle = 'const-string(?:/jumbo)? v4, "adb_enabled"\\s+invoke-static \\{v1, v4, (v0|p1)\\}, Landroid/provider/Settings\\$Global;->getInt'
++    if is_bzi6_android17():
++        needle = 'const-string(?:/jumbo)? v5, "adb_enabled"\\s+invoke-static \\{v4, v5, p1\\}, Landroid/provider/Settings\\$Global;->getInt'
++        anchor = "iput-boolean p1, p0, Lcom/android/server/adb/AdbService;->mIsAdbUsbEnabled:Z"
++    else:
++        needle = 'const-string(?:/jumbo)? v4, "adb_enabled"\\s+invoke-static \\{v1, v4, (v0|p1)\\}, Landroid/provider/Settings\\$Global;->getInt'
++        anchor = None
+     read = re.search(needle, body)
+     if read is None:
+         raise RuntimeError("Missing compiled stored USB-debugging choice read")
+-    register = read.group(1)
+-    anchor = f"iput-boolean {register}, p0, Lcom/android/server/adb/AdbService;->mIsAdbUsbEnabled:Z"
++    register = "p1" if is_bzi6_android17() else read.group(1)
++    anchor = anchor or f"iput-boolean {register}, p0, Lcom/android/server/adb/AdbService;->mIsAdbUsbEnabled:Z"
+     if body.count(anchor) != 1 or f"move-result {register}" not in body[read.end():body.index(anchor)]:
+         raise RuntimeError("Compiled USB-debugging choice uses an unreviewed state register")
+     if body.index("->getInt(") > body.index("->mIsAdbUsbEnabled:Z"):
+         raise RuntimeError("USB choice read occurs after state initialization")
++    if is_bzi6_android17() and not re.search(
++            r'const-string(?:/jumbo)? v1, "adb_enabled"\s+'
++            r'invoke-static \{p1, v1, v2\}, Landroid/provider/Settings\$Global;->putInt', body):
++        raise RuntimeError("Missing compiled BZI6 persisted USB-debugging state write")
+     print("PASS compiled ADB defaults, no-auth properties and stored-choice lifecycle")
+ 
+ 
+--- a/scripts/internal/verify_exynos9810_release_defaults.py
++++ b/scripts/internal/verify_exynos9810_release_defaults.py
+@@ -51,6 +51,9 @@
+         subprocess.run([sys.executable,str(settings_checker),"verify-compiled",str(work),str(ROOT/"out/tools")],check=True)
+         native32=ROOT/"unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_native32.py"
+         subprocess.run([sys.executable,str(native32),"verify","--work-dir",str(work)],check=True)
++        runtime=ROOT/"unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_runtime_compat.py"
++        donor=ROOT/"out/fw/SM-A376B_XXV_A376BXXU5BZI6"
++        subprocess.run([sys.executable,str(runtime),"verify","--work-dir",str(work),"--donor-root",str(donor)],check=True)
+     if os.environ.get("ROM_SOURCE_CONFIG") == "essi_a376b_android16":
+         if (target, os.environ.get("ROM_MILESTONE")) != ("star2lte", "M2"):
+             raise RuntimeError("Unreviewed native32 A376B release profile")
+--- /dev/null
++++ b/scripts/internal/verify_m4_runtime_image.py
+@@ -0,0 +1,115 @@
++#!/usr/bin/env python3
++"""Verify donor-native M4 runtime files and metadata inside real ext4 images.
++
++Reason: catch last-minute replacement or metadata loss after filesystem packing.
++Files: temporary debugfs extracts only; the image is read-only.
++Verify locked BZI6 camera/runtime files, vendor account/aconfig and mount bytes.
++"""
++from pathlib import Path
++import argparse
++import hashlib
++import importlib.util
++import json
++import os
++import re
++import subprocess
++import tempfile
++
++ROOT = Path(__file__).resolve().parents[2]
++HELPER = ROOT / "unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_runtime_compat.py"
++
++
++def metadata(partition, rel):
++    if partition == "system":
++        exact = {
++            "system/bin/cameraserver": (0o755, (0, 2000), "cameraserver_exec"),
++            "system/priv-app/SamsungCamera/SamsungCamera.apk": (0o644, (0, 0), "system_file"),
++            "system/lib64/libaudiobase.so": (0o644, (0, 0), "system_lib_file"),
++            "system/lib64/libaudioclient.so": (0o644, (0, 0), "system_lib_file"),
++            "system/lib64/android.hardware.graphics.common-V7-ndk.so": (0o644, (0, 0), "system_lib_file"),
++            "system/apex/com.google.android.tethering_compressed.apex": (0o644, (0, 0), "system_file"),
++            "system/etc/init/aconfigd.rc": (0o644, (0, 0), "system_file"),
++            "system/etc/aconfig/package.map": (0o644, (0, 0), "system_aconfig_storage_file"),
++            "system/etc/aconfig/flag.map": (0o644, (0, 0), "system_aconfig_storage_file"),
++            "system/etc/aconfig/flag.val": (0o644, (0, 0), "system_aconfig_storage_file"),
++            "system/etc/aconfig/flag.info": (0o644, (0, 0), "system_aconfig_storage_file"),
++        }
++        return exact[rel]
++    if rel == "etc/aconfig":
++        return 0o755, (0, 0), "vendor_aconfig_storage_file", "directory"
++    if rel.startswith("etc/aconfig/"):
++        return 0o444, (0, 0), "vendor_aconfig_storage_file"
++    if rel in ("etc/passwd", "etc/group"):
++        return 0o644, (0, 0), "vendor_configs_file"
++    if rel in ("etc/init/hw/init.samsungexynos9810.rc", "etc/init/init.samsungexynos9810.rc"):
++        return 0o644, (0, 0), None
++    raise ValueError("Unreviewed M4 image path: " + partition + "/" + rel)
++
++
++def run(command):
++    result = subprocess.run(command, capture_output=True, text=True, check=True)
++    return result.stdout + result.stderr
++
++
++def verify(image, partition, work):
++    if os.environ.get("ROM_SOURCE_CONFIG") != "essi_a376b_android17" or \
++            os.environ.get("ROM_MILESTONE") != "M4" or \
++            os.environ.get("EXYNOS9810_M4_RUNTIME_COMPAT") != "true":
++        raise ValueError("M4 runtime image gate requires the exact BZI6 profile")
++    if os.environ.get("TARGET_OS_FILE_SYSTEM_TYPE") != "ext4":
++        raise ValueError("M4 runtime image gate is reviewed for ext4 only")
++    work = Path(work)
++    donor = ROOT / "out/fw/SM-A376B_XXV_A376BXXU5BZI6"
++    spec = importlib.util.spec_from_file_location("m4_runtime", HELPER)
++    runtime = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(runtime)
++    runtime.verify(work, donor)
++    if partition == "system":
++        paths = [rel.removeprefix("system/") for rel in runtime.manifest()["files"]
++                 if rel.startswith("system/system/")]
++    elif partition == "vendor":
++        paths = ["etc/passwd", "etc/group", "etc/init/hw/init.samsungexynos9810.rc",
++                 "etc/init/init.samsungexynos9810.rc", "etc/aconfig"]
++        paths += ["etc/aconfig/" + name for name in ("package.map", "flag.map", "flag.val", "flag.info")]
++    else:
++        return
++    checks = []
++    with tempfile.TemporaryDirectory(prefix="m4-runtime-image-") as td:
++        for index, rel in enumerate(paths):
++            local = work / partition / rel
++            is_directory = partition == "vendor" and rel == "etc/aconfig"
++            extracted = Path(td) / str(index)
++            if is_directory:
++                if not local.is_dir() or local.is_symlink():
++                    raise ValueError("M4 work directory missing: " + partition + "/" + rel)
++            else:
++                run(["debugfs", "-R", f"dump /{rel} {extracted}", str(image)])
++                if not extracted.is_file() or extracted.read_bytes() != local.read_bytes():
++                    raise ValueError("M4 image bytes differ: " + partition + "/" + rel)
++            expected = metadata(partition, rel)
++            mode, owner, label = expected[:3]
++            expected_type = expected[3] if len(expected) > 3 else "regular"
++            stat = run(["debugfs", "-R", f"stat /{rel}", str(image)])
++            found_mode = re.search(r"Type:\s+" + expected_type + r"\s+Mode:\s+(\d+)", stat)
++            found_owner = re.search(r"User:\s+(\d+)\s+Group:\s+(\d+)", stat)
++            if not found_mode or int(found_mode[1], 8) != mode:
++                raise ValueError("M4 image mode/type mismatch: " + rel + " " + stat)
++            if not found_owner or tuple(map(int, found_owner.groups())) != owner:
++                raise ValueError("M4 image owner mismatch: " + rel)
++            if label:
++                selinux = run(["debugfs", "-R", f"ea_get /{rel} security.selinux", str(image)])
++                if "u:object_r:" + label + ":s0" not in selinux:
++                    raise ValueError("M4 image SELinux label mismatch: " + rel + " " + selinux)
++            checks.append({"path": partition + "/" + rel,
++                           "sha256": hashlib.sha256(extracted.read_bytes()).hexdigest() if extracted.exists() else None,
++                           "mode": mode, "owner": owner, "label": label})
++    print(json.dumps({"result": "PASS", "partition": partition, "checks": checks}))
++
++
++if __name__ == "__main__":
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--image", type=Path, required=True)
++    parser.add_argument("--partition", choices=("system", "vendor"), required=True)
++    parser.add_argument("--work-dir", type=Path, required=True)
++    args = parser.parse_args()
++    verify(args.image, args.partition, args.work_dir)
+--- a/scripts/internal/verify_exynos9810_images.sh
++++ b/scripts/internal/verify_exynos9810_images.sh
+@@ -82,6 +82,13 @@
+                     verify-image --image "$RAW_IMAGE" \
+                     --work-dir "${WORK_DIR:?WORK_DIR required for native32 image audit}" || exit 1
+             fi
++            if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ] && \
++                    [ "${EXYNOS9810_M4_RUNTIME_COMPAT:-false}" = "true" ] && \
++                    [[ "$PARTITION" == system || "$PARTITION" == vendor ]]; then
++                python3 "$(dirname "$0")/verify_m4_runtime_image.py" \
++                    --image "$RAW_IMAGE" --partition "$PARTITION" \
++                    --work-dir "${WORK_DIR:?WORK_DIR required for M4 runtime image audit}" || exit 1
++            fi
+             ;;
+     esac
+ 

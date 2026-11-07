@@ -1,0 +1,30 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] verify folded system_ext SystemUI path in M4 image
+
+# Reason: the real M4 image gate failed with `M4 compiled SystemUI or bundled Apktool is missing`; target-files folds system_ext under system/system_ext, while the verifier expected a standalone system_ext root.
+# Affected: M4 ext4 image verifier path selection and metadata lookup for the compiled SystemUI.
+# Verify: test both folded and separate-system_ext layouts, then run the real system image verifier and complete target-files/flashable package gates.
+# Rollback: reverse this path normalization; folded star2lte ext4 images fail closed again.
+
+--- a/rom/scripts/internal/verify_m4_runtime_image.py
++++ b/rom/scripts/internal/verify_m4_runtime_image.py
+@@ -46,6 +46,8 @@
+             "system/etc/aconfig/flag.val": (0o644, (0, 0), "system_aconfig_storage_file"),
+             "system/etc/aconfig/flag.info": (0o644, (0, 0), "system_aconfig_storage_file"),
+         }
++        if rel == "system/system_ext/priv-app/SystemUI/SystemUI.apk":
++            return exact["system_ext/priv-app/SystemUI/SystemUI.apk"]
+         return exact[rel]
+     if rel == "etc/aconfig":
+         return 0o755, (0, 0), "vendor_aconfig_storage_file", "directory"
+@@ -157,7 +159,9 @@
+             if hashlib.sha256(ssrm).hexdigest() != dvfs_lock["ssrm_output_sha256"]:
+                 raise ValueError("M4 compiled SDHMS SSRM policy hash mismatch")
+             paths.append(sdhms_rel)
+-            systemui_rel = "system_ext/priv-app/SystemUI/SystemUI.apk"
++            systemui_rel = ("system_ext/priv-app/SystemUI/SystemUI.apk"
++                            if os.environ.get("TARGET_OS_BUILD_SYSTEM_EXT_PARTITION", "false") == "true"
++                            else "system/system_ext/priv-app/SystemUI/SystemUI.apk")
+             systemui_apk = work / "system" / systemui_rel
+             apktool = ROOT / "out/tools/bin/apktool"
+             if not systemui_apk.is_file() or systemui_apk.is_symlink() or not apktool.is_file():

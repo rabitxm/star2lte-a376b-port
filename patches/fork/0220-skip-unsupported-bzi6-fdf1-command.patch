@@ -1,0 +1,728 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] skip unsupported BZI6 DBFW FDF1 send on M4 G965F
+
+# Reason: Fresh G965F M4 logs repeat HCI Unknown OpCode 0xfdf1 timeouts and Bluetooth service crashes. The BZI6 JNI disassembly locks the optional enqueue in BtifAvStateMachine::StateOpened::OnEnter at VA 0x6979e8; the Android16 signature sweep did not match this Android17 callsite.
+# Affected: rom/unica/patches/bluetooth/ customizer, exact-hash helper and lock, prior native backend helper/lock needed for reproducible M4 source, M4 G965F profile, compiled ext4 image verifier.
+# Verify: BZI6 APEX/JNI/Build ID/context/output hash, single-instruction scope, idempotence, wrong-scope and wrong-preimage fixtures; full ordered replay and clean package/image gates; then a separate G965F runtime Bluetooth test.
+# Rollback: Remove patch0220 from series/source lock and rebuild the previous retained M4 package. The patch changes only the optional BZI6 enqueue; do not alter kernel, vendor, RIL, radio or protected partitions.
+
+--- /dev/null
++++ b/rom/unica/patches/bluetooth/a376b_android17_fdf1_skip.py
+@@ -0,0 +1,243 @@
++#!/usr/bin/env python3
++"""Skip the locked BZI6 DBFW+ 0xFDF1 send on M4/G965F only."""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import json
++import os
++from pathlib import Path
++import struct
++import subprocess
++import sys
++import tempfile
++import zipfile
++
++ROOT = Path(__file__).resolve().parents[3]
++LOCK_PATH = Path(__file__).with_name("a376b_android17_fdf1_skip.lock.json")
++
++
++class Fdf1Error(RuntimeError):
++    pass
++
++
++def lock_data() -> dict:
++    return json.loads(LOCK_PATH.read_text())
++
++
++def check_scope(env: dict[str, str] | None = None) -> None:
++    env = os.environ if env is None else env
++    required = {
++        "ROM_MILESTONE": "M4",
++        "UN1CA_DONOR_CONFIG": "essi_a376b_android17",
++        "SOURCE_FIRMWARE_CACHE_SUFFIX": "A376BXXU5BZI6",
++        "SOURCE_PLATFORM_SDK_VERSION": "37",
++        "TARGET_CODENAME": "star2lte",
++        "STAR2LTE_BUILD_MODEL": "SM-G965F",
++        "EXYNOS9810_M4_SKIP_UNSUPPORTED_FDF1": "true",
++    }
++    mismatches = [f"{key}={env.get(key)!r} (expected {value!r})"
++                  for key, value in required.items() if env.get(key) != value]
++    if mismatches:
++        raise Fdf1Error("M4 BZI6 FDF1 patch scope mismatch: " + "; ".join(mismatches))
++
++
++def elf_tables(data: bytes) -> tuple[int, int, int, int, int, int]:
++    if len(data) < 64 or data[:6] != b"\x7fELF\x02\x01":
++        raise Fdf1Error("JNI must be a little-endian ELF64 image")
++    if struct.unpack_from("<H", data, 18)[0] != 183:
++        raise Fdf1Error("JNI machine is not AArch64")
++    return (struct.unpack_from("<Q", data, 32)[0], struct.unpack_from("<H", data, 54)[0],
++            struct.unpack_from("<H", data, 56)[0], struct.unpack_from("<Q", data, 40)[0],
++            struct.unpack_from("<H", data, 58)[0], struct.unpack_from("<H", data, 60)[0])
++
++
++def file_offset_for_va(data: bytes, va: int) -> int:
++    phoff, phentsize, phnum, *_ = elf_tables(data)
++    for index in range(phnum):
++        fields = struct.unpack_from("<IIQQQQQQ", data, phoff + index * phentsize)
++        p_type, p_flags, p_offset, p_vaddr, _paddr, p_filesz, _memsz, _align = fields
++        if p_type == 1 and (p_flags & 1) and p_vaddr <= va < p_vaddr + p_filesz:
++            return p_offset + va - p_vaddr
++    raise Fdf1Error(f"Locked code address 0x{va:x} is outside executable PT_LOAD")
++
++
++def build_id(data: bytes) -> str:
++    _, _, _, shoff, shentsize, shnum = elf_tables(data)
++    shstrndx = struct.unpack_from("<H", data, 62)[0]
++
++    def section(index: int) -> tuple[int, ...]:
++        return struct.unpack_from("<IIQQQQIIQQ", data, shoff + index * shentsize)
++
++    names_header = section(shstrndx)
++    names = data[names_header[4]:names_header[4] + names_header[5]]
++    for index in range(shnum):
++        header = section(index)
++        name = names[header[0]:].split(b"\0", 1)[0]
++        if name != b".note.gnu.build-id":
++            continue
++        note = data[header[4]:header[4] + header[5]]
++        if len(note) < 16:
++            break
++        namesz, descsz, note_type = struct.unpack_from("<III", note, 0)
++        name_start = 12
++        desc_start = (name_start + namesz + 3) & ~3
++        note_name = note[name_start:name_start + namesz].rstrip(b"\0")
++        desc = note[desc_start:desc_start + descsz]
++        if note_name == b"GNU" and note_type == 3 and desc:
++            return desc.hex()
++    raise Fdf1Error("JNI GNU Build ID is missing")
++
++
++def context_offsets(data: bytes) -> tuple[int, int]:
++    lock = lock_data()
++    start = int(lock["context_start_va"], 16)
++    end = int(lock["context_end_va_exclusive"], 16)
++    return file_offset_for_va(data, start), file_offset_for_va(data, end - 1) + 1
++
++
++def patch_bytes(data: bytes) -> tuple[bytes, str]:
++    lock = lock_data()
++    if build_id(data) != lock["gnu_build_id"]:
++        raise Fdf1Error("JNI Build ID differs from the pinned BZI6 donor")
++    call_offset = file_offset_for_va(data, int(lock["send_call_va"], 16))
++    preimage = bytes.fromhex(lock["send_call_preimage_hex"])
++    replacement = bytes.fromhex(lock["send_call_replacement_hex"])
++    context_start, context_end = context_offsets(data)
++    context_hash = hashlib.sha256(data[context_start:context_end]).hexdigest()
++    if (data[call_offset:call_offset + 4] == replacement and
++            context_hash == lock["context_output_sha256"]):
++        return data, "already-patched"
++    if (data[call_offset:call_offset + 4] != preimage or
++            context_hash != lock["context_preimage_sha256"]):
++        raise Fdf1Error("BZI6 FDF1 sender context/preimage changed")
++    updated = data[:call_offset] + replacement + data[call_offset + 4:]
++    if hashlib.sha256(updated[context_start:context_end]).hexdigest() != lock["context_output_sha256"]:
++        raise Fdf1Error("Patched sender context differs from the locked result")
++    if updated[:call_offset] != data[:call_offset] or updated[call_offset + 4:] != data[call_offset + 4:]:
++        raise Fdf1Error("Patch changed bytes outside the single HCI enqueue call")
++    return updated, "patched"
++
++
++def extract_donor_jni() -> bytes:
++    donor_apex = ROOT / "out/fw/SM-A376B_XXV_A376BXXU5BZI6/system/system/apex/com.android.bt.apex"
++    lock = lock_data()
++    if not donor_apex.is_file() or hashlib.sha256(donor_apex.read_bytes()).hexdigest() != lock["donor_apex_sha256"]:
++        raise Fdf1Error("Pinned BZI6 Bluetooth APEX is missing or changed")
++    with zipfile.ZipFile(donor_apex) as outer:
++        payload = outer.read("apex_payload.img")
++    with tempfile.TemporaryDirectory(prefix="m4-fdf1-fixture-") as temp_dir:
++        payload_path = Path(temp_dir) / "apex_payload.img"
++        jni_path = Path(temp_dir) / "libbluetooth_jni.so"
++        payload_path.write_bytes(payload)
++        subprocess.run(["debugfs", "-R", f"dump /lib64/libbluetooth_jni.so {jni_path}", str(payload_path)],
++                       check=True, capture_output=True, text=True)
++        data = jni_path.read_bytes()
++    if hashlib.sha256(data).hexdigest() != lock["donor_jni_sha256"]:
++        raise Fdf1Error("Embedded BZI6 Bluetooth JNI hash mismatch")
++    return data
++
++
++def apply(path: Path) -> None:
++    check_scope()
++    if path.is_symlink() or not path.is_file():
++        raise Fdf1Error("JNI target is missing or symlinked")
++    original = path.read_bytes()
++    updated, state = patch_bytes(original)
++    if state == "already-patched":
++        print("PASS locked BZI6 0xFDF1 enqueue already skipped")
++        return
++    temporary = path.with_name(path.name + ".fdf1-skip.tmp")
++    temporary.write_bytes(updated)
++    os.chmod(temporary, path.stat().st_mode & 0o777)
++    os.replace(temporary, path)
++    if path.read_bytes() != updated:
++        raise Fdf1Error("JNI readback differs after atomic replace")
++    print("PASS skipped only the locked BZI6 optional 0xFDF1 HCI send")
++
++
++def verify(path: Path, *, expected_final_hash: bool = False) -> None:
++    check_scope()
++    if path.is_symlink() or not path.is_file():
++        raise Fdf1Error("JNI image is missing or symlinked")
++    data = path.read_bytes()
++    _, state = patch_bytes(data)
++    if state != "already-patched":
++        raise Fdf1Error("Final M4 JNI does not contain the locked FDF1 skip")
++    if expected_final_hash:
++        expected = lock_data()["final_work_jni_sha256"]
++        actual = hashlib.sha256(data).hexdigest()
++        if actual != expected:
++            raise Fdf1Error(f"Final M4 JNI hash mismatch: {actual}")
++    print("PASS locked BZI6 FDF1 sender, profile, Build ID and output verified")
++
++
++def fixture() -> None:
++    check_scope()
++    lock = lock_data()
++    donor = extract_donor_jni()
++    if build_id(donor) != lock["gnu_build_id"]:
++        raise Fdf1Error("Donor Build ID differs from the lock")
++    output, state = patch_bytes(donor)
++    if state != "patched" or hashlib.sha256(output).hexdigest() != lock["donor_output_sha256"]:
++        raise Fdf1Error("Donor patch output differs from the locked single-call result")
++    repeated, repeat_state = patch_bytes(output)
++    if repeat_state != "already-patched" or repeated != output:
++        raise Fdf1Error("Patch is not idempotent")
++    call_offset = file_offset_for_va(donor, int(lock["send_call_va"], 16))
++    if output[:call_offset] != donor[:call_offset] or output[call_offset + 4:] != donor[call_offset + 4:]:
++        raise Fdf1Error("Fixture found bytes changed outside the HCI enqueue call")
++    bad_context = bytearray(donor)
++    context_start, _ = context_offsets(donor)
++    bad_context[context_start] ^= 1
++    try:
++        patch_bytes(bytes(bad_context))
++    except Fdf1Error:
++        pass
++    else:
++        raise Fdf1Error("Changed sender context was accepted")
++    wrong_milestone = dict(os.environ)
++    wrong_milestone["ROM_MILESTONE"] = "M2"
++    try:
++        check_scope(wrong_milestone)
++    except Fdf1Error:
++        pass
++    else:
++        raise Fdf1Error("Wrong-milestone fixture was accepted")
++    wrong_target = dict(os.environ)
++    wrong_target["TARGET_CODENAME"] = "starlte"
++    try:
++        check_scope(wrong_target)
++    except Fdf1Error:
++        pass
++    else:
++        raise Fdf1Error("Wrong-target fixture was accepted")
++    print("PASS BZI6 donor hash, unique locked context, one-call patch, idempotence and negative scope/preimage checks")
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    subcommands = parser.add_subparsers(dest="command", required=True)
++    apply_parser = subcommands.add_parser("apply")
++    apply_parser.add_argument("--jni", type=Path, required=True)
++    verify_parser = subcommands.add_parser("verify")
++    verify_parser.add_argument("--jni", type=Path, required=True)
++    verify_parser.add_argument("--final-hash", action="store_true")
++    subcommands.add_parser("fixture")
++    args = parser.parse_args()
++    if args.command == "apply":
++        apply(args.jni)
++    elif args.command == "verify":
++        verify(args.jni, expected_final_hash=args.final_hash)
++    else:
++        fixture()
++    return 0
++
++
++if __name__ == "__main__":
++    try:
++        raise SystemExit(main())
++    except (Fdf1Error, OSError, ValueError, KeyError, zipfile.BadZipFile, subprocess.CalledProcessError) as exc:
++        print(f"FAIL {exc}", file=sys.stderr)
++        raise SystemExit(1)
+--- /dev/null
++++ b/rom/unica/patches/bluetooth/a376b_android17_fdf1_skip.lock.json
+@@ -0,0 +1,24 @@
++{
++  "scope": {
++    "source_config": "essi_a376b_android17",
++    "milestone": "M4",
++    "source_firmware": "SM-A376B/XXV/A376BXXU5BZI6",
++    "source_platform_sdk": 37,
++    "target": "star2lte",
++    "target_model": "SM-G965F"
++  },
++  "donor_apex_sha256": "8f7d0753689594b0d1890647ca2213c3922e8e163b2e5982c48ddeaac075484b",
++  "donor_jni_sha256": "45cf1a8eb404dbafccf0ce74de725fcbaa926931daf17325dca7d0cfb88050aa",
++  "donor_output_sha256": "8e5e7293038e171fae1eb3482bcce45e894adc7e8df5ef75524baaf97b4c8de5",
++  "gnu_build_id": "d98e0bf66e0d1c1cae5e2209c36e0462",
++  "sender": "BtifAvStateMachine::StateOpened::OnEnter()",
++  "context_start_va": "0x697910",
++  "context_end_va_exclusive": "0x6979ec",
++  "context_preimage_sha256": "6d4df6616c33a5a9c1410e475ea65bf5f85c827325aef7bf5641f3ca1345cb55",
++  "send_call_va": "0x6979e8",
++  "send_call_preimage_hex": "f31f0d94",
++  "send_call_replacement_hex": "1f2003d5",
++  "context_output_sha256": "0c13e7ad71a51df2b82c2634b25bb349a7aa6fcb9d00199bcff311b34806dfed",
++  "final_work_jni_sha256": "26585f22ffb02a294578e6b652f3c14ff238989ff674f98050c2aec135db0ecf",
++  "reason": "Attempt0222 runtime repeatedly timed out waiting for HCI opcode 0xfdf1. The M4 build log showed its Android16 signatures did not match BZI6; disassembly pins the still-active BZI6 call in StateOpened::OnEnter. Skip only this unsupported optional vendor-debug HCI send on the exact M4/G965F BZI6 profile; do not fabricate a reply or modify other Bluetooth operations."
++}
+--- /dev/null
++++ b/rom/unica/patches/bluetooth/a376b_android17_native_backend.py
+@@ -0,0 +1,279 @@
++#!/usr/bin/env python3
++"""Select the native Bluetooth config backend for the scoped M4/G965F build.
++
++The BZI6 JNI requests the AIDL VaultKeeper service, while the Exynos9810
++Hybrid Vendor deliberately omits that incompatible provider. This patch skips
++only the BZI6 VaultKeeper initialization branch so its existing reader and
++writer use the same native config backend. It refuses unknown JNI builds and
++requires a metadata-only store preflight before a device trial.
++"""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import json
++import os
++from pathlib import Path
++import struct
++import sys
++import zipfile
++import tempfile
++import subprocess
++import xml.etree.ElementTree as ET
++
++
++ROOT = Path(__file__).resolve().parents[3]
++LOCK_PATH = Path(__file__).with_name("a376b_android17_native_backend.lock.json")
++PREIMAGE = bytes.fromhex("8816523948050037")
++PATCHED = bytes.fromhex("881652392a000014")
++BRANCH_VA = 0x7AAC04
++
++
++class BackendError(RuntimeError):
++    pass
++
++
++def lock_data() -> dict:
++    return json.loads(LOCK_PATH.read_text())
++
++
++def check_scope(env: dict[str, str] | None = None) -> None:
++    env = os.environ if env is None else env
++    required = {
++        "ROM_MILESTONE": "M4",
++        "UN1CA_DONOR_CONFIG": "essi_a376b_android17",
++        "SOURCE_FIRMWARE_CACHE_SUFFIX": "A376BXXU5BZI6",
++        "SOURCE_PLATFORM_SDK_VERSION": "37",
++        "STAR2LTE_BUILD_MODEL": "SM-G965F",
++        "EXYNOS9810_M4_VAULTKEEPER_NATIVE_BACKEND": "true",
++    }
++    mismatches = [f"{key}={env.get(key)!r} (expected {expected!r})"
++                  for key, expected in required.items() if env.get(key) != expected]
++    if mismatches:
++        raise BackendError("M4 native Bluetooth backend scope mismatch: " + "; ".join(mismatches))
++
++
++def build_id(data: bytes) -> str:
++    ident = bytes.fromhex(lock_data()["gnu_build_id"])
++    if data.count(ident) != 1:
++        raise BackendError("JNI GNU Build ID is missing, duplicated, or not the pinned BZI6 build")
++    return ident.hex()
++
++
++def file_offset_for_va(data: bytes, va: int) -> int:
++    if data[:4] != b"\x7fELF" or data[4:6] != b"\x02\x01":
++        raise BackendError("JNI must be a little-endian ELF64 image")
++    if struct.unpack_from("<H", data, 18)[0] != 183:
++        raise BackendError("JNI machine is not AArch64")
++    phoff = struct.unpack_from("<Q", data, 32)[0]
++    phentsize = struct.unpack_from("<H", data, 54)[0]
++    phnum = struct.unpack_from("<H", data, 56)[0]
++    for index in range(phnum):
++        offset = phoff + index * phentsize
++        p_type, p_flags, p_offset, p_vaddr, _paddr, p_filesz, _memsz, _align = \
++            struct.unpack_from("<IIQQQQQQ", data, offset)
++        if p_type == 1 and (p_flags & 1) and p_vaddr <= va < p_vaddr + p_filesz:
++            return p_offset + va - p_vaddr
++    raise BackendError(f"Pinned code address 0x{va:x} is not in an executable PT_LOAD")
++
++
++def patch_bytes(data: bytes, *, require_source_hash: bool) -> tuple[bytes, str]:
++    lock = lock_data()
++    found_build_id = build_id(data)
++    if found_build_id != lock["gnu_build_id"]:
++        raise BackendError("JNI Build ID differs from the locked BZI6 donor")
++    offset = file_offset_for_va(data, BRANCH_VA)
++    at_address = data[offset:offset + len(PREIMAGE)]
++    old_count = data.count(PREIMAGE)
++    new_count = data.count(PATCHED)
++    if at_address == PATCHED and new_count == 1 and old_count == 0:
++        return data, "already-patched"
++    if at_address != PREIMAGE or old_count != 1 or new_count != 0:
++        raise BackendError("BZI6 VaultKeeper selector preimage is not unique at the locked address")
++    if require_source_hash and hashlib.sha256(data).hexdigest() != lock["donor_jni_sha256"]:
++        raise BackendError("Unpatched JNI is not the exact embedded BZI6 donor image")
++    result = data[:offset] + PATCHED + data[offset + len(PREIMAGE):]
++    if result.count(PREIMAGE) != 0 or result.count(PATCHED) != 1:
++        raise BackendError("Patched JNI did not produce one unique native-backend selector")
++    if require_source_hash and hashlib.sha256(result).hexdigest() != lock["donor_native_output_sha256"]:
++        raise BackendError("Patched donor JNI hash differs from the reviewed output lock")
++    if result[:offset] != data[:offset] or result[offset + len(PATCHED):] != data[offset + len(PREIMAGE):]:
++        raise BackendError("Patch changed bytes outside the single locked branch instruction")
++    return result, "patched"
++
++
++def apply(path: Path) -> None:
++    check_scope()
++    if path.is_symlink() or not path.is_file():
++        raise BackendError("JNI target is missing or symlinked")
++    original = path.read_bytes()
++    updated, result = patch_bytes(original, require_source_hash=True)
++    if result == "already-patched":
++        print("PASS BZI6 native backend selector already patched")
++        return
++    tmp = path.with_name(path.name + ".native-backend.tmp")
++    tmp.write_bytes(updated)
++    os.chmod(tmp, path.stat().st_mode & 0o777)
++    os.replace(tmp, path)
++    if path.read_bytes() != updated:
++        raise BackendError("JNI output readback differs after atomic replace")
++    print("PASS patched only the locked VaultKeeper selector branch")
++
++
++def verify(path: Path, *, expected_final_hash: bool = False) -> None:
++    check_scope()
++    if path.is_symlink() or not path.is_file():
++        raise BackendError("JNI image file is missing or symlinked")
++    data = path.read_bytes()
++    build_id(data)
++    offset = file_offset_for_va(data, BRANCH_VA)
++    if data[offset:offset + len(PATCHED)] != PATCHED:
++        raise BackendError("JNI image does not contain the native backend branch at the locked VA")
++    if data.count(PATCHED) != 1 or PREIMAGE in data:
++        raise BackendError("JNI image branch is duplicated or still contains the VaultKeeper preimage")
++    if expected_final_hash:
++        expected = lock_data()["final_work_jni_sha256"]
++        actual = hashlib.sha256(data).hexdigest()
++        if actual != expected:
++            raise BackendError(f"Final M4 JNI hash mismatch: {actual}")
++    print("PASS locked M4/G965F/BZI6 native backend selector verified")
++
++
++def verify_vendor_provider_absent(work: Path) -> None:
++    """Ensure the image has not silently gained an A37-specific VaultKeeper HAL."""
++    vendor = work / "vendor"
++    if not vendor.is_dir():
++        raise BackendError("Vendor work tree is missing during Bluetooth backend image verification")
++    donor_service = vendor / "bin/vendor.samsung.hardware.security.vaultkeeper-service"
++    if donor_service.exists() or donor_service.is_symlink():
++        raise BackendError("A37 VaultKeeper hardware service must not be copied into the G965F vendor image")
++    manifest_files = []
++    combined = vendor / "etc/vintf/manifest.xml"
++    if combined.is_file():
++        manifest_files.append(combined)
++    manifest_dir = vendor / "etc/vintf/manifest"
++    if manifest_dir.is_dir():
++        manifest_files.extend(sorted(manifest_dir.rglob("*.xml")))
++    for manifest in manifest_files:
++        try:
++            root = ET.parse(manifest).getroot()
++        except ET.ParseError as exc:
++            raise BackendError(f"Cannot parse vendor VINTF manifest {manifest}: {exc}") from exc
++        for hal in root.findall(".//hal"):
++            name = (hal.findtext("name") or "").strip()
++            if hal.get("format") != "aidl" or name != "vendor.samsung.hardware.security.vaultkeeper":
++                continue
++            fqnames = {(node.text or "").strip() for node in hal.findall("fqname")}
++            if "ISehVaultKeeper/default" in fqnames:
++                raise BackendError("Vendor image unexpectedly declares the incompatible AIDL VaultKeeper service")
++
++
++def classify_store(metadata: dict) -> str:
++    """Fail closed from metadata only; values/key bytes are never accepted."""
++    if metadata.get("provider_present") is not False:
++        raise BackendError("Native-only patch requires the AIDL provider to be absent")
++    entries = metadata.get("entries")
++    if not isinstance(entries, list):
++        raise BackendError("Store metadata must contain an entries list")
++    if not entries:
++        return "native-initialize"
++    lengths = [entry.get("length") for entry in entries if isinstance(entry, dict)]
++    if len(lengths) != len(entries):
++        raise BackendError("Malformed metadata entry")
++    if any(length != 16 for length in lengths):
++        raise BackendError("Non-native key length found; preserve store and refuse backend switch")
++    return "native-existing-16"
++
++
++def fixture() -> None:
++    # Synthetic sizes and opaque labels only; no handset key material is read.
++    cases = [
++        ({"provider_present": False, "entries": []}, "native-initialize"),
++        ({"provider_present": False, "entries": [
++            {"field": "local", "length": 16}, {"field": "bonded", "length": 16}]},
++         "native-existing-16"),
++    ]
++    for metadata, expected in cases:
++        actual = classify_store(metadata)
++        if actual != expected:
++            raise BackendError(f"Store metadata fixture expected {expected}, found {actual}")
++    rejected = [
++        {"provider_present": False, "entries": [{"field": "local", "length": 32}]},
++        {"provider_present": False, "entries": [{"field": "local", "length": 8}]},
++        {"provider_present": False, "entries": [{"field": "local", "length": 17}]},
++        {"provider_present": True, "entries": [{"field": "local", "length": 32}]},
++        {"provider_present": None, "entries": []},
++    ]
++    for metadata in rejected:
++        try:
++            classify_store(metadata)
++        except BackendError:
++            continue
++        raise BackendError("Unsafe store metadata fixture was accepted")
++    print("PASS metadata fixtures: empty/native16 accepted; encrypted32, truncated, malformed, provider-present refused")
++
++
++def extract_donor_jni() -> bytes:
++    donor_apex = ROOT / "out/fw/SM-A376B_XXV_A376BXXU5BZI6/system/system/apex/com.android.bt.apex"
++    if not donor_apex.is_file():
++        raise BackendError("Pinned BZI6 Bluetooth APEX is missing")
++    lock = lock_data()
++    if hashlib.sha256(donor_apex.read_bytes()).hexdigest() != lock["donor_apex_sha256"]:
++        raise BackendError("BZI6 Bluetooth APEX hash mismatch")
++    with zipfile.ZipFile(donor_apex) as outer:
++        payload = outer.read("apex_payload.img")
++    with tempfile.TemporaryDirectory(prefix="m4-bt-fixture-") as td:
++        payload_path = Path(td) / "apex_payload.img"
++        jni_path = Path(td) / "libbluetooth_jni.so"
++        payload_path.write_bytes(payload)
++        subprocess.run(["debugfs", "-R", f"dump /lib64/libbluetooth_jni.so {jni_path}", str(payload_path)],
++                       check=True, capture_output=True, text=True)
++        data = jni_path.read_bytes()
++    if hashlib.sha256(data).hexdigest() != lock["donor_jni_sha256"]:
++        raise BackendError("Embedded BZI6 Bluetooth JNI hash mismatch")
++    return data
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    sub = parser.add_subparsers(dest="command", required=True)
++    apply_parser = sub.add_parser("apply")
++    apply_parser.add_argument("--jni", type=Path, required=True)
++    verify_parser = sub.add_parser("verify")
++    verify_parser.add_argument("--jni", type=Path, required=True)
++    verify_parser.add_argument("--final-hash", action="store_true")
++    sub.add_parser("fixture")
++    args = parser.parse_args()
++    if args.command == "apply":
++        apply(args.jni)
++    elif args.command == "verify":
++        verify(args.jni, expected_final_hash=args.final_hash)
++    else:
++        donor = extract_donor_jni()
++        result, state = patch_bytes(donor, require_source_hash=True)
++        if state != "patched":
++            raise BackendError("Fixture donor unexpectedly already patched")
++        repeated, repeated_state = patch_bytes(result, require_source_hash=False)
++        if repeated_state != "already-patched" or repeated != result:
++            raise BackendError("Patch idempotence fixture failed")
++        mutated = bytearray(donor)
++        offset = file_offset_for_va(donor, BRANCH_VA)
++        mutated[offset + 4] ^= 0x01
++        try:
++            patch_bytes(bytes(mutated), require_source_hash=False)
++        except BackendError:
++            pass
++        else:
++            raise BackendError("Changed-branch negative fixture was accepted")
++        fixture()
++        print("PASS exact donor hash, unique VA, one-instruction patch, idempotence and wrong-preimage negatives")
++    return 0
++
++
++if __name__ == "__main__":
++    try:
++        raise SystemExit(main())
++    except (BackendError, OSError, ValueError, KeyError, zipfile.BadZipFile) as exc:
++        print(f"FAIL {exc}", file=sys.stderr)
++        raise SystemExit(1)
+--- /dev/null
++++ b/rom/unica/patches/bluetooth/a376b_android17_native_backend.lock.json
+@@ -0,0 +1,20 @@
++{
++  "scope": {
++    "source_config": "essi_a376b_android17",
++    "milestone": "M4",
++    "source_firmware": "SM-A376B/XXV/A376BXXU5BZI6",
++    "source_platform_sdk": 37,
++    "target": "star2lte",
++    "target_model": "SM-G965F"
++  },
++  "donor_apex_sha256": "8f7d0753689594b0d1890647ca2213c3922e8e163b2e5982c48ddeaac075484b",
++  "donor_jni_sha256": "45cf1a8eb404dbafccf0ce74de725fcbaa926931daf17325dca7d0cfb88050aa",
++  "donor_native_output_sha256": "eb29ceb4eb948ee8ae8202020bbb5c0afbd1c57071984480e6ceb1ba93b30a9f",
++  "final_work_jni_sha256": "26585f22ffb02a294578e6b652f3c14ff238989ff674f98050c2aec135db0ecf",
++  "gnu_build_id": "d98e0bf66e0d1c1cae5e2209c36e0462",
++  "branch_va": "0x7aac04",
++  "preimage_hex": "8816523948050037",
++  "patched_hex": "881652392a000014",
++  "reason": "BZI6 BLE local-key initialization waits for an AIDL VaultKeeper provider absent from the Exynos9810 Hybrid Vendor. Select the existing native BT config reader/writer only for the pinned G965F M4 profile.",
++  "storage_contract": "native entries must be absent or exactly 16 bytes; any 32-byte, truncated, malformed, or provider-present metadata refuses the diagnostic native-backend trial. Do not expose key contents."
++}
+--- a/rom/unica/patches/bluetooth/customize.sh
++++ b/rom/unica/patches/bluetooth/customize.sh
+@@ -26,6 +26,16 @@
+     SET_METADATA "system" "system/lib64/libbluetooth_jni.so" 0 0 644 "u:object_r:system_lib_file:s0"
+ 
+     LOG_STEP_OUT
++fi
++
++# M4/G965F/BZI6 has no compatible VaultKeeper AIDL provider in its Exynos9810
++# Hybrid Vendor. Select the donor's native BT config backend only when the
++# profile explicitly opts into this runtime repair; the helper pins the donor,
++# function address and one-instruction output, and is idempotent on final reapply.
++if [ "${EXYNOS9810_M4_VAULTKEEPER_NATIVE_BACKEND:-false}" = "true" ]; then
++    python3 "$SRC_DIR/unica/patches/bluetooth/a376b_android17_native_backend.py" \
++        apply --jni "$WORK_DIR/system/system/lib64/libbluetooth_jni.so" || \
++        ABORT "M4 BZI6 Bluetooth backend preimage/scope verification failed"
+ fi
+ 
+ # Disable VaultKeeper support
+@@ -178,3 +188,12 @@
+ if [ "$_FDF1_PATCH_COUNT" -eq 0 ]; then
+     LOGW "No Android 16 Bluetooth DBFW/DBFW+ 0xFDF1 command call-sites found"
+ fi
++
++# BZI6 uses a different DBFW+ call layout from the Android16 signatures above.
++# Scope the measured G965F runtime failure to one locked, optional enqueue call;
++# this helper runs again during finalization after the vendor baseline restore.
++if [ "${EXYNOS9810_M4_SKIP_UNSUPPORTED_FDF1:-false}" = "true" ]; then
++    python3 "$SRC_DIR/unica/patches/bluetooth/a376b_android17_fdf1_skip.py" \
++        apply --jni "$WORK_DIR/system/system/lib64/libbluetooth_jni.so" || \
++        ABORT "M4 BZI6 FDF1 sender preimage/scope verification failed"
++fi
+--- a/rom/unica/patches/bluetooth/README.md
++++ b/rom/unica/patches/bluetooth/README.md
+@@ -18,3 +18,39 @@
+ send/receive still requires a second paired device. Shared final cleanup and
+ JNI patching apply to starlte, star2lte and crownlte; the latter two other
+ hardware variants have not been physically tested in this session.
++
++## M4 Android 17 / G965F VaultKeeper backend
++
++The BZI6 Bluetooth JNI's VaultKeeper selector is adapted only for the pinned
++M4/G965F profile. The runtime stack repeatedly waited for
++`vendor.samsung.hardware.security.vaultkeeper.ISehVaultKeeper/default`, while
++the Exynos9810 Hybrid Vendor has no matching AIDL provider. The scoped branch
++patch routes the existing local and bonded key readers and writers through the
++donor's native Bluetooth config backend. It does not install donor VaultKeeper
++hardware blobs or add a broad SELinux allow rule.
++
++The store preflight is metadata-only. Empty storage or exact 16-byte native
++entries are eligible; 32-byte, truncated or malformed entries and a present
++AIDL provider fail closed. Never print/copy key contents. Synthetic metadata,
++donor hash, unique branch address, idempotence and wrong-preimage checks run
++with `python3 unica/patches/bluetooth/a376b_android17_native_backend.py fixture`.
++The compiled image gate also checks the pinned BZI6 JNI Build ID, final file
++hash and ext4 UID/GID/mode/SELinux label. A runtime pass still requires adapter
++ON before timeout, repeated toggles, persistence across restart, and peer
++scan/pair/reconnect/audio tests. G965N and other Android releases are outside
++this patch's scope.
++
++## M4 BZI6 DBFW+ command skip
++
++Fresh G965F attempt0222 logs repeatedly recorded
++`Timed out waiting for Unknown OpCode(0xfdf1)` and Bluetooth service restarts.
++The same build log states that the Android16 DBFW+ capability/call-site
++signatures did not match BZI6. Disassembly of the exact BZI6 JNI Build ID pins
++one remaining optional HCI enqueue in
++`BtifAvStateMachine::StateOpened::OnEnter()` at VA `0x6979e8`. The M4/G965F
++profile uses `a376b_android17_fdf1_skip.py` to replace only that `BL` with an
++AArch64 NOP. It does not return a fabricated controller response, touch any
++other HCI call or disable standard OPP/pairing/audio operations. Donor hash,
++Build ID, context hash, call address and expected final JNI hash are locked;
++the final image gate rechecks them. Run its synthetic and wrong-scope fixtures
++before building. This patch has not yet been validated by a new phone boot.
+--- a/rom/target/star2lte/profiles/m4-g965f-a376b-android17-no-ksu.sh
++++ b/rom/target/star2lte/profiles/m4-g965f-a376b-android17-no-ksu.sh
+@@ -15,6 +15,13 @@
+ export EXYNOS9810_M2_BOOTSTRAP_COMPAT="false"
+ export EXYNOS9810_M4_RUNTIME_COMPAT="true"
+ export EXYNOS9810_ENABLE_METADATA_BIND="true"
++# Use native Bluetooth config storage because the pinned S9+ vendor image does
++# not provide BZI6's AIDL VaultKeeper backend. The store-format preflight is a
++# required gate before a G965F runtime trial; see the Bluetooth lock/README.
++export EXYNOS9810_M4_VAULTKEEPER_NATIVE_BACKEND="true"
++# G965F controller does not support BZI6's optional DBFW+ opcode 0xFDF1.
++# The exact one-call skip is hash/context locked and applies only to this M4 profile.
++export EXYNOS9810_M4_SKIP_UNSUPPORTED_FDF1="true"
+ 
+ # Reviewed initial M4 choices: fixed native panel mode, donor Wi-Fi UI,
+ # omitted Face HAL, and only the preflighted unsupported Settings controls hidden.
+--- a/rom/scripts/internal/verify_m4_runtime_image.py
++++ b/rom/scripts/internal/verify_m4_runtime_image.py
+@@ -24,6 +24,8 @@
+ THERMAL_HELPER = ROOT / "unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_thermal.py"
+ FACEWIDGET_HELPER = ROOT / "unica/patches/exynos9810_device_stack/exynos9810_finalization/a376b_android17_facewidget_thread.py"
+ KG30_HELPER = ROOT / "unica/patches/exynos9810_device_stack/exynos9810_finalization/a376b_android17_kg30_nonblocking.py"
++BT_BACKEND_HELPER = ROOT / "unica/patches/bluetooth/a376b_android17_native_backend.py"
++BT_FDF1_HELPER = ROOT / "unica/patches/bluetooth/a376b_android17_fdf1_skip.py"
+ 
+ 
+ def metadata(partition, rel):
+@@ -40,6 +42,7 @@
+             "system/apex/com.google.android.tethering_compressed.apex": (0o644, (0, 0), "system_file"),
+             "system/lib64/libmeminfo.so": (0o644, (0, 0), "system_lib_file"),
+             "system/lib64/libnetd_resolv.so": (0o644, (0, 0), "system_lib_file"),
++            "system/lib64/libbluetooth_jni.so": (0o644, (0, 0), "system_lib_file"),
+             "system/etc/linker.config.pb": (0o644, (0, 0), "system_file"),
+             "system/etc/selinux/plat_file_contexts": (0o644, (0, 0), "file_contexts_file"),
+             "system/priv-app/SamsungDeviceHealthManagerService/SamsungDeviceHealthManagerService.apk": (0o644, (0, 0), "system_file"),
+@@ -141,6 +144,23 @@
+     spec.loader.exec_module(runtime)
+     diagnostic = os.environ.get("EXYNOS9810_M4_POSTBOOT_DIAGNOSTIC", "false") == "true"
+     runtime.verify(work, donor, compiled_camera=True, allow_postboot_network=diagnostic)
++    if os.environ.get("EXYNOS9810_M4_VAULTKEEPER_NATIVE_BACKEND") == "true":
++        if os.environ.get("STAR2LTE_BUILD_MODEL") != "SM-G965F":
++            raise ValueError("M4 native Bluetooth backend is scoped to the G965F profile")
++        spec = importlib.util.spec_from_file_location("m4_bt_native", BT_BACKEND_HELPER)
++        bt_backend = importlib.util.module_from_spec(spec)
++        spec.loader.exec_module(bt_backend)
++        bt_backend.extract_donor_jni()
++        bt_jni = work / "system/system/lib64/libbluetooth_jni.so"
++        bt_backend.verify(bt_jni, expected_final_hash=True)
++        bt_backend.verify_vendor_provider_absent(work)
++    if os.environ.get("EXYNOS9810_M4_SKIP_UNSUPPORTED_FDF1") == "true":
++        if os.environ.get("STAR2LTE_BUILD_MODEL") != "SM-G965F":
++            raise ValueError("M4 BZI6 FDF1 skip is scoped to the G965F profile")
++        spec = importlib.util.spec_from_file_location("m4_bt_fdf1", BT_FDF1_HELPER)
++        bt_fdf1 = importlib.util.module_from_spec(spec)
++        spec.loader.exec_module(bt_fdf1)
++        bt_fdf1.verify(work / "system/system/lib64/libbluetooth_jni.so", expected_final_hash=True)
+     if partition == "system":
+         paths = [rel.removeprefix("system/") for rel in runtime.manifest()["files"]
+                  if rel.startswith("system/system/")]
+@@ -148,6 +168,8 @@
+         paths.extend(rel.removeprefix("system/") for rel in runtime.manifest()["runtime_patches"])
+         paths.extend(verify_nfc_apex(work, donor))
+         paths.append(runtime.manifest()["legacy_ion_context"]["path"].removeprefix("system/"))
++        if os.environ.get("EXYNOS9810_M4_VAULTKEEPER_NATIVE_BACKEND") == "true":
++            paths.append("system/lib64/libbluetooth_jni.so")
+         if os.environ.get("ROM_SOURCE_CONFIG") == "essi_a376b_android17":
+             if os.environ.get("EXYNOS9810_M4_RUNTIME_COMPAT") != "true":
+                 raise ValueError("M4 KG30 image verification requires the reviewed runtime profile")

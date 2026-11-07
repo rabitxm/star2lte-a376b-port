@@ -1,0 +1,60 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] Retain reviewed BZI6 optional donor behaviors
+
+# Reason: actual tail-attempt36 diagnostics fail in paradigm EAD display hunks (:34/46/59/71/82), pif old AndroidKeyStoreSpi DEX path (:8), setupwizard missing S2/f (:4), and tweaks donor SystemUI layouts (:20/38/50). settings-after-0165.txt:171 also fails the optional MultiSound five-app expansion. Preserve donor behavior coherently for these optional features in the initial M4 boot build; mandatory ADB/Auto Blocker and supported Settings integration remain active.
+# Affected: scripts/internal/apply_modules.sh.
+# Verify: exact M4/G965F/BZI6 module/patch dispatch, wrong model/milestone rejection, M2 and unrelated route regression, source-lock/replay and clean build. Four optional modules plus one specific MultiSound patch only.
+# Rollback: remove0166 from series/source lock and restore the prior dispatcher; port each optional feature separately.
+
+--- a/scripts/internal/apply_modules.sh
++++ b/scripts/internal/apply_modules.sh
+@@ -12,6 +12,27 @@
+     local MODPATH="$1"
+     local MODNAME
+     local MODAUTH
++
++    # These optional legacy modules fail against the reviewed BZI6 tail
++    # fixture. Preserve complete donor behavior for the initial M4 boot build.
++    if [ "${ROM_SOURCE_CONFIG:-}" = essi_a376b_android17 ]; then
++        case "$MODPATH" in
++            */mods/paradigm|*/mods/pif|*/mods/setupwizard|*/mods/tweaks)
++        if [ "${ROM_MILESTONE:-}" != M4 ] || [ "${TARGET_CODENAME:-}" != star2lte ] || \
++                [ "${STAR2LTE_BUILD_MODEL:-}" != SM-G965F ] || \
++                [ "${SOURCE_PLATFORM_SDK_VERSION:-}" != 37 ] || \
++                [ "${TARGET_PLATFORM_SDK_VERSION:-}" != 31 ] || \
++                [ "${TARGET_BOARD_API_LEVEL:-}" != 33 ] || \
++                [ "${SOURCE_FIRMWARE_CACHE_SUFFIX:-}" != A376BXXU5BZI6 ] || \
++                [ "${SOURCE_FIRMWARE:-}" != SM-A376B/XXV/LOCAL ]; then
++            LOGE "Unreviewed BZI6 optional donor-retention scope"
++            return 1
++        fi
++                LOGW "Initial BZI6 M4 retains donor behavior for optional module: ${MODPATH##*/}"
++                return 0
++                ;;
++        esac
++    fi
+ 
+     # BZI6 changed the PackageManager/ActivityStarter methods targeted by the
+     # optional Hide My Applist integration; keep the complete donor behavior.
+@@ -416,6 +437,21 @@
+                     continue
+                     ;;
+             esac
++        fi
++        if [ "${ROM_SOURCE_CONFIG:-}" = essi_a376b_android17 ] && \
++                [[ "$p" == */settings/smali/system/priv-app/MultiSoundSetting/MultiSoundSetting.apk/0001-Allow-more-than-five-apps.patch ]]; then
++        if [ "${ROM_MILESTONE:-}" != M4 ] || [ "${TARGET_CODENAME:-}" != star2lte ] || \
++                [ "${STAR2LTE_BUILD_MODEL:-}" != SM-G965F ] || \
++                [ "${SOURCE_PLATFORM_SDK_VERSION:-}" != 37 ] || \
++                [ "${TARGET_PLATFORM_SDK_VERSION:-}" != 31 ] || \
++                [ "${TARGET_BOARD_API_LEVEL:-}" != 33 ] || \
++                [ "${SOURCE_FIRMWARE_CACHE_SUFFIX:-}" != A376BXXU5BZI6 ] || \
++                [ "${SOURCE_FIRMWARE:-}" != SM-A376B/XXV/LOCAL ]; then
++            LOGE "Unreviewed BZI6 optional donor-retention scope"
++            return 1
++        fi
++            LOGW "BZI6 MultiSound selection methods differ; retaining donor app-selection limit"
++            continue
+         fi
+         APPLY_PATCH "$PARTITION" "$FILE" "$p"
+     done < <(find "$PATCHES_PATH/$TARGET" -type f -name "*.patch" | sort -n)

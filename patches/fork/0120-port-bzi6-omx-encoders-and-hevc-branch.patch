@@ -1,0 +1,220 @@
+diff --git a/unica/patches/legacy/a376b_android17_media.py b/unica/patches/legacy/a376b_android17_media.py
+--- /dev/null
++++ b/unica/patches/legacy/a376b_android17_media.py
+@@ -0,0 +1,176 @@
++#!/usr/bin/env python3
++"""Port the reviewed legacy OMX edits to BZI6 and verify their compiled output."""
++from hashlib import sha256
++from pathlib import Path
++import os
++import re
++import struct
++import subprocess
++import sys
++import tempfile
++import zipfile
++
++
++DESCRIPTOR = "com/samsung/android/sum/core/filter/EncoderFilter"
++METHOD = "configCodec(Lcom/samsung/android/sum/core/message/Message;)V"
++NATIVE_BEFORE = "f8ad6ae22b71d6ba4c7f5ba58e4d1223dfbfaf16e95435a195a9cd0dd886f517"
++NATIVE_AFTER = "4f36b1c04855ac6fac952a17f350cef93fc83974176f9173ec19790230a5ba58"
++BRANCH_VA = 0xEBDBC
++BRANCH_TARGET = 0xEC69C
++CONTEXT = bytes.fromhex("a80c00b0e00319aa083d44f9010140f936f5059400470034e8af40b9")
++NOP = bytes.fromhex("1f2003d5")
++APKS = {
++    "system/app/MotionPhoto/MotionPhoto.apk":
++        ("2fddbb4d324eb3f769fab7347d5ca0bdbdcb20d848fbd0554dc4520e99b25c76", "v4"),
++    "system/priv-app/GlobalPostProcMgr/GlobalPostProcMgr.apk":
++        ("70ec128d3f19adad3e8ca3031c3e70f66b50a21545b6a5ca424079aae6cce787", "v4"),
++    "system/priv-app/SamsungCamera/SamsungCamera.apk":
++        ("0ae136cab5651c58fba3b0102cb430824459f9e2a150179386fd12c7cf7cc75a", "v4"),
++    "system/priv-app/vexfwk_service/vexfwk_service.apk":
++        ("23288fff9b326ecb30ce0767dab64232d0947216e97f459350960ca5d95e2d0b", "v2"),
++}
++
++
++def scope():
++    for key, value in {
++        "ROM_SOURCE_CONFIG": "essi_a376b_android17", "ROM_MILESTONE": "M4",
++        "TARGET_CODENAME": "star2lte", "STAR2LTE_BUILD_MODEL": "SM-G965F",
++        "SOURCE_PLATFORM_SDK_VERSION": "37", "TARGET_BOARD_API_LEVEL": "33",
++        "TARGET_PLATFORM_SDK_VERSION": "31", "SOURCE_FIRMWARE_CACHE_SUFFIX": "A376BXXU5BZI6",
++    }.items():
++        if os.environ.get(key) != value:
++            raise RuntimeError("Unreviewed BZI6 OMX scope: " + key)
++
++
++def method(text):
++    matches = list(re.finditer(r"(?ms)^\.method[^\n]* " + re.escape(METHOD) + r"\n.*?^\.end method$", text))
++    if len(matches) != 1:
++        raise RuntimeError("Expected one BZI6 EncoderFilter.configCodec")
++    return matches[0]
++
++
++def format_default(body, register, value):
++    marker = f"    const {register}, {value}"
++    boxed = f"invoke-static {{{register}}}, Ljava/lang/Integer;->valueOf(I)Ljava/lang/Integer;"
++    default_call = (r"invoke-virtual \{[^}\n]*, " + re.escape(register) +
++                    r"\}, Lcom/samsung/android/sum/core/message/Message;->get\(Ljava/lang/String;Ljava/lang/Object;\)Ljava/lang/Object;")
++    if body.count(marker) != 1 or boxed not in body or not re.search(default_call, body):
++        raise RuntimeError("BZI6 encoder color-format default changed")
++    return marker
++
++
++def native_path(work):
++    system = work / "system/system"
++    lib32 = system / "lib/libstagefright.so"
++    if lib32.exists() or lib32.is_symlink():
++        raise RuntimeError("Unreviewed BZI6 OMX layout: 32-bit libstagefright exists")
++    return system / "lib64/libstagefright.so"
++
++
++def branch_offset(data):
++    if data[:6] != b"\x7fELF\x02\x01" or struct.unpack_from("<H", data, 18)[0] != 183:
++        raise RuntimeError("BZI6 Stagefright must be ELF64 little-endian AArch64")
++    phoff = struct.unpack_from("<Q", data, 32)[0]
++    size, count = struct.unpack_from("<HH", data, 54)
++    matches = []
++    for index in range(count):
++        kind, flags, offset, va, _, filesz, _, _ = struct.unpack_from("<IIQQQQQQ", data, phoff + index * size)
++        if kind == 1 and flags & 1 and va <= BRANCH_VA < va + filesz:
++            matches.append(offset + BRANCH_VA - va)
++    if len(matches) != 1:
++        raise RuntimeError("BZI6 HEVC branch must map to one executable segment")
++    return matches[0]
++
++
++def adapt(decoded, work):
++    scope()
++    native = native_path(work)
++    data = native.read_bytes()
++    if sha256(data).hexdigest() != NATIVE_BEFORE:
++        raise RuntimeError("Unreviewed BZI6 libstagefright preimage")
++    offset = branch_offset(data)
++    if data[offset - 20:offset + 8] != CONTEXT or data.count(CONTEXT) != 1:
++        raise RuntimeError("BZI6 HEVC comparison context changed")
++    instruction = struct.unpack_from("<I", data, offset)[0]
++    immediate = (instruction >> 5) & 0x7FFFF
++    if immediate & 0x40000:
++        immediate -= 0x80000
++    if instruction & 0xFF00001F != 0x34000000 or BRANCH_VA + immediate * 4 != BRANCH_TARGET:
++        raise RuntimeError("BZI6 HEVC assertion branch changed")
++    patched = data[:offset] + NOP + data[offset + 4:]
++    if sha256(patched).hexdigest() != NATIVE_AFTER:
++        raise RuntimeError("BZI6 four-byte Stagefright output mismatch")
++
++    transcoder_paths = list((decoded / "system/app/MotionPhoto/MotionPhoto.apk").glob(
++        "smali*/com/samsung/android/motionphoto/utils/v2/video/VideoTranscoder.smali"))
++    if len(transcoder_paths) != 1:
++        raise RuntimeError("Expected reviewed BZI6 MotionPhoto transcoder")
++    transcoder = transcoder_paths[0].read_text()
++    if sha256(transcoder.encode()).hexdigest() != "4e11eb62da97bd64ce484b10670388281125891a33f5264c01d832b770e11019" or \
++            " configVideoEncoderParameters(" in transcoder:
++        raise RuntimeError("BZI6 MotionPhoto legacy encoder-method absence changed")
++    pending = {}
++    for apk, (digest, register) in APKS.items():
++        # vexfwk exists in BZI6; omission of its encoder is not an optional skip.
++        if not (work / "system" / apk).is_file():
++            raise RuntimeError("Required BZI6 OMX APK absent: " + apk)
++        paths = list((decoded / apk).glob("smali*/" + DESCRIPTOR + ".smali"))
++        if len(paths) != 1:
++            raise RuntimeError("Expected one BZI6 EncoderFilter: " + apk)
++        path = paths[0]
++        text = path.read_text()
++        current = method(text)
++        body = current.group()
++        if sha256(body.encode()).hexdigest() != digest:
++            raise RuntimeError("Unreviewed BZI6 encoder method: " + apk)
++        before = format_default(body, register, "0x7f420888")
++        body = body.replace(before, f"    const {register}, 0x7f000789", 1)
++        pending[path] = text[:current.start()] + body + text[current.end():]
++    # Finish all validation before writing either decoded code or the image tree.
++    for path, text in pending.items():
++        path.write_text(text)
++    native.write_bytes(patched)
++    print("PASS BZI6 OMX: four EncoderFilter defaults; one HEVC branch instruction; no kernel/HAL changes")
++
++
++def verify_compiled(work, tools):
++    scope()
++    if sha256(native_path(work).read_bytes()).hexdigest() != NATIVE_AFTER:
++        raise RuntimeError("BZI6 compiled OMX native patch missing or changed")
++    descriptor = "L" + DESCRIPTOR + ";"
++    for apk, (_, register) in APKS.items():
++        bodies = []
++        with tempfile.TemporaryDirectory(prefix="bzi6-omx-verify-") as directory:
++            temporary = Path(directory)
++            with zipfile.ZipFile(work / "system" / apk) as archive:
++                dex_names = [name for name in archive.namelist() if re.fullmatch(r"classes\d*\.dex", name)]
++                for name in dex_names:
++                    data = archive.read(name)
++                    if descriptor.encode() not in data:
++                        continue
++                    dex = temporary / name
++                    dex.write_bytes(data)
++                    output = temporary / (name + "-smali")
++                    result = subprocess.run(["java", "-cp", str(tools / "bin/apktool.jar"),
++                        "com.android.tools.smali.baksmali.Main", "disassemble", "--api", "29",
++                        "--debug-info", "false", "--accessor-comments", "false", "--use-locals",
++                        "--sequential-labels", "--classes", descriptor, "-o", str(output), str(dex)],
++                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
++                    if result.returncode:
++                        raise RuntimeError("BZI6 OMX DEX decode failed: " + result.stderr.strip() + result.stdout.strip())
++                    candidate = output / (DESCRIPTOR + ".smali")
++                    if candidate.is_file():
++                        bodies.append(method(candidate.read_text()).group())
++        if len(bodies) != 1 or "0x7f420888" in bodies[0]:
++            raise RuntimeError("BZI6 compiled OMX encoder absent/ambiguous/stale: " + apk)
++        format_default(bodies[0], register, "0x7f000789")
++    print("PASS compiled BZI6 OMX: native output hash and four actual DEX encoder defaults")
++
++
++if __name__ == "__main__":
++    if len(sys.argv) == 4 and sys.argv[1] == "adapt":
++        adapt(Path(sys.argv[2]), Path(sys.argv[3]))
++    elif len(sys.argv) == 4 and sys.argv[1] == "verify-compiled":
++        verify_compiled(Path(sys.argv[2]), Path(sys.argv[3]))
++    else:
++        raise SystemExit("usage: a376b_android17_media.py adapt DECODED WORK | verify-compiled WORK TOOLS")
+diff --git a/unica/patches/legacy/customize.sh b/unica/patches/legacy/customize.sh
+--- a/unica/patches/legacy/customize.sh
++++ b/unica/patches/legacy/customize.sh
+@@ -675,6 +675,16 @@
+     if ! find "$WORK_DIR/vendor/etc" -maxdepth 1 -type f -name "media_codecs*.xml" ! -name "*performance*" -exec cat {} + | \
+             grep -q -P -z '<MediaCodec\s[^>]*name="c2\.(?!android\.|sec\.)[^"]*"(?:(?!</?MediaCodec[\s>])[\s\S])*?="video/'; then
+         PATCHED=true
++        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++            for BZI6_OMX_APK in system/app/MotionPhoto/MotionPhoto.apk \
++                    system/priv-app/GlobalPostProcMgr/GlobalPostProcMgr.apk \
++                    system/priv-app/SamsungCamera/SamsungCamera.apk \
++                    system/priv-app/vexfwk_service/vexfwk_service.apk; do
++                DECODE_APK "system" "$BZI6_OMX_APK" || return 1
++            done
++            unset BZI6_OMX_APK
++            EVAL "python3 \"$MODPATH/a376b_android17_media.py\" adapt \"$APKTOOL_DIR\" \"$WORK_DIR\"" || return 1
++        else
+         if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
+             LOGW "Reviewed A376B AZH4 MotionPhoto lacks configVideoEncoderParameters; keeping donor transcoder and applying supported EncoderFilter codec patches"
+         else
+@@ -754,6 +764,7 @@
+                 'const v3, 0x7f420888' \
+                 'const v3, 0x7f000789'
+         fi
++        fi
+     fi
+ fi
+ 
+diff --git a/scripts/internal/verify_exynos9810_release_defaults.py b/scripts/internal/verify_exynos9810_release_defaults.py
+--- a/scripts/internal/verify_exynos9810_release_defaults.py
++++ b/scripts/internal/verify_exynos9810_release_defaults.py
+@@ -39,6 +39,8 @@
+         import subprocess
+         camera_checker=ROOT/"unica/patches/camera/a376b_android17_features.py"
+         subprocess.run([sys.executable,str(camera_checker),"verify-work",str(work)],check=True)
++        media_checker=ROOT/"unica/patches/legacy/a376b_android17_media.py"
++        subprocess.run([sys.executable,str(media_checker),"verify-compiled",str(work),str(ROOT/"out/tools")],check=True)
+     if os.environ.get("ROM_SOURCE_CONFIG") == "essi_a376b_android16":
+         if (target, os.environ.get("ROM_MILESTONE")) != ("star2lte", "M2"):
+             raise RuntimeError("Unreviewed native32 A376B release profile")

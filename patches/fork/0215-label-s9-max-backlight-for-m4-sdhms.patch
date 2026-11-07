@@ -1,0 +1,134 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] label S9+ max backlight metadata for M4 SDHMS
+
+# Reason: Fresh boot after0214 confirms brightness is correctly labeled, but SDHMS still logs `10-28 19:23:37.606 ... /sys/class/backlight/panel/max_brightness: fstat failed: EACCES`. A temporary exact label on only max_brightness using the existing type produced no new fstat errors during the 20-second sample; its original `sysfs` label was restored.
+# Affected: the existing M4 thermal helper and lock. Extend exact CIL mapping/verification to the adjacent max_brightness node; no new allow, DAC change, threshold, kernel, blob or radio change.
+# Verify: helper idempotence/duplicate/conflict/missing-permission fixtures; the temporary runtime relabel test; require both exact rules in the final vendor ext4 image and recheck Enforcing SDHMS logs after fresh boot.
+# Rollback: reverse0215, remove its series/lock entries, and rebuild the next M4 package; prior attempt0214 remains preserved.
+
+--- a/rom/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_thermal.py
++++ b/rom/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_thermal.py
+@@ -1,10 +1,10 @@
+ #!/usr/bin/env python3
+-"""Stage the exact S9+ backlight sysfs label needed by M4 SDHMS.
++"""Stage exact S9+ backlight sysfs labels needed by M4 SDHMS.
+ 
+-Reason: BZI6 labels the Exynos9810 panel_drv@001 backlight as generic sysfs,
+-which lacks the getattr permission SDHMS needs for fstat. The existing
++Reason: BZI6 labels the Exynos9810 panel_drv@001 backlight nodes as generic
++sysfs, which lacks the getattr permission SDHMS needs for fstat. The existing
+ sysfs_ski_display_writable type already has the reviewed display permissions.
+-Files: one exact vendor CIL genfscon rule, pinned by the adjacent lock.
++Files: two exact vendor CIL genfscon rules, pinned by the adjacent lock.
+ Verify exact scope, required existing policy permissions, idempotence and
+ conflict rejection before the vendor image gate.
+ """
+@@ -36,17 +36,22 @@
+     for required in rules["required_existing_rules"]:
+         if required not in data:
+             raise ValueError("M4 backlight policy lost an existing permission: " + required)
+-    rule = rules["genfscon"]
+-    conflicts = [line for line in data.splitlines()
+-                 if line.lstrip().startswith('(genfscon sysfs ') and
+-                 rules["path"] in line and line.strip() != rule]
+-    if conflicts:
+-        raise ValueError("Conflicting M4 backlight genfscon: " + conflicts[0])
+-    occurrences = data.splitlines().count(rule)
+-    if occurrences > 1:
+-        raise ValueError("Duplicate M4 backlight genfscon")
+-    if occurrences == 0:
+-        data = data.rstrip("\n") + "\n" + rule + "\n"
++    lines = data.splitlines()
++    missing = []
++    for node in rules["nodes"]:
++        rule = node["genfscon"]
++        conflicts = [line for line in lines
++                     if line.lstrip().startswith('(genfscon sysfs ') and
++                     node["path"] in line and line.strip() != rule]
++        if conflicts:
++            raise ValueError("Conflicting M4 backlight genfscon: " + conflicts[0])
++        occurrences = lines.count(rule)
++        if occurrences > 1:
++            raise ValueError("Duplicate M4 backlight genfscon: " + node["path"])
++        if occurrences == 0:
++            missing.append(rule)
++    if missing:
++        data = data.rstrip("\n") + "\n" + "\n".join(missing) + "\n"
+     return data
+ 
+ 
+@@ -66,12 +71,14 @@
+     if path.is_symlink() or not path.is_file():
+         raise ValueError("M4 vendor policy is missing or symlinked")
+     data = path.read_text(errors="strict")
+-    expected = lock()["policy"]["genfscon"]
+-    if data.splitlines().count(expected) != 1:
+-        raise ValueError("Exact M4 backlight genfscon is missing or duplicated")
++    for node in lock()["policy"]["nodes"]:
++        if data.splitlines().count(node["genfscon"]) != 1:
++            raise ValueError("Exact M4 backlight genfscon is missing or duplicated: " + node["path"])
+     # Validate all pre-existing rules without changing the compiled policy.
+     policy_text(data)
+-    return {"path": str(path), "rule": expected, "sha256": digest(path)}
++    return {"path": str(path),
++            "rules": [node["genfscon"] for node in lock()["policy"]["nodes"]],
++            "sha256": digest(path)}
+ 
+ 
+ def self_test():
+@@ -87,7 +94,9 @@
+         apply(root)
+         if target.read_bytes() != staged:
+             raise ValueError("M4 backlight genfscon staging is not idempotent")
+-        bad = seed + rules["genfscon"] + "\n" + rules["genfscon"] + "\n"
++        first = rules["nodes"][0]["genfscon"]
++        second = rules["nodes"][1]["genfscon"]
++        bad = seed + first + "\n" + second + "\n" + second + "\n"
+         target.write_text(bad)
+         try:
+             verify(root)
+@@ -96,7 +105,7 @@
+                 raise
+         else:
+             raise ValueError("Duplicate M4 backlight genfscon was accepted")
+-        target.write_text(seed + rules["conflicting_genfscon"] + "\n")
++        target.write_text(seed + rules["nodes"][1]["conflicting_genfscon"] + "\n")
+         try:
+             apply(root)
+         except ValueError as error:
+--- a/rom/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_thermal.lock.json
++++ b/rom/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_thermal.lock.json
+@@ -1,18 +1,27 @@
+ {
+   "schema": 1,
+-  "scope": "M4 BZI6 Android17 G965F star2lte SDHMS backlight read metadata",
+-  "reason": "SDHMS fstat on the real panel_drv@001 brightness node fails with EACCES under generic sysfs. The existing display type grants system_app getattr/read and is already used for the neighboring legacy panel backlight path.",
++  "scope": "M4 BZI6 Android17 G965F star2lte SDHMS backlight metadata reads",
++  "reason": "SDHMS fstat on the real panel_drv@001 brightness and max_brightness nodes fails with EACCES under generic sysfs. The existing display type grants system_app getattr/read and is already used for the neighboring legacy panel backlight path.",
+   "files": [
+     "vendor/etc/selinux/vendor_sepolicy.cil"
+   ],
+   "policy": {
+-    "path": "/devices/platform/panel_drv@001/backlight/panel/brightness",
+-    "genfscon": "(genfscon sysfs \"/devices/platform/panel_drv@001/backlight/panel/brightness\" (u object_r sysfs_ski_display_writable ((s0) (s0))))",
+-    "conflicting_genfscon": "(genfscon sysfs \"/devices/platform/panel_drv@001/backlight/panel/brightness\" (u object_r sysfs_ski_display_readable ((s0) (s0))))",
++    "nodes": [
++      {
++        "path": "/devices/platform/panel_drv@001/backlight/panel/brightness",
++        "genfscon": "(genfscon sysfs \"/devices/platform/panel_drv@001/backlight/panel/brightness\" (u object_r sysfs_ski_display_writable ((s0) (s0))))",
++        "conflicting_genfscon": "(genfscon sysfs \"/devices/platform/panel_drv@001/backlight/panel/brightness\" (u object_r sysfs_ski_display_readable ((s0) (s0))))"
++      },
++      {
++        "path": "/devices/platform/panel_drv@001/backlight/panel/max_brightness",
++        "genfscon": "(genfscon sysfs \"/devices/platform/panel_drv@001/backlight/panel/max_brightness\" (u object_r sysfs_ski_display_writable ((s0) (s0))))",
++        "conflicting_genfscon": "(genfscon sysfs \"/devices/platform/panel_drv@001/backlight/panel/max_brightness\" (u object_r sysfs_ski_display_readable ((s0) (s0))))"
++      }
++    ],
+     "required_existing_rules": [
+       "(type sysfs_ski_display_writable)",
+       "(allow system_app_33_0 sysfs_ski_display_writable (file (ioctl read write getattr lock append map open watch watch_reads)))"
+     ]
+   },
+-  "verification": "exact CIL genfscon and existing system_app display permission are present in the final vendor ext4 image; device restorecon/reboot and SDHMS fstat must pass while Enforcing"
++  "verification": "both exact CIL genfscon rules and existing system_app display permission are present in the final vendor ext4 image; device restorecon/reboot and SDHMS fstat must pass while Enforcing"
+ }

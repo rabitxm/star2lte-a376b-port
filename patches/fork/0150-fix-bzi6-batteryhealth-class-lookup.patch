@@ -1,0 +1,55 @@
+# Reason: M4 attempt22 stops in Battery Health Stats because BZI6 moved the base controller into classes3, while its first-use controller now inherits getAvailabilityStatus() and has no override. The legacy guard rejects the new DEX layout; calling SMALI_PATCH on the inherited method is invalid.
+# Affected: unica/mods/batteryhealth/customize.sh.
+# Verify: decode the pinned BZI6 SecSettings.apk; verify the unique base descriptor/method and first-use subclass/superclass/no-override; run actual SMALI_PATCH and negative missing/ambiguous tests; shell syntax; local series replay; clean M4 build.
+# Rollback: remove patch0150 from patches/fork/series and sources.lock.json, then restore the prior batteryhealth customize script.
+
+--- a/unica/mods/batteryhealth/customize.sh
++++ b/unica/mods/batteryhealth/customize.sh
+@@ -1,9 +1,10 @@
+ # Exynos9810: expose Samsung battery health information in Settings.
+ # This only changes availability checks; the stock health service remains intact.
+ 
+-# A376B moved these exact descriptors to classes5; SMALI_PATCH resolves their
+-# unique class locations and still rejects missing methods or ambiguity.
++# AZH4/BZI6 move these descriptors across DEX splits. SMALI_PATCH resolves the
++# unique fully qualified descriptor and rejects missing methods or ambiguity.
+ if [ "${ROM_SOURCE_CONFIG:-}" != "essi_a376b_android16" ] && \
++        [ "${ROM_SOURCE_CONFIG:-}" != "essi_a376b_android17" ] && \
+         [ ! -f "$APKTOOL_DIR/system/priv-app/SecSettings/SecSettings.apk/smali_classes4/com/samsung/android/settings/deviceinfo/batteryinfo/BatteryRegulatoryPreferenceController.smali" ]; then
+     LOGE "Battery health controller is missing from SecSettings.apk"
+     exit 1
+@@ -14,7 +15,30 @@
+     "getAvailabilityStatus()I" \
+     "0x0"
+ 
+-SMALI_PATCH "system" "system/priv-app/SecSettings/SecSettings.apk" \
+-    "smali_classes4/com/samsung/android/settings/deviceinfo/batteryinfo/SecBatteryFirstUseDatePreferenceController.smali" "return" \
+-    "getAvailabilityStatus()I" \
+-    "0x0"
++if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++    # BZI6's first-use controller inherits getAvailabilityStatus() from the
++    # patched BatteryRegulatoryPreferenceController; it has no override.
++    BATT_FIRST_USE_CLASS_PATH="com/samsung/android/settings/deviceinfo/batteryinfo/SecBatteryFirstUseDatePreferenceController.smali"
++    BATT_FIRST_USE_CLASS_MATCHES=()
++    for BATT_FIRST_USE_CANDIDATE in "$APKTOOL_DIR/system/priv-app/SecSettings/SecSettings.apk"/smali*/"$BATT_FIRST_USE_CLASS_PATH"; do
++        [ -f "$BATT_FIRST_USE_CANDIDATE" ] || continue
++        if head -n 1 "$BATT_FIRST_USE_CANDIDATE" | grep -qF "L${BATT_FIRST_USE_CLASS_PATH%.smali};"; then
++            BATT_FIRST_USE_CLASS_MATCHES+=("$BATT_FIRST_USE_CANDIDATE")
++        fi
++    done
++    if [ "${#BATT_FIRST_USE_CLASS_MATCHES[@]}" -ne 1 ]; then
++        LOGE "BZI6 first-use controller class is missing or ambiguous"
++        exit 1
++    fi
++    if ! grep -Fxq '.super Lcom/samsung/android/settings/deviceinfo/batteryinfo/BatteryRegulatoryPreferenceController;' "${BATT_FIRST_USE_CLASS_MATCHES[0]}" || \
++            grep -Eq '^\.method[^[:cntrl:]]*getAvailabilityStatus\(\)I$' "${BATT_FIRST_USE_CLASS_MATCHES[0]}"; then
++        LOGE "BZI6 first-use controller no longer inherits availability from BatteryRegulatoryPreferenceController"
++        exit 1
++    fi
++    LOG "BZI6 first-use controller inherits the patched BatteryRegulatory availability method"
++else
++    SMALI_PATCH "system" "system/priv-app/SecSettings/SecSettings.apk" \
++        "smali_classes4/com/samsung/android/settings/deviceinfo/batteryinfo/SecBatteryFirstUseDatePreferenceController.smali" "return" \
++        "getAvailabilityStatus()I" \
++        "0x0"
++fi

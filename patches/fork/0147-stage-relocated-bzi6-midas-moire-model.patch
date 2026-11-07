@@ -1,0 +1,74 @@
+# Reason: Attempt18 confirms BZI6 Midas config still references moire_detection/moire_detection.tflite, but the hash-matched model moved to vendor/etc/VslMesDetector; the generic copy fails on the absent legacy path.
+# Affected: unica/patches/saiv/customize.sh and unica/patches/saiv/a376b_android17_moire.sh.
+# Verify: pin BZI6 Midas config/model, stage and metadata fixture; changed-config/model and wrong-model negatives; bash syntax; full source-series replay; clean M4 build.
+# Rollback: remove this patch from patches/fork/series and sources.lock.json.
+
+--- a/unica/patches/saiv/customize.sh
++++ b/unica/patches/saiv/customize.sh
+@@ -35,7 +35,10 @@
+ 
+ # SEC_PRODUCT_FEATURE_SAIV_CONFIG_MIDAS
+ if [ ! -f "$WORK_DIR/vendor/etc/midas/moire_detection/moire_detection.tflite" ]; then
+-    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++        source "$MODPATH/a376b_android17_moire.sh" || return 1
++        A376B17_STAGE_MIDAS_MOIRE_MODEL || return 1
++    elif [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
+         # AZH4 moved this same model to VslMesDetector; the Midas config
+         # still references the old relative path. Verify the reviewed bytes.
+         A376B_MOIRE_MODEL="$FW_DIR/$SOURCE_FIRMWARE_PATH/vendor/etc/VslMesDetector/moire_detection.tflite"
+--- /dev/null
++++ b/unica/patches/saiv/a376b_android17_moire.sh
+@@ -0,0 +1,52 @@
++# Stage BZI6's relocated model at the path referenced by its pinned Midas config.
++A376B17_STAGE_MIDAS_MOIRE_MODEL()
++{
++    local DONOR_ETC="$FW_DIR/$SOURCE_FIRMWARE_PATH/vendor/etc"
++    local MIDAS_CONFIG="$DONOR_ETC/midas/midas_config.json"
++    local MODEL="$DONOR_ETC/VslMesDetector/moire_detection.tflite"
++    local MODEL_HASH
++    local CONFIG_HASH
++    local STAGE
++
++    if [ "${ROM_SOURCE_CONFIG:-}" != "essi_a376b_android17" ] || \
++            [ "${ROM_MILESTONE:-}" != "M4" ] || \
++            [ "${TARGET_CODENAME:-}" != "star2lte" ] || \
++            [ "${STAR2LTE_BUILD_MODEL:-}" != "SM-G965F" ] || \
++            [ "${SOURCE_PLATFORM_SDK_VERSION:-}" != "37" ] || \
++            [ "${TARGET_PLATFORM_SDK_VERSION:-}" != "31" ] || \
++            [ "${TARGET_BOARD_API_LEVEL:-}" != "33" ] || \
++            [ "${SOURCE_FIRMWARE_CACHE_SUFFIX:-}" != "A376BXXU5BZI6" ] || \
++            [ "${SOURCE_FIRMWARE:-}" != "SM-A376B/XXV/LOCAL" ] || \
++            [[ "${TARGET_FIRMWARE:-}" != SM-G965F/PHN/* ]]; then
++        LOGE "Unreviewed BZI6 Midas moire model dispatch scope"
++        return 1
++    fi
++
++    if [ ! -f "$MIDAS_CONFIG" ] || [ ! -f "$MODEL" ]; then
++        LOGE "BZI6 Midas config or relocated moire model is missing"
++        return 1
++    fi
++
++    CONFIG_HASH="$(sha256sum "$MIDAS_CONFIG" | cut -d ' ' -f 1)"
++    if [ "$CONFIG_HASH" != "91a09684275917a418f1a39525d613a9d50ee735b605c3acfeaad58eacac2abd" ] || \
++            ! grep -Fq '"moire_detection/moire_detection.tflite"' "$MIDAS_CONFIG"; then
++        LOGE "Unreviewed BZI6 Midas config or moire model reference"
++        return 1
++    fi
++
++    MODEL_HASH="$(sha256sum "$MODEL" | cut -d ' ' -f 1)"
++    if [ "$MODEL_HASH" != "88e001d4007446f82bd999d71d358b6f48ae976c0cd38128fcfc77a4ec9060c1" ]; then
++        LOGE "Unreviewed BZI6 relocated moire model SHA256: $MODEL_HASH"
++        return 1
++    fi
++
++    mkdir -p "$WORK_DIR/tmp" || return 1
++    STAGE="$(mktemp -d "$WORK_DIR/tmp/a376b-bzi6-moire.XXXXXX")" || return 1
++    mkdir -p "$STAGE/vendor/etc/midas/moire_detection" || return 1
++    cp -f "$MODEL" "$STAGE/vendor/etc/midas/moire_detection/moire_detection.tflite" || return 1
++    SET_METADATA "vendor" "etc/midas/moire_detection" 0 2000 755 "u:object_r:vendor_configs_file:s0" || return 1
++    ADD_TO_WORK_DIR "$STAGE" "vendor" "etc/midas/moire_detection/moire_detection.tflite" 0 0 644 "u:object_r:vendor_configs_file:s0" || return 1
++    rm -rf "$STAGE"
++
++    LOG "Staged hash-pinned BZI6 VslMesDetector moire model at the Midas-configured path"
++}

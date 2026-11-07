@@ -1,0 +1,160 @@
+diff --git a/unica/patches/product_feature/wifi/a376b_android17_wlan.py b/unica/patches/product_feature/wifi/a376b_android17_wlan.py
+--- /dev/null
++++ b/unica/patches/product_feature/wifi/a376b_android17_wlan.py
+@@ -0,0 +1,131 @@
++#!/usr/bin/env python3
++"""Apply the reviewed BZI6-to-star2lte WLAN policy in no-debug Smali."""
++from hashlib import sha256
++from pathlib import Path
++import os
++import re
++import sys
++
++
++PREFIX = "com/samsung/android/server/wifi/"
++BACKOFF = "CAM_BACK -1 -1 -1 9 -1 -1"
++
++
++def method(text, signature, digest):
++    matches = list(re.finditer(
++        r"(?ms)^\.method[^\n]* " + re.escape(signature) + r"\n.*?^\.end method$", text))
++    if len(matches) != 1 or sha256(matches[0].group().encode()).hexdigest() != digest:
++        raise RuntimeError("Unreviewed BZI6 WLAN method: " + signature)
++    return matches[0]
++
++
++def adapt(root, mode):
++    scope = {
++        "ROM_SOURCE_CONFIG": "essi_a376b_android17", "ROM_MILESTONE": "M4",
++        "TARGET_CODENAME": "star2lte", "STAR2LTE_BUILD_MODEL": "SM-G965F",
++        "SOURCE_PLATFORM_SDK_VERSION": "37",
++        "SOURCE_FIRMWARE_CACHE_SUFFIX": "A376BXXU5BZI6",
++    }
++    for key, value in scope.items():
++        if os.environ.get(key) != value:
++            raise RuntimeError("Unreviewed BZI6 WLAN scope: " + key)
++    jar = root / "system/framework/semwifi-service.jar"
++    pending = {}
++
++    def read(relative):
++        paths = list(jar.glob("smali*/" + PREFIX + relative + ".smali"))
++        if len(paths) != 1:
++            raise RuntimeError("Expected one BZI6 WLAN class: " + relative)
++        path = paths[0]
++        text = path.read_text()
++        if not text.splitlines()[0].endswith("L" + PREFIX + relative + ";"):
++            raise RuntimeError("BZI6 WLAN descriptor mismatch: " + relative)
++        pending[path] = text
++        return path
++
++    def feature(key, value):
++        if os.environ.get(key) != value:
++            raise RuntimeError("Unreviewed BZI6 WLAN feature: " + key)
++
++    if mode == "backoff":
++        feature("SOURCE_WLAN_CONFIG_CUSTOM_BACKOFF", BACKOFF)
++        feature("TARGET_WLAN_CONFIG_CUSTOM_BACKOFF", "none")
++        for prefix in ("SOURCE", "TARGET"):
++            for suffix in ("CPU_CSTATE_DISABLE_THRESHOLD",
++                           "DATA_ACTIVITY_AFFINITY_BOOSTER_THRESHOLD",
++                           "L1SS_DISABLE_THRESHOLD"):
++                feature(prefix + "_WLAN_CONFIG_" + suffix, "0")
++        facade = read("SemFrameworkFacade")
++        method(pending[facade], "getBoosterThresholds()[I",
++               "b1229a3124bde2972ff3a47cce1760309e791dd76f0cc70b2464c9f41729270f")
++        coex = read("SemWifiCoexManager")
++        text = pending[coex]
++        constructor = method(text,
++            "<init>(Landroid/content/Context;Lcom/samsung/android/server/wifi/SemWifiManagerProxy;Lcom/samsung/android/server/wifi/halclient/SemWifiNative;Lcom/samsung/android/server/wifi/SemWifiInjector;)V",
++            "58432ba06dfc045add3f068749c19d7fb7687561e727084cec2b699346b2f587")
++        method(text, "addBackoff(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
++               "d4332006a70c662d1bf33342f45d57bf1dc4fed4eaf809ce30e5b3be6c5faf9d")
++        guard = ('    const-string p2, "' + BACKOFF + '"\n\n'
++                 '    invoke-static {p2}, Landroid/text/TextUtils;->isEmpty(Ljava/lang/CharSequence;)Z\n\n'
++                 '    move-result p3\n\n    if-nez p3, :cond_17')
++        literals = [
++            '.field public static final CUSTOM_BACKOFF_TYPE:Ljava/lang/String; = "' + BACKOFF + '"',
++            '    const-string p2, "CUSTOM_BACKOFF_TYPE = ' + BACKOFF + '"',
++            '    const-string p2, "' + BACKOFF + '"',
++        ]
++        if text.count(BACKOFF) != 3 or constructor.group().count(guard) != 1:
++            raise RuntimeError("BZI6 custom-table empty guard changed")
++        for literal in literals:
++            if text.count(literal) != 1:
++                raise RuntimeError("BZI6 custom-table literal layout changed")
++            text = text.replace(literal, literal.replace(BACKOFF, ""), 1)
++        # Empty string makes the donor's existing guard skip only its A37 RF
++        # table. The HAL/coexistence methods and target vendor remain intact.
++        pending[coex] = text
++    elif mode == "softap11ax":
++        feature("SOURCE_WLAN_SUPPORT_MOBILEAP_11AX", "true")
++        feature("TARGET_WLAN_SUPPORT_MOBILEAP_11AX", "false")
++        query = read("ap/SemWifiApChipInfo$SemWifiApChipSupportInfo")
++        method(pending[query], "isSupportedSoftAp11ax()Z",
++               "cc26ce5ee40c19d32a047385d2d07475a971055fd1bd22f06362585b03d36d96")
++        chip = read("ap/SemWifiApChipInfo")
++        current = method(pending[chip], "supportThisSoftApFeature(I)Z",
++                         "6284df9c791377f6a52e570f7d65ae7637ca7d88ab9066a369ba04d392bd2080")
++        before = "    if-eq p1, v0, :cond_2"
++        replacement = """    if-ne p1, v0, :unica_ax_other
++
++    iget-object v2, p0, Lcom/samsung/android/server/wifi/ap/SemWifiApChipInfo;->mSemWifiApChipSupportInfo:Lcom/samsung/android/server/wifi/ap/SemWifiApChipInfo$SemWifiApChipSupportInfo;
++
++    if-eqz v2, :unica_ax_none
++
++    invoke-virtual {v2}, Lcom/samsung/android/server/wifi/ap/SemWifiApChipInfo$SemWifiApChipSupportInfo;->isSupportedSoftAp11ax()Z
++
++    move-result v2
++
++    return v2
++
++    :unica_ax_none
++    const/4 v2, 0x0
++
++    return v2
++
++    :unica_ax_other"""
++        if current.group().count(before) != 1:
++            raise RuntimeError("BZI6 SoftAP11ax selector changed")
++        pending[chip] = (pending[chip][:current.start()] +
++                         current.group().replace(before, replacement, 1) +
++                         pending[chip][current.end():])
++        config = read("ap/SemSoftApConfiguration")
++        if pending[config].count("SPF_11ax=true") != 1:
++            raise RuntimeError("BZI6 SoftAP11ax feature output changed")
++        pending[config] = pending[config].replace("SPF_11ax=true", "SPF_11ax=false", 1)
++    else:
++        raise RuntimeError("Unknown BZI6 WLAN adaptation: " + mode)
++    for path, text in pending.items():
++        if path.read_text() != text:
++            path.write_text(text)
++    print("PASS BZI6 WLAN " + mode + ": target policy; HAL detection preserved")
++
++
++if __name__ == "__main__":
++    adapt(Path(sys.argv[1]), sys.argv[2])
+diff --git a/unica/patches/product_feature/customize.sh b/unica/patches/product_feature/customize.sh
+--- a/unica/patches/product_feature/customize.sh
++++ b/unica/patches/product_feature/customize.sh
+@@ -878,7 +878,9 @@
+ fi
+ 
+ # SEC_PRODUCT_FEATURE_WLAN_CONFIG_CUSTOM_BACKOFF
+-if [[ "$SOURCE_WLAN_CONFIG_CUSTOM_BACKOFF" != "$TARGET_WLAN_CONFIG_CUSTOM_BACKOFF" ]]; then
++if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++    EVAL "python3 \"$MODPATH/wifi/a376b_android17_wlan.py\" \"$APKTOOL_DIR\" backoff" || return 1
++elif [[ "$SOURCE_WLAN_CONFIG_CUSTOM_BACKOFF" != "$TARGET_WLAN_CONFIG_CUSTOM_BACKOFF" ]]; then
+     if [[ "$SOURCE_WLAN_CONFIG_CUSTOM_BACKOFF" != "none" ]] && [[ "$TARGET_WLAN_CONFIG_CUSTOM_BACKOFF" != "none" ]]; then
+         SMALI_PATCH "system" "system/framework/semwifi-service.jar" \
+             "smali/com/samsung/android/server/wifi/SemWifiCoexManager.smali" "replaceall" \
+@@ -1081,7 +1083,9 @@
+ # SEC_PRODUCT_FEATURE_WLAN_SUPPORT_MOBILEAP_11AX
+ if $SOURCE_WLAN_SUPPORT_MOBILEAP_11AX; then
+     if ! $TARGET_WLAN_SUPPORT_MOBILEAP_11AX; then
+-        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++            EVAL "python3 \"$MODPATH/wifi/a376b_android17_wlan.py\" \"$APKTOOL_DIR\" softap11ax" || return 1
++        elif [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
+             # AZH4 exposes the chip query publicly; no old synthetic bridge
+             # is needed. Retain driver detection instead of claiming AX.
+             grep -q '^\.method public final isSupportedSoftAp11ax()Z$' \

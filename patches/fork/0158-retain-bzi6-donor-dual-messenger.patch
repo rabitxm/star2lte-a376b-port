@@ -1,0 +1,32 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] Retain BZI6 donor Dual Messenger behavior
+
+# Reason: attempt30 lines1188–1398 show the optional all-apps Dual Messenger patch fails against BZI6 DAAgent in DualAppProvider.smali:512, WhiteListApps.smali:4, DualAppIntentReceiver.smali:33 and DAUtility.smali:1947. Retain the donor allowlist rather than applying partial changes.
+# Affected: scripts/internal/apply_modules.sh.
+# Verify: exact M4/G965F/BZI6 route skips only the optional all-apps patch; wrong model/milestone fail closed; AZH4 M2 and unrelated routes stay active; shell syntax, dispatcher tests, full patch replay, clean attempt31.
+# Rollback: remove patch0158 from patches/fork/series and sources.lock.json, then restore the previous dispatcher.
+
+--- a/scripts/internal/apply_modules.sh
++++ b/scripts/internal/apply_modules.sh
+@@ -289,6 +289,21 @@
+         if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] && \
+                 [[ "$p" == */csc/smali/system_ext/priv-app/SystemUI/SystemUI.apk/0002-Enable-Smart-View-tile-visibility-settings.patch ]]; then
+             LOGW "A376B AZH4 changed QpRune tile initialization; retaining donor Smart View UI for M2"
++            continue
++        fi
++        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ] && \
++                [[ "$p" == */daagent/smali/system/app/DAAgent/DAAgent.apk/0001-Allow-all-apps-in-Dual-Messenger.patch ]]; then
++            if [ "${ROM_MILESTONE:-}" != M4 ] || [ "${TARGET_CODENAME:-}" != star2lte ] || \
++                    [ "${STAR2LTE_BUILD_MODEL:-}" != SM-G965F ] || \
++                    [ "${SOURCE_PLATFORM_SDK_VERSION:-}" != 37 ] || \
++                    [ "${TARGET_PLATFORM_SDK_VERSION:-}" != 31 ] || \
++                    [ "${TARGET_BOARD_API_LEVEL:-}" != 33 ] || \
++                    [ "${SOURCE_FIRMWARE_CACHE_SUFFIX:-}" != A376BXXU5BZI6 ] || \
++                    [ "${SOURCE_FIRMWARE:-}" != SM-A376B/XXV/LOCAL ]; then
++                LOGE "Unreviewed BZI6 Dual Messenger dispatch scope"
++                return 1
++            fi
++            LOGW "BZI6 DAAgent allowlist differs; retaining donor Dual Messenger behavior"
+             continue
+         fi
+         if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] && \

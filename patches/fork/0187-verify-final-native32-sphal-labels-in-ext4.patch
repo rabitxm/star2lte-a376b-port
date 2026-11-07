@@ -1,0 +1,25 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] verify final native32 sphal labels in ext4
+
+# Reason: m4-package-attempt37-0186.txt image gate rejects mapper@2.0 SELinux label. Actual metadata and existing final graphics restoration explicitly require same_process_hal_file for mapper2.0/2.1 and libgralloctypes in both ABIs. The isolated native32 image checker incorrectly expected system_lib_file for all copied libraries, ignoring later intentional graphics composition. Preserve established graphics labels and require the exact three-path exception in the real image checker.
+# Affected: a376b_native32.py M4 verify_image metadata expectations only
+# Verify: Actual finalization label assignment and file_context-system entries inspected; strict bytes/mode/UID/GID/symlink checks unchanged; exact SPHAL label required for three files, generic system_lib_file for all others; rerun real ext4 audits.
+# Rollback: Remove0187; no library byte, kernel/vendor/radio or policy change.
+
+--- a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_native32.py
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_native32.py
+@@ -180,7 +180,13 @@
+         raise RuntimeError('Native32 image audit is restricted to reviewed M4')
+     verify(work);m=locked()
+     entries={'system/apex/com.android.runtime.apex':(m['output_apex_sha256'],'system_file')}
+-    entries.update({'system/lib/'+n:(h,'system_lib_file')
++    # Final graphics composition deliberately labels these shared-process HAL
++    # dependencies (both ABIs) as same_process_hal_file. Match that exact
++    # contract; all other native32 platform libraries remain system_lib_file.
++    # See exynos9810_finalization/_EXYNOS9810_RESTORE_GRAPHICS_MAPPER_COMPAT.
++    sphal = {'android.hardware.graphics.mapper@2.0.so',
++             'android.hardware.graphics.mapper@2.1.so', 'libgralloctypes.so'}
++    entries.update({'system/lib/'+n:(h,'same_process_hal_file' if n in sphal else 'system_lib_file')
+         for n,h in {**m['system32'],**m['retained_radio_system32']}.items()})
+     def debug(command):
+         # debugfs may return success for a missing inode; every result below

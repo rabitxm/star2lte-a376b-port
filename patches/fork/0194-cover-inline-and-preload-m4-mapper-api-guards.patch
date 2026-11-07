@@ -1,0 +1,112 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] cover inlined and preload BZI6 legacy mapper guards
+
+# Reason: actual0193 trial still aborts inside GraphicBuffer constructor because compiler inlined a second API>35 guard; preloadHal also gates the same retained mapper2/3 path. Whole-executable call-site audit finds exactly three relevant API calls, not one.
+# Affected: M4 runtime helper/lock only. Cover all three decoded B.GT branches with per-site executable-segment/context/target and whole-file hashes; existing restore/image metadata gates consume the new output hash.
+# Verify: scan all executable BL call sites to the actual API-level PLT; require all three API35 guards covered; only12 instruction bytes differ and all mapper load/allocator checks remain; helper/real-ext4 fixture and full184-patch replay. Record runtime separately.
+# Rollback: reverse0194 and lock/series entry, or restore original libui in the bounded device test;0193 is retained as an insufficient historical diagnostic. No OS property, HAL, kernel, radio or EFS change.
+
+--- a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_runtime_compat.py
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_runtime_compat.py
+@@ -115,31 +115,33 @@
+             raise ValueError("M4 mapper source must be ELF64 AArch64")
+         phoff = struct.unpack_from("<Q", data, 32)[0]
+         size, count = struct.unpack_from("<HH", data, 54)
+-        va = entry["branch_va"]
+-        offsets = []
+-        for index in range(count):
+-            kind, flags, offset, start, _, length, _, _ = struct.unpack_from(
+-                "<IIQQQQQQ", data, phoff + index * size)
+-            if kind == 1 and flags & 1 and start <= va < start + length:
+-                offsets.append(offset + va - start)
+-        if len(offsets) != 1:
+-            raise ValueError("M4 mapper branch must map to one executable segment")
+-        offset = offsets[0]
+-        before = bytes.fromhex(entry["instruction_before"])
+-        after = bytes.fromhex(entry["instruction_after"])
+-        instruction = int.from_bytes(before, "little")
+-        immediate = (instruction >> 5) & 0x7ffff
+-        if immediate & 0x40000:
+-            immediate -= 0x80000
+-        if len(before) != 4 or after != bytes.fromhex("1f2003d5") or \
+-                instruction & 0xff00001f != 0x5400000c or \
+-                va + immediate * 4 != entry["branch_target_va"] or \
+-                data[offset:offset + 4] != before or \
+-                data[offset - 8:offset + 20].hex() != entry["context_before_bytes"]:
+-            raise ValueError("M4 API-level mapper branch/context mismatch")
+-        patched = data[:offset] + after + data[offset + 4:]
++        patched = bytearray(data)
++        for branch in entry.get("branches", [entry]):
++            va = branch["branch_va"]
++            offsets = []
++            for index in range(count):
++                kind, flags, offset, start, _, length, _, _ = struct.unpack_from(
++                    "<IIQQQQQQ", data, phoff + index * size)
++                if kind == 1 and flags & 1 and start <= va < start + length:
++                    offsets.append(offset + va - start)
++            if len(offsets) != 1:
++                raise ValueError("M4 mapper branch must map to one executable segment")
++            offset = offsets[0]
++            before = bytes.fromhex(branch["instruction_before"])
++            after = bytes.fromhex(branch["instruction_after"])
++            instruction = int.from_bytes(before, "little")
++            immediate = (instruction >> 5) & 0x7ffff
++            if immediate & 0x40000:
++                immediate -= 0x80000
++            if len(before) != 4 or after != bytes.fromhex("1f2003d5") or \
++                    instruction & 0xff00001f != 0x5400000c or \
++                    va + immediate * 4 != branch["branch_target_va"] or \
++                    data[offset:offset + 4] != before or \
++                    data[offset - 8:offset + 20].hex() != branch["context_before_bytes"]:
++                raise ValueError("M4 API-level mapper branch/context mismatch")
++            patched[offset:offset + 4] = after
+         if hashlib.sha256(patched).hexdigest() != entry["output_sha256"]:
+-            raise ValueError("M4 mapper four-byte output mismatch")
++            raise ValueError("M4 mapper fallback output mismatch")
+         target = Path(work) / rel
+         if target.exists() or target.is_symlink():
+             allowed = {entry["source_sha256"], entry["output_sha256"]} if stage else {entry["output_sha256"]}
+--- a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_runtime_compat.lock.json
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_runtime_compat.lock.json
+@@ -58,13 +58,39 @@
+   "runtime_patches": {
+     "system/system/lib64/libui.so": {
+       "source_sha256": "4bc342521a9745c3c5fa7b8bc9987e8437a043ef16bfb4a2e1f98ec6ecbf0122",
+-      "output_sha256": "ac1c5a4cbfc370002d1c173d8f201a4cefe7459282180636bed5adf8ed50ade7",
++      "output_sha256": "ef711d73fea58a7b234ff35cf66e2ef8b7bfae37cd8923d8adf8cf751e0bb606",
+       "branch_va": 206572,
+       "branch_target_va": 206688,
+       "context_before_bytes": "8bbc00941f8c0071ac0300540002805205b70094f40300aa37b90094",
+       "instruction_before": "ac030054",
+       "instruction_after": "1f2003d5",
+-      "reason": "allow existing Gralloc3/2 fallbacks after Gralloc5/4 fail on Android17; keep actual mapper/allocator load checks"
++      "reason": "allow real legacy mapper3/2 fallback and preload at all three BZI6 API>35 call sites, including inline GraphicBuffer constructor",
++      "branches": [
++        {
++          "branch_va": 206572,
++          "branch_target_va": 206688,
++          "context_before_bytes": "8bbc00941f8c0071ac0300540002805205b70094f40300aa37b90094",
++          "instruction_before": "ac030054",
++          "instruction_after": "1f2003d5",
++          "site": "GraphicBufferMapper constructor"
++        },
++        {
++          "branch_va": 209576,
++          "branch_target_va": 209756,
++          "context_before_bytes": "9cb900941f8c0071ac0500540002805216b40094f50300aa48b60094",
++          "instruction_before": "ac050054",
++          "instruction_after": "1f2003d5",
++          "site": "GraphicBuffer constructor inline copy"
++        },
++        {
++          "branch_va": 362160,
++          "branch_target_va": 362172,
++          "context_before_bytes": "9a2400941f8c00716c000054cca1ff975da7ff97fd7bc1a8bf2303d5",
++          "instruction_before": "6c000054",
++          "instruction_after": "1f2003d5",
++          "site": "GraphicBufferMapper preloadHal"
++        }
++      ]
+     }
+   }
+ }

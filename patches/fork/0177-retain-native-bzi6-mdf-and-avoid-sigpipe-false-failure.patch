@@ -1,0 +1,69 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] retain native bzi6 mdf and avoid sigpipe false failure
+
+# Reason: final-functions-0175 MDF restore claims missing JNI, but actual S22 and BZI6 ELF files contain/export it. strings|grep -q under pipefail can exit141 after an early match. Consume full stream. For M4 restore hash-pinned native BZI6 lib64 MDF with matching framework instead of injecting the S22 two-ABI pair; BZI6 apps64 has no 32-bit MDF input.
+# Affected: finalization/customize.sh MDF restore and final symbol checks
+# Verify: Actual source ELF JNI symbol/export and SHA; native64 restore/metadata; explicit pipefail reproduction; final-stage and clean build. M1/M2 restore route retained.
+# Rollback: Remove0177 and restore previous MDF restore/checks; no kernel/vendor/radio changes.
+
+--- a/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
+@@ -1662,6 +1662,30 @@
+ 
+ _EXYNOS9810_FINAL_RESTORE_BASE_MDF_STACK()
+ {
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++        python3 - "$FW_DIR/$EXYNOS9810_SOURCE_CACHE_KEY" "$WORK_DIR" "$SRC_DIR" <<'PY_MDF' || return 1
++from pathlib import Path
++from hashlib import sha256
++import importlib.util
++import shutil
++import sys
++donor, work, source = map(Path, sys.argv[1:])
++spec = importlib.util.spec_from_file_location("bzi6_product", source / "unica/patches/product_feature/a376b_android17_product.py")
++product = importlib.util.module_from_spec(spec)
++spec.loader.exec_module(product)
++product.scope()
++rel = "system/system/lib64/libmdf.so"
++original = donor / rel
++if sha256(original.read_bytes()).hexdigest() != "136b8e4ce0b4f9613bb1b28d3cf71a3a694781e8a2760188b1b6f64d2a10689d":
++    raise SystemExit("Unreviewed native BZI6 MDF library")
++shutil.copy2(original, work / rel)
++(work / rel).chmod(0o644)
++print("PASS native BZI6 64-bit MDF JNI restored with matching donor framework")
++PY_MDF
++        _EXYNOS9810_FINAL_SET_METADATA system system/lib64/libmdf.so \
++            0 0 644 "u:object_r:system_lib_file:s0" || return 1
++        return 0
++    fi
+     # DeKnox replaces libmdf.so with a small stub, but the One UI 8 S22
+     # framework still calls Samsung's MDF JNI from system_server during Wi-Fi
+     # startup. Restore the source-base MDF libraries late so system_server can
+@@ -1694,7 +1718,7 @@
+     done
+ 
+     strings -a "$WORK_DIR/system/system/lib64/libmdf.so" | \
+-        grep -qF "Java_com_samsung_android_security_mdf_MdfUtils_isMdfEnforced" || {
++        grep -F "Java_com_samsung_android_security_mdf_MdfUtils_isMdfEnforced" > /dev/null || {
+         LOGE "Final system libmdf.so lacks MdfUtils.isMdfEnforced JNI"
+         return 1
+     }
+@@ -7025,12 +7049,17 @@
+     for REL in \
+         system/system/lib/libmdf.so \
+         system/system/lib64/libmdf.so; do
++        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ] && \
++                [ "$REL" = "system/system/lib/libmdf.so" ]; then
++            # Native BZI6 apps/framework are arm64; vendor native32 is separate.
++            continue
++        fi
+         [ -f "$WORK_DIR/$REL" ] || {
+             LOGE "Samsung MDF JNI library is missing: /$REL"
+             return 1
+         }
+         strings -a "$WORK_DIR/$REL" | \
+-            grep -qF "Java_com_samsung_android_security_mdf_MdfUtils_isMdfEnforced" || {
++            grep -F "Java_com_samsung_android_security_mdf_MdfUtils_isMdfEnforced" > /dev/null || {
+             LOGE "Samsung MDF JNI library lacks isMdfEnforced symbol: /$REL"
+             return 1
+         }

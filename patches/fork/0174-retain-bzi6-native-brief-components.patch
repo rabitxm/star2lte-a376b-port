@@ -1,0 +1,35 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] retain bzi6 native brief components
+
+# Reason: final-tail-preflight-0173.txt: Now Brief receiver not found in disabled or enabled state. BZI6 removed legacy AiSuggestionAppWidgetReceiver; actual manifest provides new briefsettings activities/providers. Preserve reviewed donor components instead of fabricating an obsolete widget receiver.
+# Affected: exynos9810_finalization/customize.sh Now Brief optional widget enable function
+# Verify: Actual decoded manifest hash and full M4 scope; new BriefSettingsProvider/BriefMainSettingsActivity inspected; continuation and clean APK build. New Brief UI requires runtime verification.
+# Rollback: Remove0174 and restore previous legacy widget route; M1/M2 unchanged.
+
+--- a/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
+@@ -7149,6 +7149,24 @@
+         LOGE "Samsung Smart Suggestions manifest was not decoded"
+         return 1
+     }
++
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++        python3 - "$MANIFEST" "$SRC_DIR" <<'PY_BRIEF' || return 1
++from pathlib import Path
++from hashlib import sha256
++import importlib.util
++import sys
++path, source = map(Path, sys.argv[1:])
++spec = importlib.util.spec_from_file_location("bzi6_product", source / "unica/patches/product_feature/a376b_android17_product.py")
++product = importlib.util.module_from_spec(spec)
++spec.loader.exec_module(product)
++product.scope()
++if sha256(path.read_bytes()).hexdigest() != "2f8659d2060ec53f551aaf1baa38524b140fa8d3aec1c6b6999da9ff7c6a42e6":
++    raise SystemExit("Unreviewed BZI6 Smart Suggestions manifest")
++print("PASS BZI6 Smart Suggestions: retain new Brief settings/providers; legacy Now Brief widget receiver absent")
++PY_BRIEF
++        return 0
++    fi
+ 
+     LOG "- Enabling the One UI 8 Now Brief home-screen widget provider"
+     python3 - "$MANIFEST" <<'PY' || return 1

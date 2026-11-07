@@ -1,0 +1,33 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] resolve bzi6 compiled system ext in essi system
+
+# Reason: m4-package-attempt37-0184.txt product gate raises FileNotFoundError for work_dir/system_ext/.../SystemUI.apk. Actual fork ESSI output embeds that APK at work_dir/system/system/system_ext, unlike decoded Apktool layout. Resolve the reviewed false system_ext-partition layout explicitly and keep all compiled assertions.
+# Affected: product_feature/a376b_android17_product.py compiled artifact resolver
+# Verify: Actual SystemUI/SSRM/work paths inspected; full compiled product gate and wrong layout failure, source replay and image audit.
+# Rollback: Remove0185 and restore old resolver. No ROM payload change.
+
+--- a/unica/patches/product_feature/a376b_android17_product.py
++++ b/unica/patches/product_feature/a376b_android17_product.py
+@@ -202,12 +202,19 @@
+     display_scope()
+     cache = {}
+ 
+-    # Work layout stores system artifacts under system/system and system_ext
+-    # artifacts directly under system_ext. Resolve both explicitly.
++    # The reviewed star2lte ESSI profile embeds system_ext inside SYSTEM.
++    # Decoded Apktool paths differ from actual work/image artifact paths.
+     def read(artifact, descriptor):
+         key = artifact, descriptor
+         if key not in cache:
+-            archive = work / ("system/" + artifact if artifact.startswith("system/") else artifact)
++            if artifact.startswith("system_ext/"):
++                if os.environ.get("TARGET_OS_BUILD_SYSTEM_EXT_PARTITION", "false") != "false":
++                    raise RuntimeError("Unreviewed BZI6 system_ext partition layout")
++                archive = work / "system/system" / artifact
++            elif artifact.startswith("system/"):
++                archive = work / "system" / artifact
++            else:
++                raise RuntimeError("Unreviewed BZI6 compiled artifact: " + artifact)
+             cache[key] = compiled_class(archive, descriptor, tools)
+         return cache[key]
+ 

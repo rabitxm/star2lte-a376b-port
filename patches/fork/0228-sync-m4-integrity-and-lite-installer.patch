@@ -1,0 +1,2062 @@
+--- a/scripts/build_flashable_zip.sh
++++ b/scripts/build_flashable_zip.sh
+@@ -7,6 +7,7 @@
+ 
+ INCREMENTAL=false
+ LEGACY_SIDELOAD=false
++PREFORMATTED_DATA=false
+ SOURCE_ZIP=""
+ TARGET_ZIP=""
+ OUTPUT_FILE=""
+@@ -43,6 +44,8 @@
+             shift; SOURCE_ZIP="$1"
+         elif [[ "$1" == "--legacy-sideload" ]]; then
+             LEGACY_SIDELOAD=true
++        elif [[ "$1" == "--preformatted-data" ]]; then
++            PREFORMATTED_DATA=true
+         elif [[ "$1" == "--output" ]] || [[ "$1" == "-o" ]]; then
+             shift; OUTPUT_FILE="$1"
+             if [[ "$OUTPUT_FILE" != *".zip" ]]; then
+@@ -91,6 +94,7 @@
+         OUTPUT_FILE+="$(date -d "@$(grep "^timestamp" <<< "$TARGET_BUILD_INFO" | cut -d "=" -f 2 -s)" "+%Y%m%d")"
+         OUTPUT_FILE+="_"
+         OUTPUT_FILE+="$(grep "^device" <<< "$TARGET_BUILD_INFO" | cut -d "=" -f 2 -s)"
++        [ "${EXYNOS9810_M4_LITE:-false}" != "true" ] || OUTPUT_FILE+="-Lite"
+         if $INCREMENTAL; then
+             local SOURCE_BUILD_INFO
+ 
+@@ -112,6 +116,7 @@
+     echo "Usage: build_flashable_zip [options] <file>" >&2
+     echo " -i, --incremental : Generate an incremental zip using the given target-files zip as source" >&2
+     echo " --legacy-sideload : Split an existing verified full flashable zip into ordered signed packages below 2 GiB" >&2
++    echo " --preformatted-data : Repackage a verified M4 Lite ZIP for preformatted internal storage" >&2
+     echo " -o, --output : Specify the output zip path, defaults to $OUT_DIR" >&2
+ }
+ # ]
+@@ -126,6 +131,19 @@
+ trap 'PRINT_BUILD_OUTCOME' EXIT
+ trap 'echo' INT
+ 
++if $PREFORMATTED_DATA; then
++    if $INCREMENTAL || $LEGACY_SIDELOAD || [ "${EXYNOS9810_M4_LITE:-false}" != true ] || [ "$TARGET_CODENAME" != star2lte ]; then
++        LOGE "Preformatted-data mode requires the star2lte M4 Lite profile and a full Lite ZIP"
++        exit 1
++    fi
++    "$SRC_DIR/scripts/internal/verify_exynos9810_flashable.sh" "$TARGET_ZIP" "$TARGET_OS_FILE_SYSTEM_TYPE" || exit 1
++    python3 "$SRC_DIR/scripts/internal/verify_m4_lite_zip32.py" "$TARGET_ZIP" || exit 1
++    python3 "$SRC_DIR/scripts/internal/build_preformatted_lite_zip.py" "$TARGET_ZIP" "$OUTPUT_FILE" || exit 1
++    EXYNOS9810_PREFORMATTED_USERDATA=true "$SRC_DIR/scripts/internal/verify_exynos9810_flashable.sh" "$OUTPUT_FILE" "$TARGET_OS_FILE_SYSTEM_TYPE" || exit 1
++    python3 "$SRC_DIR/scripts/internal/verify_m4_lite_zip32.py" "$OUTPUT_FILE" || exit 1
++    exit 0
++fi
++
+ if $LEGACY_SIDELOAD; then
+     if $INCREMENTAL || [ "$TARGET_PLATFORM" != "exynos9810" ]; then
+         LOGE "Legacy sideload mode requires a full Exynos9810 flashable zip"
+--- a/scripts/internal/apply_modules.sh
++++ b/scripts/internal/apply_modules.sh
+@@ -52,24 +52,6 @@
+         return 0
+     fi
+ 
+-    # BZI6 moved Keystore2 interfaces out of the framework DEX locations used
+-    # by the optional Keybox imitation hooks; retain donor attestation behavior.
+-    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ] && \
+-            [[ "$MODPATH" == */mods/keybox ]]; then
+-        if [ "${ROM_MILESTONE:-}" != M4 ] || [ "${TARGET_CODENAME:-}" != star2lte ] || \
+-                [ "${STAR2LTE_BUILD_MODEL:-}" != SM-G965F ] || \
+-                [ "${SOURCE_PLATFORM_SDK_VERSION:-}" != 37 ] || \
+-                [ "${TARGET_PLATFORM_SDK_VERSION:-}" != 31 ] || \
+-                [ "${TARGET_BOARD_API_LEVEL:-}" != 33 ] || \
+-                [ "${SOURCE_FIRMWARE_CACHE_SUFFIX:-}" != A376BXXU5BZI6 ] || \
+-                [ "${SOURCE_FIRMWARE:-}" != SM-A376B/XXV/LOCAL ]; then
+-            LOGE "Unreviewed BZI6 Keybox donor-retention scope"
+-            return 1
+-        fi
+-        LOGW "BZI6 Keystore2 interfaces differ from framework Keybox hooks; retaining donor key-attestation behavior for M4"
+-        return 0
+-    fi
+-
+     # Keep BZI6 Knox and attestation coherent: the optional legacy hooks no
+     # longer match DevicePolicyManager, DAR and attestation implementations.
+     if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ] && \
+@@ -205,6 +187,13 @@
+         done < <(find "$MODPATH/smali" -type d \( -name "*.apk" -o -name "*.jar" \) | sed "s|$MODPATH/smali/||")
+     fi
+ 
++    # Settings' Samsung helper is added by the smali patch pass above; only
++    # the reviewed M4 donor gets its ART/identity adaptation after that pass.
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ] && [[ "$MODPATH" == */mods/settings ]]; then
++        python3 "$MODPATH/a376b_android17_boot_limits.py" framework \
++            "$APKTOOL_DIR/system/framework/framework.jar" || return 1
++    fi
++
+     LOG_STEP_OUT
+ 
+     return 0
+@@ -229,6 +218,36 @@
+             FILE="$(cut -d "/" -f 2- -s <<< "$FILE")"
+         fi
+ 
++        # The upstream Keybox patch targets old DEX paths and colliding labels.
++        # Port it through exact BZI6 method hashes, only for the reviewed M4/F build.
++        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ] && \
++                [ "$PATCHES_PATH" = "$SRC_DIR/unica/mods/keybox/smali" ]; then
++            if [ "${ROM_MILESTONE:-}" != M4 ] || [ "${TARGET_CODENAME:-}" != star2lte ] || \
++                    [ "${STAR2LTE_BUILD_MODEL:-}" != SM-G965F ] || \
++                    [ "${SOURCE_PLATFORM_SDK_VERSION:-}" != 37 ] || \
++                    [ "${TARGET_PLATFORM_SDK_VERSION:-}" != 31 ] || \
++                    [ "${TARGET_BOARD_API_LEVEL:-}" != 33 ] || \
++                    [ "${SOURCE_FIRMWARE_CACHE_SUFFIX:-}" != A376BXXU5BZI6 ] || \
++                    [ "${SOURCE_FIRMWARE:-}" != SM-A376B/XXV/LOCAL ]; then
++                LOGE "Unreviewed BZI6 Keybox adapter scope"
++                return 1
++            fi
++            case "$p" in
++                */0001-Introduce-KeyboxImitationHooks.patch)
++                    python3 "$SRC_DIR/unica/mods/keybox/a376b_android17_keybox.py" stage "$APKTOOL_DIR" || return 1
++                    LOGW "Applied method-locked BZI6 Keybox hooks; donor Keystore2 fallback retained"
++                    continue
++                    ;;
++                */0002-Disable-MGF-digest-param-omit.patch)
++                    continue
++                    ;;
++                *)
++                    LOGE "Unreviewed BZI6 Keybox patch: ${p##*/}"
++                    return 1
++                    ;;
++            esac
++        fi
++
+         if IS_A376B_M4_BOOT_TEST; then
+             case "$p" in
+                 */miscs/smali/system/framework/services.jar/0002-Add-UN1CA-Bixby-key-remap.patch|\
+--- /dev/null
++++ b/scripts/internal/build_preformatted_lite_zip.py
+@@ -0,0 +1,126 @@
++#!/usr/bin/env python3
++"""Repackage the pinned M4 Lite OTA for preformatted internal USERDATA.
++
++The existing fork packager calls this; it neither builds images nor repartitions.
++"""
++import hashlib
++import os
++from pathlib import Path, PurePosixPath
++import subprocess
++import sys
++import tempfile
++import zipfile
++
++source, output = (Path(x).resolve() for x in sys.argv[1:3])
++root = Path(os.environ['SRC_DIR'])
++expected = '5e84d7e4f9a1fa4990a4b981465655eccb7b3ab71dfbb901d8078791a98815d5'
++updater = 'META-INF/com/google/android/updater-script'
++formatter = 'exynos9810/format_partitions.sh'
++preflight = 'exynos9810/preflight.sh'
++
++def digest(stream):
++    h = hashlib.sha256()
++    for data in iter(lambda: stream.read(8 * 1024 * 1024), b''):
++        h.update(data)
++    return h.hexdigest()
++
++with source.open('rb') as f:
++    if digest(f) != expected:
++        raise SystemExit('Refusing unpinned M4 Lite source')
++if output.exists() or output.is_symlink():
++    raise SystemExit('Refusing to overwrite output')
++
++with tempfile.TemporaryDirectory(prefix='m4-preformatted-', dir=output.parent) as temp:
++    tmp = Path(temp)
++    payload = tmp / 'payload'
++    payload.mkdir()
++    with zipfile.ZipFile(source) as original:
++        names = original.namelist()
++        if len(names) != len(set(names)):
++            raise SystemExit('Duplicate source ZIP entries')
++        for name in names:
++            p = PurePosixPath(name)
++            if p.is_absolute() or '..' in p.parts:
++                raise SystemExit('Unsafe source ZIP path')
++        original_updater = original.read(updater).decode()
++        original_formatter = original.read(formatter).decode()
++        original_preflight = original.read(preflight).decode()
++    subprocess.run(['7z', 'x', '-y', str(source), '-o' + str(payload)], check=True, stdout=subprocess.DEVNULL)
++
++    original_start = '''ifelse(is_mounted("/data"), unmount("/data"));
++run_program("/sbin/sh", "/tmp/exynos9810/prepare_layout.sh", "star2lte") == 0 ||
++    abort("E9810: Auto repartition failed. Reboot recovery, format data, then flash this ROM again.");
++if file_getprop("/tmp/exynos9810/layout.prop", "repartitioned") == "1" then
++    ui_print("Cleaning resized Exynos9810 partitions...");
++    run_program("/sbin/sh", "/tmp/exynos9810/format_partitions.sh", "layout_clean") == 0 ||
++        abort("E9810: Failed to format resized Exynos9810 partitions.");
++endif;
++'''
++    new_start = '''ui_print("Preformatted USERDATA required; automatic repartition is disabled.");
++run_program("/sbin/sh", "/tmp/exynos9810/preflight.sh", "star2lte") == 0 ||
++    abort("E9810: Partition layout too small. Prepare layout before copying this ZIP.");
++'''
++    original_end = '''ui_print("Formatting cache, omr, preload and data...");
++ifelse(is_mounted("/cache"), unmount("/cache"));
++ifelse(is_mounted("/omr"), unmount("/omr"));
++ifelse(is_mounted("/preload"), unmount("/preload"));
++ifelse(is_mounted("/data"), unmount("/data"));
++run_program("/sbin/sh", "/tmp/exynos9810/format_partitions.sh", "post_install") == 0 ||
++    abort("E9810: Failed to format cache/omr/preload/data.");
++'''
++    new_end = '''ui_print("Formatting cache, omr and preload; USERDATA is preserved.");
++ifelse(is_mounted("/cache"), unmount("/cache"));
++ifelse(is_mounted("/omr"), unmount("/omr"));
++ifelse(is_mounted("/preload"), unmount("/preload"));
++run_program("/sbin/sh", "/tmp/exynos9810/format_partitions.sh", "post_install_preserve_data") == 0 ||
++    abort("E9810: Failed to format cache/omr/preload.");
++'''
++    if original_updater.count(original_start) != 1 or original_updater.count(original_end) != 1:
++        raise SystemExit('Unexpected updater preimage; refusing to change installer')
++    updated = original_updater.replace(original_start, new_start).replace(original_end, new_end)
++    if updated.index('preflight.sh') > updated.index('block_image_update('):
++        raise SystemExit('Layout check must precede every image write')
++    marker = '    post_install)\n'
++    preserve = '''    post_install_preserve_data)
++        format_ext4 cache "$BY_NAME/CACHE" /cache optional
++        format_ext4 omr "$BY_NAME/OMR" /omr optional
++        format_ext4 preload "$BY_NAME/HIDDEN" /preload optional
++        ui_print "E9810: USERDATA preserved; preformat before install"
++        ;;
++'''
++    if original_formatter.count(marker) != 1:
++        raise SystemExit('Unexpected format script preimage')
++    (payload / updater).write_text(updated)
++    (payload / formatter).write_text(original_formatter.replace(marker, preserve + marker))
++    if original_preflight.count('TOLERANCE_MIB=16') != 1:
++        raise SystemExit('Unexpected layout preflight preimage')
++    (payload / preflight).write_text(original_preflight.replace('TOLERANCE_MIB=16', 'TOLERANCE_MIB=0'))
++    subprocess.run(['bash', '-n', str(payload / formatter)], check=True)
++    subprocess.run(['bash', '-n', str(payload / preflight)], check=True)
++
++    unsigned = tmp / 'unsigned.zip'
++    large = sorted(p.name for p in payload.iterdir() if p.name.endswith(('.new.dat.br', '.patch.dat')))
++    if not large:
++        raise SystemExit('No image payload found')
++    subprocess.run(['7z', 'a', '-tzip', '-mx=0', str(unsigned), *large], cwd=payload, check=True, stdout=subprocess.DEVNULL)
++    subprocess.run(['7z', 'a', '-tzip', '-mx=3', str(unsigned), '-r', '*', '-x!*.new.dat.br', '-x!*.patch.dat'], cwd=payload, check=True, stdout=subprocess.DEVNULL)
++    signed = tmp / 'signed.zip'
++    key = 'unica_ota' if os.environ.get('ROM_IS_OFFICIAL') == 'true' else 'aosp_testkey'
++    subprocess.run(['signapk', '-w', str(root / 'security' / (key + '.x509.pem')),
++                    str(root / 'security' / (key + '.pk8')), str(unsigned), str(signed)], check=True)
++    with zipfile.ZipFile(source) as original, zipfile.ZipFile(signed) as result:
++        old = {i.filename for i in original.infolist() if not i.is_dir()}
++        new = {i.filename for i in result.infolist() if not i.is_dir()}
++        if old != new:
++            raise SystemExit(f'ZIP entry mismatch: removed={old-new}, added={new-old}')
++        for name in sorted(old - {updater, formatter, preflight}):
++            with original.open(name) as a, result.open(name) as b:
++                if digest(a) != digest(b):
++                    raise SystemExit('Unchanged payload differs: ' + name)
++        if result.read(updater).decode() != updated or result.read(formatter).decode() != original_formatter.replace(marker, preserve + marker):
++            raise SystemExit('Installer contents differ from reviewed changes')
++        if result.read(preflight).decode() != original_preflight.replace('TOLERANCE_MIB=16', 'TOLERANCE_MIB=0'):
++            raise SystemExit('Layout preflight differs from reviewed change')
++    os.link(signed, output)
++    output.chmod(0o444)
++    print('PASS: source payload entries unchanged; only updater, formatter and layout preflight modified')
+--- a/scripts/internal/verify_exynos9810_boot_contract.sh
++++ b/scripts/internal/verify_exynos9810_boot_contract.sh
+@@ -50,6 +50,13 @@
+         ;;
+ esac
+ 
++PUBLIC_MODEL="$EXPECTED_MODEL"
++PUBLIC_NAME="$EXPECTED_NAME"
++if $A376B_M4; then
++    PUBLIC_MODEL="SM-A376B"
++    PUBLIC_NAME="a37xnaxx"
++fi
++
+ get_prop() {
+     local file="$1"
+     local key="$2"
+@@ -101,17 +108,17 @@
+ require_file "$WORK/odm/etc/vintf/manifest_hcesimese.xml"
+ 
+ if [ "$(get_prop "$SYSTEM_PROP" ro.product.device)" != "$TARGET_CODENAME" ] || \
+-        [ "$(get_prop "$SYSTEM_PROP" ro.product.model)" != "$EXPECTED_MODEL" ] || \
+-        [ "$(get_prop "$SYSTEM_PROP" ro.product.name)" != "$EXPECTED_NAME" ] || \
+-        [ "$(get_prop "$SYSTEM_PROP" ro.build.flavor)" != "$EXPECTED_NAME-user" ]; then
++        [ "$(get_prop "$SYSTEM_PROP" ro.product.model)" != "$PUBLIC_MODEL" ] || \
++        [ "$(get_prop "$SYSTEM_PROP" ro.product.name)" != "$PUBLIC_NAME" ] || \
++        [ "$(get_prop "$SYSTEM_PROP" ro.build.flavor)" != "$PUBLIC_NAME-user" ]; then
+     echo "Exynos9810 boot contract: final system identity is not target-aware" >&2
+     grep -E '^(ro.product.device|ro.product.model|ro.product.name|ro.build.flavor)=' "$SYSTEM_PROP" >&2 || true
+     exit 1
+ fi
+ 
+ if [ "$(get_prop "$VENDOR_PROP" ro.product.vendor.device)" != "$TARGET_CODENAME" ] || \
+-        [ "$(get_prop "$VENDOR_PROP" ro.product.vendor.model)" != "$EXPECTED_MODEL" ] || \
+-        [ "$(get_prop "$VENDOR_PROP" ro.product.vendor.name)" != "$EXPECTED_NAME" ] || \
++        [ "$(get_prop "$VENDOR_PROP" ro.product.vendor.model)" != "$PUBLIC_MODEL" ] || \
++        [ "$(get_prop "$VENDOR_PROP" ro.product.vendor.name)" != "$PUBLIC_NAME" ] || \
+         [ "$(get_prop "$VENDOR_PROP" ro.product.board)" != "exynos9810" ] || \
+         [ "$(get_prop "$VENDOR_PROP" ro.board.platform)" != "universal9810" ] || \
+         [ "$(get_prop "$VENDOR_PROP" ro.vendor.build.version.sdk)" != "33" ] || \
+@@ -123,6 +130,11 @@
+     grep -E '^(ro.product.vendor.device|ro.product.vendor.model|ro.product.vendor.name|ro.product.board|ro.board.platform|ro.vendor.build.version.sdk|ro.vendor.api_level|ro.board.api_level|ro.product.first_api_level|ro.board.first_api_level)=' "$VENDOR_PROP" >&2 || true
+     exit 1
+ fi
++if $A376B_M4 && [ "$(get_prop "$VENDOR_PROP" ro.factory.model)" != "$EXPECTED_MODEL" ]; then
++    echo "Exynos9810 boot contract: M4 public identity changed the physical factory model" >&2
++    grep -E '^(ro.product.vendor.model|ro.factory.model)=' "$VENDOR_PROP" >&2 || true
++    exit 1
++fi
+ 
+ case "${TARGET_OS_FILE_SYSTEM_TYPE:-}" in
+     erofs|ext4) ;;
+@@ -269,4 +281,4 @@
+     done
+ fi
+ 
+-echo "Verified Exynos9810 boot contract for ${TARGET_CODENAME}: ${EXPECTED_MODEL}/${EXPECTED_NAME}, ${TARGET_OS_FILE_SYSTEM_TYPE}"
++echo "Verified Exynos9810 boot contract for ${TARGET_CODENAME}: public ${PUBLIC_MODEL}/${PUBLIC_NAME}, hardware ${EXPECTED_MODEL}, ${TARGET_OS_FILE_SYSTEM_TYPE}"
+--- a/scripts/internal/verify_exynos9810_flashable.sh
++++ b/scripts/internal/verify_exynos9810_flashable.sh
+@@ -53,6 +53,42 @@
+     exit 1
+ }
+ 
++if [ "${EXYNOS9810_PREFORMATTED_USERDATA:-false}" = true ]; then
++    unzip -p "$ZIP_FILE" META-INF/com/google/android/updater-script > "$VERIFY_TMP/preformatted-updater"
++    grep -Fq '"/tmp/exynos9810/preflight.sh", "star2lte"' "$VERIFY_TMP/preformatted-updater" &&
++        grep -Fq '"post_install_preserve_data"' "$VERIFY_TMP/preformatted-updater" &&
++        grep -Fq '    post_install_preserve_data)' "$VERIFY_TMP/format_partitions.sh" || {
++        echo "Exynos9810 flashable verification: preformatted-data safeguards missing" >&2
++        exit 1
++    }
++    if grep -Eq 'prepare_layout\.sh|layout_clean|unmount\("/data"\)' "$VERIFY_TMP/preformatted-updater"; then
++        echo "Exynos9810 flashable verification: preformatted installer can repartition or unmount data" >&2
++        exit 1
++    fi
++    sed -n '/^    post_install_preserve_data)/,/^        ;;/p' "$VERIFY_TMP/format_partitions.sh" > "$VERIFY_TMP/preserve-data-case"
++    for partition in cache omr preload; do
++        grep -Fq "format_ext4 $partition " "$VERIFY_TMP/preserve-data-case" || {
++            echo "Exynos9810 flashable verification: missing $partition format in preformatted mode" >&2
++            exit 1
++        }
++    done
++    if grep -Eq 'format_ext4 data |unmount_block|mke2fs|mkfs' "$VERIFY_TMP/preserve-data-case"; then
++        echo "Exynos9810 flashable verification: preformatted mode modifies USERDATA" >&2
++        exit 1
++    fi
++    unzip -p "$ZIP_FILE" exynos9810/preflight.sh > "$VERIFY_TMP/preformatted-preflight"
++    grep -Fxq 'TOLERANCE_MIB=0' "$VERIFY_TMP/preformatted-preflight" || {
++        echo "Exynos9810 flashable verification: preformatted layout size tolerance must be zero" >&2
++        exit 1
++    }
++else
++    unzip -p "$ZIP_FILE" META-INF/com/google/android/updater-script > "$VERIFY_TMP/normal-updater"
++    if grep -Fq '"post_install_preserve_data"' "$VERIFY_TMP/normal-updater"; then
++        echo "Exynos9810 flashable verification: preformatted ZIP requires explicit mode" >&2
++        exit 1
++    fi
++fi
++
+ for UNSAFE_ENTRY in exynos9810/bootlogger-init exynos9810/patch_bootlogger.sh; do
+     if grep -Fxq "$UNSAFE_ENTRY" "$VERIFY_TMP/outer.list"; then
+         echo "Exynos9810 flashable verification: unsafe logger payload present: $UNSAFE_ENTRY" >&2
+--- a/scripts/internal/verify_exynos9810_release_defaults.py
++++ b/scripts/internal/verify_exynos9810_release_defaults.py
+@@ -37,6 +37,10 @@
+     if target not in ("starlte","star2lte","crownlte"): raise RuntimeError("Unsupported target")
+     system=work/"system/system"
+     if os.environ.get("ROM_SOURCE_CONFIG") == "essi_a376b_android17":
++        product_props=(work/"system/product/etc/build.prop").read_text().splitlines()
++        rkp_values=[p for p in product_props if p.startswith("remote_provisioning.tee.rkp_only=")]
++        if rkp_values != ["remote_provisioning.tee.rkp_only=0"]:
++            raise RuntimeError("M4 G965F legacy Keymaster attestation fallback missing or duplicated: "+repr(rkp_values))
+         import subprocess
+         camera_checker=ROOT/"unica/patches/camera/a376b_android17_features.py"
+         subprocess.run([sys.executable,str(camera_checker),"verify-work",str(work)],check=True)
+@@ -96,7 +100,11 @@
+             if z.read("classes3.dex") != load_release_bridge():
+                 raise RuntimeError("Staged face bridge differs from verified source release")
+     props=(system/"build.prop").read_text().splitlines()
+-    required_props = (["persist.sys.unica.pif=true", "persist.sys.unica.keybox=false", "persist.sys.pif.version=20261011"]
++    required_props = (["persist.sys.unica.pif=true", "persist.sys.unica.keybox=false",
++                       "persist.sys.pif.version=20261011",
++                       "persist.sys.pif.fingerprint=google/bluejay_beta/bluejay:CANARY/ZP11.260918.007/16484274:user/release-keys",
++                       "persist.sys.pif.security_patch=2026-10-05",
++                       "persist.sys.pif.first_api_level=32"]
+                       if os.environ.get("ROM_SOURCE_CONFIG") == "essi_a376b_android17"
+                       else ["persist.sys.unica.pif=true", "persist.sys.pif.version=20261011"])
+     if not face_disabled:
+@@ -128,12 +136,14 @@
+             omitted=("unica_bixby_action", "unica_bixby_app", "unica_allow_downgrade",
+                      "unica_allow_sdkbypass", "unica_secure_ss", "unica_ss_detection", "unica_gphotos")
+             if selection == "M4":
+-                omitted += ("unica_asks", "unica_keybox", "unica_keybox_load", "unica_keybox_clear",
+-                            "unica_hma")
++                omitted += ("unica_asks", "unica_hma")
+             for key in omitted:
+                 if any(contains(data,key) for data in compiled_xml):
+                     raise RuntimeError("Unsupported "+selection+" compiled control present: "+key)
+             if selection == "M4":
++                for key in ("unica_keybox", "unica_keybox_load", "unica_keybox_clear"):
++                    if not any(contains(data,key) for data in compiled_xml):
++                        raise RuntimeError("Compiled M4 Keybox control absent: "+key)
+                 for key in ("unica_pif", "unica_pif_update", "unica_pif_custom"):
+                     if not any(contains(data, key) for data in compiled_xml):
+                         raise RuntimeError("Compiled M4 PIF control absent: " + key)
+--- /dev/null
++++ b/scripts/internal/verify_m4_lite_zip32.py
+@@ -0,0 +1,41 @@
++#!/usr/bin/env python3
++"""Reject large, ZIP64, corrupt or incorrectly signed M4 Lite flashables."""
++import importlib.util
++import os
++from pathlib import Path
++import struct
++import sys
++import tempfile
++import zipfile
++
++path = Path(sys.argv[1])
++maximum = int(3.8 * 1024 ** 3)
++if path.stat().st_size > maximum:
++    raise SystemExit(f'M4 Lite ZIP exceeds 3.8 GiB: {path.stat().st_size} > {maximum}')
++with zipfile.ZipFile(path) as archive:
++    for info in archive.infolist():
++        if max(info.file_size, info.compress_size, info.header_offset) >= 2 ** 32 - 1:
++            raise SystemExit(f'ZIP32 size/offset overflow: {info.filename}')
++        if info.extract_version >= 45:
++            raise SystemExit(f'ZIP64 extraction version {info.extract_version}: {info.filename}')
++        extra = info.extra
++        while extra:
++            if len(extra) < 4:
++                raise SystemExit('Truncated ZIP extra field: ' + info.filename)
++            kind, length = struct.unpack_from('<HH', extra)
++            if len(extra) < 4 + length:
++                raise SystemExit('Truncated ZIP extra value: ' + info.filename)
++            if kind == 1:
++                raise SystemExit('ZIP64 extra field: ' + info.filename)
++            extra = extra[4 + length:]
++    bad = archive.testzip()
++    if bad:
++        raise SystemExit('CRC failure: ' + bad)
++spec = importlib.util.spec_from_file_location('legacy_split', Path(__file__).with_name('split_legacy_sideload.py'))
++split = importlib.util.module_from_spec(spec)
++spec.loader.exec_module(split)
++root = Path(os.environ['SRC_DIR'])
++key = 'unica_ota' if os.environ.get('ROM_IS_OFFICIAL') == 'true' else 'aosp_testkey'
++with tempfile.TemporaryDirectory(prefix='m4-lite-signature-') as tmp:
++    split.verify_signature(path, root / 'security' / (key + '.x509.pem'), Path(tmp))
++print('PASS M4 Lite ZIP32 size, entry versions/offsets, CRC and OTA signature:', path.stat().st_size)
+--- a/scripts/internal/verify_m4_runtime_image.py
++++ b/scripts/internal/verify_m4_runtime_image.py
+@@ -38,9 +38,16 @@
+         exact = {
+             "system/bin/cameraserver": (0o755, (0, 2000), "cameraserver_exec"),
+             "system/build.prop": (0o644, (0, 0), "system_file"),
++            "product/etc/build.prop": (0o644, (0, 0), "system_file"),
+             "system/system_ext/etc/build.prop": (0o644, (0, 0), "system_file"),
+             "system/framework/framework-res.apk": (0o644, (0, 0), "system_file"),
++            "system/etc/floating_feature.xml": (0o644, (0, 0), "system_file"),
++            "system/etc/permissions/com.android.nfc_extras.xml": (0o644, (0, 0), "system_file"),
++            "system/etc/permissions/com.samsung.android.nfc.adapter.xml": (0o644, (0, 0), "system_file"),
++            "system/framework/com.android.nfc_extras.jar": (0o644, (0, 0), "system_file"),
++            "system/framework/com.samsung.android.nfc.adapter.jar": (0o644, (0, 0), "system_file"),
+             "system/priv-app/SamsungCamera/SamsungCamera.apk": (0o644, (0, 0), "system_file"),
++            "system/priv-app/Bixby/Bixby.apk": (0o644, (0, 0), "system_file"),
+             "system/framework/services.jar": (0o644, (0, 0), "system_file"),
+             "system/lib64/libaudiobase.so": (0o644, (0, 0), "system_lib_file"),
+             "system/lib64/libaudioclient.so": (0o644, (0, 0), "system_lib_file"),
+@@ -73,6 +80,15 @@
+         return 0o444, (0, 0), "vendor_aconfig_storage_file"
+     if rel in ("etc/passwd", "etc/group", "etc/ueventd.rc"):
+         return 0o644, (0, 0), "vendor_configs_file"
++    if rel in ("etc/init/android.hardware.keymaster@4.0-service.rc",
++               "etc/init/sec.android.hardware.nfc@1.2-service.rc",
++               "etc/vintf/manifest/sec.android.hardware.nfc@1.2-service.xml",
++               "etc/permissions/android.hardware.nfc.xml",
++               "etc/permissions/android.hardware.nfc.hce.xml",
++               "etc/permissions/android.hardware.nfc.hcef.xml",
++               "etc/permissions/android.hardware.nfc.ese.xml",
++               "etc/permissions/android.hardware.nfc.uicc.xml"):
++        return 0o644, (0, 0), "vendor_configs_file"
+     if rel == "etc/selinux/vendor_sepolicy.cil":
+         return 0o644, (0, 0), "vendor_configs_file"
+     if rel == "etc/init/init.debug.rc":
+@@ -89,6 +105,20 @@
+     return result.stdout + result.stderr
+ 
+ 
++def verify_software_keymaster_init(data):
++    """Keep the software service and data directory without touching EFS."""
++    text = data.decode("utf-8")
++    if re.search(r"(^|\s)(/mnt/vendor)?/efs(?:/|\s|$)", text):
++        raise ValueError("M4 software Keymaster 4.0 init still references EFS")
++    for required in (
++        "service vendor.keymaster-4-0 /vendor/bin/hw/android.hardware.keymaster@4.0-service",
++        "interface android.hardware.keymaster@4.0::IKeymasterDevice default",
++        "mkdir /data/vendor/keymaster 0775 system system",
++    ):
++        if required not in text:
++            raise ValueError("M4 software Keymaster init is missing: " + required)
++
++
+ def verify_nfc_apex(work, donor):
+     lock = json.loads(NFC_LOCK.read_text())
+     expected_scope = {
+@@ -190,6 +220,64 @@
+                      "--system-build-prop", str(work / "system/system/build.prop"),
+                      "--system-ext-build-prop", str(work / "system/system/system_ext/etc/build.prop")])
+                 paths.extend(["system/build.prop", "system/system_ext/etc/build.prop"])
++                paths.append("product/etc/build.prop")
++                # Public identity must be A37 in every product partition while
++                # the device codename and factory model remain the S9+ target.
++                public_props = {
++                    work / "system/system/build.prop": {"ro.product.model": "SM-A376B",
++                                                         "ro.product.name": "a37xnaxx",
++                                                         "ro.product.device": "star2lte"},
++                    work / "system/system/system_ext/etc/build.prop": {"ro.product.system_ext.model": "SM-A376B",
++                                                                        "ro.product.system_ext.name": "a37xnaxx",
++                                                                        "ro.product.system_ext.device": "star2lte"},
++                    work / "system/product/etc/build.prop": {"ro.product.product.model": "SM-A376B",
++                                                              "ro.product.product.name": "a37xnaxx",
++                                                              "ro.product.product.device": "star2lte",
++                                                              "remote_provisioning.tee.rkp_only": "0"},
++                    work / "vendor/build.prop": {"ro.product.vendor.model": "SM-A376B"},
++                    work / "odm/etc/build.prop": {"ro.product.odm.model": "SM-A376B",
++                                                   "ro.product.odm.name": "a37xnaxx",
++                                                   "ro.product.odm.device": "star2lte"},
++                }
++                for prop_file, expected_props in public_props.items():
++                    if not prop_file.is_file():
++                        raise ValueError("M4 public identity input missing: " + str(prop_file))
++                    contents = prop_file.read_text()
++                    for key, expected in expected_props.items():
++                        values = re.findall(r"(?m)^" + re.escape(key) + r"=(.*)$", contents)
++                        if values != [expected]:
++                            raise ValueError("M4 public identity mismatch for " + key + ": " + repr(values))
++                factory_values = re.findall(r"(?m)^ro.factory.model=(.*)$", (work / "vendor/build.prop").read_text())
++                if factory_values != ["SM-G965F"]:
++                    raise ValueError("M4 physical factory model must remain SM-G965F")
++                for feature_file in (work / "system/system/etc/floating_feature.xml",
++                                     work / "vendor/etc/floating_feature.xml"):
++                    if not feature_file.is_file() or "<SEC_FLOATING_FEATURE_SETTINGS_CONFIG_BRAND_NAME>Galaxy A37 5G</SEC_FLOATING_FEATURE_SETTINGS_CONFIG_BRAND_NAME>" not in feature_file.read_text():
++                        raise ValueError("M4 Settings brand is not Galaxy A37 5G in " + str(feature_file))
++                    if "<SEC_FLOATING_FEATURE_COMMON_SUPPORT_BIXBY>TRUE</SEC_FLOATING_FEATURE_COMMON_SUPPORT_BIXBY>" not in feature_file.read_text():
++                        raise ValueError("M4 Samsung Bixby compatibility declaration missing in " + str(feature_file))
++                # Keep store compatibility contracts intact even though NFC RF
++                # and Bixby function porting are deferred.
++                for rel in ("etc/permissions/android.hardware.nfc.xml",
++                            "etc/permissions/android.hardware.nfc.hce.xml",
++                            "etc/permissions/android.hardware.nfc.hcef.xml",
++                            "etc/permissions/android.hardware.nfc.ese.xml",
++                            "etc/permissions/android.hardware.nfc.uicc.xml"):
++                    feature_file = work / "vendor" / rel
++                    if not feature_file.is_file() or "<feature name=\"android.hardware.nfc" not in feature_file.read_text():
++                        raise ValueError("M4 NFC Play feature declaration missing: " + str(feature_file))
++                bixby = work / "system/system/priv-app/Bixby/Bixby.apk"
++                if not bixby.is_file() or hashlib.sha256(bixby.read_bytes()).hexdigest() != "ae7457936ef7d07935293c724c91e22cd5058cff9107e21dd63928dbda312f95":
++                    raise ValueError("M4 signed donor Bixby package missing or changed")
++                for rel in ("etc/permissions/com.android.nfc_extras.xml",
++                            "etc/permissions/com.samsung.android.nfc.adapter.xml",
++                            "framework/com.android.nfc_extras.jar",
++                            "framework/com.samsung.android.nfc.adapter.jar"):
++                    contract = work / "system/system" / rel
++                    if not contract.is_file():
++                        raise ValueError("M4 NFC shared-library contract missing: " + str(contract))
++                    paths.append("system/" + rel)
++                paths.extend(["system/priv-app/Bixby/Bixby.apk", "system/etc/floating_feature.xml"])
+             if os.environ.get("EXYNOS9810_M4_RUNTIME_COMPAT") != "true":
+                 raise ValueError("M4 KG30 image verification requires the reviewed runtime profile")
+             kg30_jar_rel = "system/framework/services.jar"
+@@ -249,7 +337,10 @@
+             run(["python3", str(THERMAL_HELPER), "verify", "--work-dir", str(work)])
+         paths = ["etc/passwd", "etc/group", "etc/ueventd.rc", "etc/selinux/vendor_sepolicy.cil",
+                  "etc/init/hw/init.samsungexynos9810.rc",
+-                 "etc/init/init.samsungexynos9810.rc", "etc/aconfig"]
++                 "etc/init/init.samsungexynos9810.rc",
++                 "etc/init/android.hardware.keymaster@4.0-service.rc", "etc/aconfig"]
++        verify_software_keymaster_init(
++            (work / "vendor/etc/init/android.hardware.keymaster@4.0-service.rc").read_bytes())
+         paths += ["etc/aconfig/" + name for name in ("package.map", "flag.map", "flag.val", "flag.info")]
+         if os.environ.get("EXYNOS9810_ENABLE_INIT_DEBUG", "false") == "true":
+             paths += ["etc/init/init.debug.rc", "bin/init_debug_log.sh"]
+@@ -261,6 +352,27 @@
+                     raise ValueError("Missing M4 CACHE logger trigger/service: " + marker)
+             if "OUT=/cache/unica" not in logger:
+                 raise ValueError("M4 CACHE logger output changed")
++        if os.environ.get("ROM_SOURCE_CONFIG") == "essi_a376b_android17" and \
++                os.environ.get("STAR2LTE_BUILD_MODEL") == "SM-G965F":
++            nfc_init = work / "vendor/etc/init/sec.android.hardware.nfc@1.2-service.rc"
++            nfc_vintf = work / "vendor/etc/vintf/manifest/sec.android.hardware.nfc@1.2-service.xml"
++            if not nfc_init.is_file() or not nfc_vintf.is_file():
++                raise ValueError("M4 Exynos9810 NFC HAL init/VINTF compatibility contract missing")
++            for rel in ("etc/permissions/android.hardware.nfc.xml",
++                        "etc/permissions/android.hardware.nfc.hce.xml",
++                        "etc/permissions/android.hardware.nfc.hcef.xml",
++                        "etc/permissions/android.hardware.nfc.ese.xml",
++                        "etc/permissions/android.hardware.nfc.uicc.xml"):
++                feature = work / "vendor" / rel
++                if not feature.is_file() or "<feature name=\"android.hardware.nfc" not in feature.read_text():
++                    raise ValueError("M4 NFC Play feature declaration missing: " + str(feature))
++            paths.extend(["etc/init/sec.android.hardware.nfc@1.2-service.rc",
++                          "etc/vintf/manifest/sec.android.hardware.nfc@1.2-service.xml"])
++            paths.extend(["etc/permissions/android.hardware.nfc.xml",
++                          "etc/permissions/android.hardware.nfc.hce.xml",
++                          "etc/permissions/android.hardware.nfc.hcef.xml",
++                          "etc/permissions/android.hardware.nfc.ese.xml",
++                          "etc/permissions/android.hardware.nfc.uicc.xml"])
+     else:
+         return
+     checks = []
+--- a/scripts/make_rom.sh
++++ b/scripts/make_rom.sh
+@@ -59,6 +59,7 @@
+         "m4_fixed=${STAR2LTE_M4_FIXED_RESOLUTION:-false}" \
+         "m4_wifi_ui=${STAR2LTE_M4_KEEP_DONOR_WIFI_UI:-false}" \
+         "m4_boot_limits=${STAR2LTE_M4_BOOT_LIMITS:-false}" \
++        "m4_lite=${EXYNOS9810_M4_LITE:-false}" \
+         "kernel=${EXYNOS9810_EXPECTED_KERNEL_SHA256:-default}" \
+         "metadata=${EXYNOS9810_ENABLE_METADATA_BIND:-false}" \
+         "init_debug=${EXYNOS9810_ENABLE_INIT_DEBUG:-false}" \
+@@ -360,6 +361,19 @@
+         LOG_STEP_OUT
+     fi
+ 
++    # Lite is applied only after the normal compiled wallpaper payload passed
++    # its full verification. Keep the Full profile and its payload immutable.
++    if [ "${EXYNOS9810_M4_LITE:-false}" = "true" ]; then
++        [ "$TARGET_CODENAME" = star2lte ] && [ "${ROM_MILESTONE:-}" = M4 ] && \
++            [ "${ROM_SOURCE_CONFIG:-}" = essi_a376b_android17 ] && \
++            [ "${STAR2LTE_BUILD_MODEL:-}" = SM-G965F ] || {
++                LOGE "M4 Lite is reviewed only for A376B17/G965F/star2lte"; exit 1;
++            }
++        LOG_STEP_IN true "Preparing verified M4 Lite payload"
++        source "$SRC_DIR/unica/mods/s9_infinity_Wallpaper/source/apply_m4_lite.sh" || exit 1
++        LOG_STEP_OUT
++    fi
++
+     # A decoded SystemUI source patch is not enough: resume builds can retain
+     # stale APKs and fail to show Brief pop-ups with no build-time error.
+     # Check the *compiled*, signed output, never install a diagnostic APK.
+@@ -484,6 +498,7 @@
+         [ ! -f "$WORK_DIR/$BUILD_MARKER" ] || cp "$WORK_DIR/$BUILD_MARKER" "$ARTIFACT_DIR/$BUILD_MARKER.source-hash" || exit 1
+     done
+     printf '%s\n' "${ROM_MILESTONE:-unclassified}" > "$ARTIFACT_DIR/milestone.txt"
++    printf '%s\n' "${EXYNOS9810_M4_LITE:-false}" > "$ARTIFACT_DIR/m4-lite.txt"
+ 
+     if [ ! -f "$ARTIFACT_DIR/$ZIP_FILE_NAME" ]; then
+         LOG_STEP_IN true "Creating target-files zip"
+@@ -497,6 +512,13 @@
+         LOG_STEP_IN true "Creating flashable zip"
+         "$SRC_DIR/scripts/build_flashable_zip.sh" "$ARTIFACT_DIR/$ZIP_FILE_NAME" || exit 1
+         LOG_STEP_OUT
++        if [ "${EXYNOS9810_M4_LITE:-false}" = "true" ]; then
++            LITE_ZIPS=("$ARTIFACT_DIR"/*-Lite-sign.zip)
++            [ "${#LITE_ZIPS[@]}" = 1 ] && [ -f "${LITE_ZIPS[0]}" ] || {
++                LOGE "Expected one signed M4 Lite ZIP"; exit 1;
++            }
++            python3 "$SRC_DIR/scripts/internal/verify_m4_lite_zip32.py" "${LITE_ZIPS[0]}" || exit 1
++        fi
+     fi
+     (cd "$ARTIFACT_DIR" && sha256sum -- *.zip > SHA256SUMS) || exit 1
+     chmod a-w "$ARTIFACT_DIR"/*.zip "$ARTIFACT_DIR/SHA256SUMS" || exit 1
+--- /dev/null
++++ b/target/star2lte/profiles/m4-g965f-a376b-android17-lite.sh
+@@ -0,0 +1,5 @@
++#!/usr/bin/env bash
++# M4 Lite inherits the previously booted BZI6/diagnostic-kernel profile.
++# Scope, removals, tests and rollback: docs/m4-lite-removal-analysis-20261103.md.
++source "$(dirname -- "${BASH_SOURCE[0]}")/m4-g965f-a376b-android17-runtime-init-debug.sh" || return 1
++export EXYNOS9810_M4_LITE=true
+--- /dev/null
++++ b/unica/mods/keybox/a376b_android17_ec_only.py
+@@ -0,0 +1,158 @@
++#!/usr/bin/env python3
++"""M4/G965F EC-only keybox adapter; no key material is read or generated.
++
++Reason: the fork requires RSA+EC even when a complete EC chain is provided.
++Files: staged SecSettings KeyboxUtils and staged framework provider/hooks.
++Verification: root pin remains in Settings; RSA requests without an RSA key
++return null before mutation, invoking the original keystore proxy fallback.
++"""
++import re
++import sys
++from pathlib import Path
++
++
++def replace_once(text, old, new):
++    if text.count(old) != 1:
++        raise RuntimeError('Expected exactly one reviewed smali anchor')
++    return text.replace(old, new, 1)
++
++
++def settings(root):
++    path = root / 'smali_classes4/io/mesalabs/unica/settings/keybox/KeyboxUtils.smali'
++    text = path.read_text()
++    old = '''    :cond_a
++    move v5, v9
++
++    move/from16 v20, v12
++
++    move/from16 v21, v13
++
++    if-ne v11, v5, :cond_f
++'''
++    new = '''    :cond_a
++    move v5, v9
++
++    move/from16 v20, v12
++
++    move/from16 v21, v13
++
++    # EC-only: duplicate the EC chain only in this validation local, so the
++    # existing root-pin check still examines it. Stored XML remains unchanged.
++    if-eqz v20, :ec_only_validation_done
++
++    if-eqz v21, :ec_only_validation_done
++
++    if-nez v14, :ec_only_validation_done
++
++    if-nez v15, :ec_only_validation_done
++
++    invoke-virtual {v0}, Ljava/util/ArrayList;->isEmpty()Z
++
++    move-result v6
++
++    if-nez v6, :ec_only_validation_done
++
++    invoke-virtual {v4}, Ljava/util/ArrayList;->isEmpty()Z
++
++    move-result v6
++
++    if-eqz v6, :ec_only_validation_done
++
++    invoke-virtual {v4, v0}, Ljava/util/ArrayList;->addAll(Ljava/util/Collection;)Z
++
++    const/4 v14, 0x1
++
++    const/4 v15, 0x1
++
++    :ec_only_validation_done
++    if-ne v11, v5, :cond_f
++'''
++    path.write_text(replace_once(text, old, new))
++
++
++def framework(root):
++    directory = root / 'smali_classes6/io/mesalabs/unica'
++    path = directory / 'KeyProviderManager$DefaultKeyboxProvider.smali'
++    text = path.read_text()
++    match = re.search(r'(?ms)^\.method public blacklist hasKeybox\(\)Z\n.*?^\.end method$', text)
++    if not match or 'RSA.CERT_1' not in match.group() or 'EC.CERT_1' not in match.group():
++        raise RuntimeError('Unexpected provider method')
++    body = '''.method public blacklist hasKeybox()Z
++    .locals 2
++
++    iget-object v0, p0, Lio/mesalabs/unica/KeyProviderManager$DefaultKeyboxProvider;->keyboxData:Ljava/util/Map;
++
++    const-string v1, "EC.PRIV"
++
++    invoke-interface {v0, v1}, Ljava/util/Map;->containsKey(Ljava/lang/Object;)Z
++
++    move-result v0
++
++    if-eqz v0, :ec_absent
++
++    iget-object v0, p0, Lio/mesalabs/unica/KeyProviderManager$DefaultKeyboxProvider;->keyboxData:Ljava/util/Map;
++
++    const-string v1, "EC.CERT_1"
++
++    invoke-interface {v0, v1}, Ljava/util/Map;->containsKey(Ljava/lang/Object;)Z
++
++    move-result v0
++
++    return v0
++
++    :ec_absent
++    const/4 v0, 0x0
++
++    return v0
++.end method'''
++    path.write_text(text[:match.start()] + body + text[match.end():])
++    path = directory / 'KeyboxImitationHooks.smali'
++    text = path.read_text()
++    for name, label, reg in [('onGenerateKey', ':cond_4', 'p2'), ('onImportKey', ':cond_3', 'p1')]:
++        match = re.search(r'(?ms)^\.method public static blacklist ' + name + r'\(.*?^\.end method$', text)
++        if not match:
++            raise RuntimeError('Missing hook ' + name)
++        body = match.group()
++        anchor = '    ' + label + '\n'
++        addition = '''    {label}
++    # Unsupported RSA must reach the original keystore before any DB mutation.
++    if-ne {reg}, v4, :ec_only_rsa_guard_done
++
++    invoke-static {{}}, Lio/mesalabs/unica/KeyProviderManager;->getProvider()Lio/mesalabs/unica/IKeyboxProvider;
++
++    move-result-object v5
++
++    invoke-interface {{v5}}, Lio/mesalabs/unica/IKeyboxProvider;->getRsaPrivateKey()Ljava/lang/String;
++
++    move-result-object v5
++
++    if-eqz v5, :ec_only_rsa_missing
++
++    invoke-static {{}}, Lio/mesalabs/unica/KeyProviderManager;->getProvider()Lio/mesalabs/unica/IKeyboxProvider;
++
++    move-result-object v5
++
++    invoke-interface {{v5}}, Lio/mesalabs/unica/IKeyboxProvider;->getRsaCertificateChain()[Ljava/lang/String;
++
++    move-result-object v5
++
++    if-eqz v5, :ec_only_rsa_missing
++
++    array-length v5, v5
++
++    if-nez v5, :ec_only_rsa_guard_done
++
++    :ec_only_rsa_missing
++    return-object v2
++
++    :ec_only_rsa_guard_done
++'''.format(label=label, reg=reg)
++        body = replace_once(body, anchor, addition)
++        text = text[:match.start()] + body + text[match.end():]
++    path.write_text(text)
++
++
++if __name__ == '__main__':
++    if len(sys.argv) != 3 or sys.argv[1] not in ('settings', 'framework'):
++        raise SystemExit('usage: a376b_android17_ec_only.py settings|framework DIR')
++    globals()[sys.argv[1]](Path(sys.argv[2]))
+--- /dev/null
++++ b/unica/mods/keybox/a376b_android17_keybox.py
+@@ -0,0 +1,300 @@
++#!/usr/bin/env python3
++"""Port existing UN1CA Keybox hooks to the locked BZI6 M4 framework.
++
++Reason: BZI6 moved two Keystore2 proxies and KeymasterUtils into different
++DEX files; its service proxy also needs method-locked insertion to avoid donor
++label collisions. Impact: staged framework.jar Smali plus this build adapter,
++only for the reviewed M4/G965F profile. Verify: exact donor method hashes,
++zero-fuzz patch replay, hook descriptors and compiled framework call sites.
++Rollback: remove this adapter dispatch and restore the pre-port framework and
++Settings source. This file contains no key material.
++"""
++from hashlib import sha256
++from pathlib import Path
++import importlib.util
++import os
++import re
++import shutil
++import subprocess
++import sys
++import tempfile
++
++HERE = Path(__file__).resolve().parent
++SPEC = importlib.util.spec_from_file_location(
++    "bzi6_product", HERE.parent.parent / "patches/product_feature/a376b_android17_product.py")
++PRODUCT = importlib.util.module_from_spec(SPEC)
++SPEC.loader.exec_module(PRODUCT)
++
++HOOK_PATCH = HERE / "smali/system/framework/framework.jar/0001-Introduce-KeyboxImitationHooks.patch"
++MGF_PATCH = HERE / "smali/system/framework/framework.jar/0002-Disable-MGF-digest-param-omit.patch"
++FRAMEWORK_REL = Path("system/framework/framework.jar")
++SERVICE_PROXY = "android/system/keystore2/IKeystoreService$Stub$Proxy"
++SECURITY_PROXY = "android/system/keystore2/IKeystoreSecurityLevel$Stub$Proxy"
++KEYSTORE2 = "android/security/KeyStore2"
++EC_MAPPINGS = "com/android/internal/org/bouncycastle/jcajce/provider/asymmetric/EC$Mappings"
++KEYMASTER_UTILS = "android/security/keystore2/KeymasterUtils"
++HOOKS = "io/mesalabs/unica/KeyboxImitationHooks"
++KEYBOX_CLASSES = (
++    "IKeyboxProvider", "KeyProviderManager$DefaultKeyboxProvider", "KeyProviderManager-IA",
++    "KeyProviderManager", "KeyboxChainGenerator$Digest", "KeyboxChainGenerator$KeyGenParameters",
++    "KeyboxChainGenerator", "KeyboxDbHelper", "KeyboxImitationHooks$1", "KeyboxImitationHooks",
++    "KeyboxOperationUtils$BaseOperation", "KeyboxOperationUtils$DecryptOperation",
++    "KeyboxOperationUtils$KeyAgreementOperation", "KeyboxOperationUtils$SignOperation",
++    "KeyboxOperationUtils", "KeyboxUtils$$ExternalSyntheticLambda0", "KeyboxUtils",
++)
++
++# Exact BZI6 donor method hashes measured before adding Keybox hooks.
++SERVICE_METHODS = {
++    "deleteKey(Landroid/system/keystore2/KeyDescriptor;)V":
++        ("f3ab7b4a21acda6a957de4222b77b9de2c743c2af85c9219f3262d6a6af5e1e2", "void",
++         "onDeleteKey(Landroid/system/keystore2/KeyDescriptor;)Z", "p1"),
++    "getKeyEntry(Landroid/system/keystore2/KeyDescriptor;)Landroid/system/keystore2/KeyEntryResponse;":
++        ("7e3610ef0e4c287c0c952c8bff0210b52211c1afeaa173b97205cdde917e88a6", "object",
++         "onGetKeyEntry(Landroid/system/keystore2/KeyDescriptor;)Landroid/system/keystore2/KeyEntryResponse;", "p1"),
++    "getNumberOfEntries(IJ)I":
++        ("55097739029ffd7dd59e59f06a5d2c75c05e068ad1cb1fb15283de7369321245", "integer",
++         "onGetNumberOfEntries(I)Ljava/lang/Integer;", "p1"),
++    "grant(Landroid/system/keystore2/KeyDescriptor;II)Landroid/system/keystore2/KeyDescriptor;":
++        ("69bb47871e4da8e4d8f86b2e59440a547a1d3d8295186adb76bb6a064f2ac284", "object",
++         "onGrant(Landroid/system/keystore2/KeyDescriptor;II)Landroid/system/keystore2/KeyDescriptor;", "p1, p2, p3"),
++    "listEntries(IJ)[Landroid/system/keystore2/KeyDescriptor;":
++        ("64dd1bbdf200b22b48c68e6a1dcf3753653ba627a9fa6b5e2d892e7c76b13fcf", "object",
++         "onListEntries(I)[Landroid/system/keystore2/KeyDescriptor;", "p1"),
++    "listEntriesBatched(IJLjava/lang/String;)[Landroid/system/keystore2/KeyDescriptor;":
++        ("7c06c85ad0596052a5f61750eb957ae492317e5894b906b354f854877dd87027", "object",
++         "onListEntriesBatched(ILjava/lang/String;)[Landroid/system/keystore2/KeyDescriptor;", "p1, p4"),
++    "ungrant(Landroid/system/keystore2/KeyDescriptor;I)V":
++        ("5a90f9015cd2b9908f9e0391e410c0553dd312bb91442496ba42506d6ef57edd", "void",
++         "onUngrant(Landroid/system/keystore2/KeyDescriptor;I)Z", "p1, p2"),
++    "updateSubcomponent(Landroid/system/keystore2/KeyDescriptor;[B[B)V":
++        ("138ffd56e6cc9a8bc20c4d04023879f22f3d20125ca44b54ee5443aa79e5256b", "void",
++         "onUpdateSubcomponent(Landroid/system/keystore2/KeyDescriptor;[B[B)Z", "p1, p2, p3"),
++}
++SECURITY_METHODS = {
++    "createOperation(Landroid/system/keystore2/KeyDescriptor;[Landroid/hardware/security/keymint/KeyParameter;Z)Landroid/system/keystore2/CreateOperationResponse;":
++        "onCreateOperation(Landroid/system/keystore2/KeyDescriptor;[Landroid/hardware/security/keymint/KeyParameter;)Landroid/system/keystore2/CreateOperationResponse;",
++    "deleteKey(Landroid/system/keystore2/KeyDescriptor;)V": "onDeleteKey(Landroid/system/keystore2/KeyDescriptor;)Z",
++    "generateKey(Landroid/system/keystore2/KeyDescriptor;Landroid/system/keystore2/KeyDescriptor;[Landroid/hardware/security/keymint/KeyParameter;I[B)Landroid/system/keystore2/KeyMetadata;":
++        "onGenerateKey(Landroid/system/keystore2/KeyDescriptor;Landroid/system/keystore2/KeyDescriptor;[Landroid/hardware/security/keymint/KeyParameter;)Landroid/system/keystore2/KeyMetadata;",
++    "importKey(Landroid/system/keystore2/KeyDescriptor;Landroid/system/keystore2/KeyDescriptor;[Landroid/hardware/security/keymint/KeyParameter;I[B)Landroid/system/keystore2/KeyMetadata;":
++        "onImportKey(Landroid/system/keystore2/KeyDescriptor;[Landroid/hardware/security/keymint/KeyParameter;[B)Landroid/system/keystore2/KeyMetadata;",
++}
++
++
++def scope():
++    PRODUCT.scope()
++
++
++def exact_class(root, descriptor, rel):
++    matches = list(root.glob("smali*/" + descriptor + ".smali"))
++    if len(matches) != 1 or matches[0].relative_to(root).as_posix() != rel:
++        raise RuntimeError("Unreviewed BZI6 DEX location for " + descriptor)
++    return matches[0]
++
++
++def first_instruction_offset(body):
++    offset = 0
++    annotation_depth = 0
++    for line in body.splitlines(keepends=True):
++        value = line.strip()
++        if value.startswith(".annotation"):
++            annotation_depth += 1
++        elif value == ".end annotation":
++            annotation_depth -= 1
++        elif annotation_depth == 0 and value and not value.startswith((
++                ".method", ".locals", ".registers", ".param", ".prologue", ".line",
++                ".local", ".end local", ".restart local", ".catch", ".catchall",
++                ".end method", "#")):
++            return offset
++        offset += len(line)
++    raise RuntimeError("Could not find BZI6 Keystore2 method entry")
++
++
++def inject_service_hooks(text):
++    if "L" + HOOKS + ";" in text:
++        raise RuntimeError("Keybox hooks already exist in BZI6 service proxy")
++    for index, (signature, (digest, kind, hook, registers)) in enumerate(SERVICE_METHODS.items()):
++        match = PRODUCT.method(text, signature)
++        body = match.group()
++        if sha256(body.encode()).hexdigest() != digest:
++            raise RuntimeError("Unreviewed BZI6 service proxy method: " + signature)
++        locals_match = re.search(r"(?m)^\s*\.locals\s+(\d+)\s*$", body)
++        if not locals_match or int(locals_match.group(1)) < 1 or "->asBinder()Landroid/os/IBinder;" not in body:
++            raise RuntimeError("BZI6 donor fallback/register layout changed: " + signature)
++        label = ":unica_keybox_fallback_" + str(index)
++        block = ["    invoke-static {" + registers + "}, L" + HOOKS + ";->" + hook]
++        if kind == "void":
++            block += ["", "    move-result v0", "", "    if-eqz v0, " + label,
++                      "", "    return-void", "", "    " + label]
++        elif kind == "object":
++            block += ["", "    move-result-object v0", "", "    if-eqz v0, " + label,
++                      "", "    return-object v0", "", "    " + label]
++        else:
++            block += ["", "    move-result-object v0", "", "    if-eqz v0, " + label,
++                      "", "    invoke-virtual {v0}, Ljava/lang/Integer;->intValue()I",
++                      "", "    move-result p0", "", "    return p0", "", "    " + label]
++        at = first_instruction_offset(body)
++        patched = body[:at] + "\n".join(block) + "\n\n" + body[at:]
++        if patched.count("L" + HOOKS + ";->" + hook) != 1 or "->asBinder()Landroid/os/IBinder;" not in patched:
++            raise RuntimeError("BZI6 hook/fallback pair incomplete: " + signature)
++        text = text[:match.start()] + patched + text[match.end():]
++    return text
++
++
++def mapped_patch(text, omit_service=False):
++    starts = [m.start() for m in re.finditer(r"(?m)^diff --git ", text)]
++    sections = [text[a:b] for a, b in zip(starts, starts[1:] + [len(text)])]
++    output = []
++    for section in sections:
++        header = re.match(r"diff --git a/(.+) b/(.+)\n", section)
++        if not header:
++            raise RuntimeError("Malformed upstream Keybox patch section")
++        old_path = header.group(1)
++        if omit_service and SERVICE_PROXY + ".smali" in old_path:
++            continue
++        if SECURITY_PROXY + ".smali" in old_path:
++            section = section.replace("smali_classes3/" + SECURITY_PROXY,
++                                      "smali_classes4/" + SECURITY_PROXY)
++        output.append(section)
++    return "".join(output)
++
++
++def run_patch(root, patch_text, name):
++    result = subprocess.run(
++        ["patch", "--batch", "--forward", "--fuzz=0", "--no-backup-if-mismatch", "-p1"],
++        input=patch_text, text=True, capture_output=True, cwd=root)
++    if result.returncode or list(root.rglob("*.rej")):
++        raise RuntimeError(name + " failed with zero fuzz:\n" + (result.stdout + result.stderr)[-6000:])
++
++
++def verify_staged(root):
++    service = (root / "smali_classes4/" / (SERVICE_PROXY + ".smali")).read_text()
++    for sig, (_, _, hook, _) in SERVICE_METHODS.items():
++        body = PRODUCT.method(service, sig).group()
++        if body.count("L" + HOOKS + ";->" + hook) != 1 or "->asBinder()Landroid/os/IBinder;" not in body:
++            raise RuntimeError("BZI6 service proxy hook/fallback missing: " + sig)
++    security = (root / "smali_classes4/" / (SECURITY_PROXY + ".smali")).read_text()
++    for sig, hook in SECURITY_METHODS.items():
++        body = PRODUCT.method(security, sig).group()
++        if body.count("L" + HOOKS + ";->" + hook) != 1 or "->asBinder()Landroid/os/IBinder;" not in body:
++            raise RuntimeError("BZI6 security proxy hook/fallback missing: " + sig)
++    hooks = (root / "smali_classes6/io/mesalabs/unica/KeyboxImitationHooks.smali").read_text()
++    PRODUCT.method(hooks, "onGetNumberOfEntries(I)Ljava/lang/Integer;")
++    manager = (root / "smali_classes6/io/mesalabs/unica/KeyProviderManager.smali").read_text()
++    PRODUCT.method(manager, "isKeyboxAvailable()Z")
++    provider = (root / "smali_classes6/io/mesalabs/unica/KeyProviderManager$DefaultKeyboxProvider.smali").read_text()
++    PRODUCT.method(provider, "hasKeybox()Z")
++    key_store = PRODUCT.method((root / "smali_classes3/android/security/KeyStore2.smali").read_text(),
++        "lambda$getSecurityLevel$6(ILandroid/system/keystore2/IKeystoreService;)Landroid/security/KeyStoreSecurityLevel;").group()
++    if "L" + HOOKS + ";->setSecurityLevel(Landroid/system/keystore2/IKeystoreSecurityLevel;I)V" not in key_store:
++        raise RuntimeError("BZI6 KeyStore2 security-level bridge absent")
++    if "KeyParameterValue;->origin(I)Landroid/hardware/security/keymint/KeyParameterValue;" not in hooks:
++        raise RuntimeError("BZI6 Keybox ORIGIN union adaptation absent")
++    keymaster = PRODUCT.method((root / "smali_classes2/" / (KEYMASTER_UTILS + ".smali")).read_text(),
++                               "isKeyMintDevice(I)Z").group()
++    if '"persist.sys.unica.keybox"' not in keymaster or "SemSystemProperties;->getBoolean" not in keymaster:
++        raise RuntimeError("BZI6 MGF/KeyMint compatibility adaptation absent")
++    for cls in KEYBOX_CLASSES:
++        if not (root / "smali_classes6/io/mesalabs/unica/" / (cls + ".smali")).is_file():
++            raise RuntimeError("BZI6 Keybox helper missing: " + cls)
++
++
++def stage(apktool):
++    scope()
++    framework = apktool / FRAMEWORK_REL
++    source_map = {
++        "smali_classes3/android/security/KeyStore2.smali": KEYSTORE2,
++        "smali_classes4/" + SECURITY_PROXY + ".smali": SECURITY_PROXY,
++        "smali_classes4/" + SERVICE_PROXY + ".smali": SERVICE_PROXY,
++        "smali_classes5/" + EC_MAPPINGS + ".smali": EC_MAPPINGS,
++        "smali_classes2/" + KEYMASTER_UTILS + ".smali": KEYMASTER_UTILS,
++    }
++    originals = {}
++    for rel, descriptor in source_map.items():
++        originals[rel] = exact_class(framework, descriptor, rel).read_bytes()
++    new_files = ["smali_classes6/io/mesalabs/unica/" + cls + ".smali" for cls in KEYBOX_CLASSES]
++    if any((framework / rel).exists() for rel in new_files):
++        raise RuntimeError("Stale BZI6 Keybox helper output already exists")
++
++    hook_text = mapped_patch(HOOK_PATCH.read_text(), omit_service=True)
++    mgf_text = MGF_PATCH.read_text().replace(
++        "smali_classes3/" + KEYMASTER_UTILS + ".smali",
++        "smali_classes2/" + KEYMASTER_UTILS + ".smali")
++    with tempfile.TemporaryDirectory(prefix="bzi6-keybox-stage-") as tmp:
++        root = Path(tmp)
++        for rel, content in originals.items():
++            destination = root / rel
++            destination.parent.mkdir(parents=True, exist_ok=True)
++            destination.write_bytes(content)
++        run_patch(root, hook_text, "UN1CA Keybox patch")
++        run_patch(root, mgf_text, "UN1CA Keybox MGF patch")
++        subprocess.run([sys.executable, str(HERE / "a376b_android17_ec_only.py"),
++                        "framework", str(root)], check=True)
++        service_path = root / ("smali_classes4/" + SERVICE_PROXY + ".smali")
++        service_path.write_text(inject_service_hooks(service_path.read_text()))
++        verify_staged(root)
++        for rel, content in originals.items():
++            if (framework / rel).read_bytes() != content:
++                raise RuntimeError("BZI6 framework changed during staging: " + rel)
++        if any((framework / rel).exists() for rel in new_files):
++            raise RuntimeError("BZI6 Keybox helpers appeared during staging")
++        changed = []
++        for path in sorted(root.rglob("*.smali")):
++            rel = path.relative_to(root)
++            destination = framework / rel
++            destination.parent.mkdir(parents=True, exist_ok=True)
++            temporary = destination.with_name(destination.name + ".keybox-stage-tmp")
++            shutil.copyfile(path, temporary)
++            shutil.copymode(path, temporary)
++            os.replace(temporary, destination)
++            changed.append(rel.as_posix())
++    print("PASS BZI6 Keybox source port: zero-fuzz patch replay, 8 service methods, "
++          "Keystore2 helpers, DEX remaps; staged " + str(len(changed)) + " files")
++
++
++def verify_compiled(work, tools):
++    scope()
++    framework = work / "system/system/framework/framework.jar"
++    service = PRODUCT.compiled_class(framework, SERVICE_PROXY, tools)
++    for sig, (_, _, hook, _) in SERVICE_METHODS.items():
++        body = PRODUCT.method(service, sig).group()
++        if body.count("L" + HOOKS + ";->" + hook) != 1 or "->asBinder()Landroid/os/IBinder;" not in body:
++            raise RuntimeError("Compiled BZI6 service proxy hook/fallback missing: " + sig)
++    security = PRODUCT.compiled_class(framework, SECURITY_PROXY, tools)
++    for sig, hook in SECURITY_METHODS.items():
++        body = PRODUCT.method(security, sig).group()
++        if body.count("L" + HOOKS + ";->" + hook) != 1 or "->asBinder()Landroid/os/IBinder;" not in body:
++            raise RuntimeError("Compiled BZI6 security proxy hook/fallback missing: " + sig)
++    hooks = PRODUCT.compiled_class(framework, HOOKS, tools)
++    for sig in (
++        'onGenerateKey(Landroid/system/keystore2/KeyDescriptor;Landroid/system/keystore2/KeyDescriptor;[Landroid/hardware/security/keymint/KeyParameter;)Landroid/system/keystore2/KeyMetadata;',
++        'onImportKey(Landroid/system/keystore2/KeyDescriptor;[Landroid/hardware/security/keymint/KeyParameter;[B)Landroid/system/keystore2/KeyMetadata;',
++    ):
++        body = PRODUCT.method(hooks, sig).group()
++        for required in ('->getRsaPrivateKey()', '->getRsaCertificateChain()', 'return-object'):
++            if required not in body:
++                raise RuntimeError('Compiled EC-only RSA fallback missing: ' + sig)
++    PRODUCT.compiled_class(framework, "io/mesalabs/unica/KeyProviderManager", tools)
++    provider = PRODUCT.compiled_class(framework, "io/mesalabs/unica/KeyProviderManager$DefaultKeyboxProvider", tools)
++    availability = PRODUCT.method(provider, 'hasKeybox()Z').group()
++    if 'EC.PRIV' not in availability or 'EC.CERT_1' not in availability or 'RSA.PRIV' in availability:
++        raise RuntimeError('Compiled EC-only provider check differs')
++    settings = work / 'system/system/priv-app/SecSettings/SecSettings.apk'
++    validator = PRODUCT.compiled_class(settings, 'io/mesalabs/unica/settings/keybox/KeyboxUtils', tools)
++    validator = PRODUCT.method(validator, 'validateXml(Landroid/content/Context;Ljava/lang/String;)Z').group()
++    if 'Ljava/util/ArrayList;->addAll(Ljava/util/Collection;)Z' not in validator:
++        raise RuntimeError('Compiled EC-only Settings validation path absent')
++    keymaster = PRODUCT.compiled_class(framework, KEYMASTER_UTILS, tools)
++    body = PRODUCT.method(keymaster, "isKeyMintDevice(I)Z").group()
++    if '"persist.sys.unica.keybox"' not in body or "SemSystemProperties;->getBoolean" not in body:
++        raise RuntimeError("Compiled BZI6 keybox toggle path missing")
++    print("PASS compiled BZI6 Keybox engine: proxy fallbacks, provider and KeyMint toggle")
++
++
++if __name__ == "__main__":
++    if len(sys.argv) == 3 and sys.argv[1] == "stage":
++        stage(Path(sys.argv[2]))
++    elif len(sys.argv) == 4 and sys.argv[1] == "verify-compiled":
++        verify_compiled(Path(sys.argv[2]), Path(sys.argv[3]))
++    else:
++        raise SystemExit("usage: a376b_android17_keybox.py stage APKTOOL | verify-compiled WORK TOOLS")
+--- a/unica/mods/pif/a376b_android17_pif.py
++++ b/unica/mods/pif/a376b_android17_pif.py
+@@ -1,5 +1,14 @@
+ #!/usr/bin/env python3
+-"""Port fork PIF call sites to reviewed BZI6 methods; keep upstream hook classes."""
++"""Port the fork PIF code to reviewed BZI6 methods and ART field semantics.
++
++Reason: Android 17 rejects reflective writes to static final Build fields and
++its sun.misc.Unsafe lacks staticFieldBase/staticFieldOffset. On-device probes
++show jdk.internal.misc.Unsafe writes and reads isolated String and int fields.
++Files: only the staged PlayIntegrityHooks class in the BZI6 framework.jar.
++Verify: exact donor method shapes, compiled call sites and field offsets/writers;
++runtime readback, OFF and non-allowlisted controls are required before release.
++Rollback: restore the upstream hook class by reverting this staging change.
++"""
+ from pathlib import Path
+ from hashlib import sha256
+ import importlib.util
+@@ -19,6 +28,109 @@
+     "registerTaskStackListener(Landroid/app/ITaskStackListener;)V": "00fa51f9c1de9f4d56b4991af9f9d51a9107092a116e390963c13a773dd7ba8b",
+ }
+ 
++UNSAFE_FIELD_WRITER = r'''
++.method private static blacklist getUnsafe()Ljdk/internal/misc/Unsafe;
++    .locals 2
++
++    const-class v0, Ljdk/internal/misc/Unsafe;
++
++    const-string v1, "theUnsafe"
++
++    invoke-virtual {v0, v1}, Ljava/lang/Class;->getDeclaredField(Ljava/lang/String;)Ljava/lang/reflect/Field;
++
++    move-result-object v0
++
++    const/4 v1, 0x1
++
++    invoke-virtual {v0, v1}, Ljava/lang/reflect/Field;->setAccessible(Z)V
++
++    const/4 v1, 0x0
++
++    invoke-virtual {v0, v1}, Ljava/lang/reflect/Field;->get(Ljava/lang/Object;)Ljava/lang/Object;
++
++    move-result-object v0
++
++    check-cast v0, Ljdk/internal/misc/Unsafe;
++
++    return-object v0
++.end method
++
++.method private static blacklist setStaticField(Ljava/lang/reflect/Field;Ljava/lang/Object;)V
++    .locals 7
++
++    :try_start_0
++    invoke-static {}, Lio/mesalabs/unica/PlayIntegrityHooks;->getUnsafe()Ljdk/internal/misc/Unsafe;
++
++    move-result-object v0
++
++    invoke-virtual {v0, p0}, Ljdk/internal/misc/Unsafe;->staticFieldBase(Ljava/lang/reflect/Field;)Ljava/lang/Object;
++
++    move-result-object v1
++
++    invoke-virtual {v0, p0}, Ljdk/internal/misc/Unsafe;->staticFieldOffset(Ljava/lang/reflect/Field;)J
++
++    move-result-wide v2
++
++    invoke-virtual {p0}, Ljava/lang/reflect/Field;->getType()Ljava/lang/Class;
++
++    move-result-object v4
++
++    sget-object v5, Ljava/lang/Integer;->TYPE:Ljava/lang/Class;
++
++    if-ne v4, v5, :object_value
++
++    check-cast p1, Ljava/lang/Integer;
++
++    invoke-virtual {p1}, Ljava/lang/Integer;->intValue()I
++
++    move-result v4
++
++    invoke-virtual {v0, v1, v2, v3, v4}, Ljdk/internal/misc/Unsafe;->putInt(Ljava/lang/Object;JI)V
++
++    goto :try_end_0
++
++    :object_value
++    invoke-virtual {v0, v1, v2, v3, p1}, Ljdk/internal/misc/Unsafe;->putObject(Ljava/lang/Object;JLjava/lang/Object;)V
++    :try_end_0
++    .catch Ljava/lang/Throwable; {:try_start_0 .. :try_end_0} :catch_0
++
++    return-void
++
++    :catch_0
++    move-exception v0
++
++    new-instance v1, Ljava/lang/IllegalAccessException;
++
++    const-string v2, "ART static final Build field write failed"
++
++    invoke-direct {v1, v2}, Ljava/lang/IllegalAccessException;-><init>(Ljava/lang/String;)V
++
++    invoke-virtual {v1, v0}, Ljava/lang/Throwable;->initCause(Ljava/lang/Throwable;)Ljava/lang/Throwable;
++
++    throw v1
++.end method
++'''
++
++
++def rewrite_field_writer(text):
++    signatures = (
++        "setPropValue(Ljava/lang/String;Ljava/lang/Object;)V",
++        "setVersionFieldInt(Ljava/lang/String;I)V",
++        "setVersionFieldString(Ljava/lang/String;Ljava/lang/String;)V",
++    )
++    for signature in signatures:
++        match = PRODUCT.method(text, signature)
++        body = match.group()
++        marker = "invoke-virtual {v0, v1, p1}, Ljava/lang/reflect/Field;->set(Ljava/lang/Object;Ljava/lang/Object;)V"
++        if body.count(marker) != 1:
++            raise RuntimeError("Unexpected BZI6 final-field setter shape: " + signature)
++        body = body.replace(marker,
++            "invoke-static {v0, p1}, Lio/mesalabs/unica/PlayIntegrityHooks;->setStaticField(Ljava/lang/reflect/Field;Ljava/lang/Object;)V", 1)
++        text = text[:match.start()] + body + text[match.end():]
++    if "->getUnsafe()Lsun/misc/Unsafe;" in text or "->getUnsafe()Ljdk/internal/misc/Unsafe;" in text:
++        raise RuntimeError("Stale BZI6 Unsafe field writer is already present")
++    return text + "\n" + UNSAFE_FIELD_WRITER
++
+ def exact(root, descriptor):
+     paths = list(root.glob("smali*/" + descriptor + ".smali"))
+     if len(paths) != 1:
+@@ -65,6 +177,12 @@
+         if path.exists() or not text.startswith(".class "):
+             raise RuntimeError("Stale/malformed BZI6 PIF helper: " + rel)
+         outputs.append((path, text))
++    for index, (path, text) in enumerate(outputs):
++        if path.name == "PlayIntegrityHooks.smali":
++            outputs[index] = (path, rewrite_field_writer(text))
++            break
++    else:
++        raise RuntimeError("BZI6 PIF hook class was not staged")
+     for path, text in outputs:
+         path.parent.mkdir(parents=True, exist_ok=True)
+         path.write_text(text)
+@@ -95,6 +213,21 @@
+     enabled = PRODUCT.method(hook, "isPIFEnabled()Z").group()
+     if '"persist.sys.unica.pif"' not in enabled or "->getBoolean(" not in enabled:
+         raise RuntimeError("Compiled BZI6 PIF does not honor Settings toggle")
++    field_writer = PRODUCT.method(hook,
++        "setStaticField(Ljava/lang/reflect/Field;Ljava/lang/Object;)V").group()
++    if "Ljdk/internal/misc/Unsafe;->staticFieldBase(Ljava/lang/reflect/Field;)Ljava/lang/Object;" not in field_writer or \
++            "Ljdk/internal/misc/Unsafe;->staticFieldOffset(Ljava/lang/reflect/Field;)J" not in field_writer or \
++            "Ljdk/internal/misc/Unsafe;->putObject(Ljava/lang/Object;JLjava/lang/Object;)V" not in field_writer or \
++            "Ljdk/internal/misc/Unsafe;->putInt(Ljava/lang/Object;JI)V" not in field_writer or \
++            "Ljava/lang/Throwable;->initCause(Ljava/lang/Throwable;)Ljava/lang/Throwable;" not in field_writer:
++        raise RuntimeError("Compiled BZI6 ART final-field writer is incomplete")
++    for signature in ("setPropValue(Ljava/lang/String;Ljava/lang/Object;)V",
++                      "setVersionFieldInt(Ljava/lang/String;I)V",
++                      "setVersionFieldString(Ljava/lang/String;Ljava/lang/String;)V"):
++        body = PRODUCT.method(hook, signature).group()
++        if body.count("->setStaticField(Ljava/lang/reflect/Field;Ljava/lang/Object;)V") != 1 or \
++                "Ljava/lang/reflect/Field;->set(Ljava/lang/Object;Ljava/lang/Object;)V" in body:
++            raise RuntimeError("Compiled BZI6 PIF setter bypasses the ART writer: " + signature)
+     blocked = PRODUCT.method(hook, "shouldBlockKeyAttestation()Z").group()
+     if "const/4 v0, 0x1" not in blocked or "return v0" not in blocked:
+         raise RuntimeError("BZI6 no-keybox PIF attestation fallback differs")
+--- a/unica/mods/pif/customize.sh
++++ b/unica/mods/pif/customize.sh
+@@ -1,4 +1,13 @@
+ if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++    IS_A376B_M4_BOOT_TEST && [ "${TARGET_PLATFORM_SDK_VERSION:-}" = 31 ] && \
++        [ "${TARGET_BOARD_API_LEVEL:-}" = 33 ] && [ "${SOURCE_FIRMWARE:-}" = SM-A376B/XXV/LOCAL ] || {
++            LOGE "Unreviewed BZI6 PIF/Keybox integration scope"
++            return 1
++        }
++    [ -f "$APKTOOL_DIR/system/framework/framework.jar/smali_classes6/io/mesalabs/unica/KeyboxImitationHooks.smali" ] || {
++        LOGE "BZI6 Keybox adapter must be staged before PIF"
++        return 1
++    }
+     DECODE_APK system system/framework/framework.jar || return 1
+     DECODE_APK system system/framework/services.jar || return 1
+     python3 "$MODPATH/a376b_android17_pif.py" stage "$APKTOOL_DIR" || return 1
+@@ -23,8 +32,14 @@
+         "$MODPATH/services.jar/0001-Introduce-PlayIntegrityHooks.patch" || return 1
+ fi
+ 
+-if [ ! -f "$APKTOOL_DIR/system/framework/framework.jar/smali_classes6/io/mesalabs/unica/KeyboxImitationHooks.smali" ]; then
++if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++    # Keep donor/software attestation non-blocking when no authorized keybox is
++    # installed. The Keystore2 hooks take over only after Settings enables data.
++    SMALI_PATCH "system" "system/framework/framework.jar" \
++        "smali_classes6/io/mesalabs/unica/PlayIntegrityHooks.smali" "return" \
++        'shouldBlockKeyAttestation()Z' 'true' || return 1
++elif [ ! -f "$APKTOOL_DIR/system/framework/framework.jar/smali_classes6/io/mesalabs/unica/KeyboxImitationHooks.smali" ]; then
+     SMALI_PATCH "system" "system/framework/framework.jar" \
+         "smali_classes6/io/mesalabs/unica/PlayIntegrityHooks.smali" "return" \
+-        'shouldBlockKeyAttestation()Z' 'true'
++        'shouldBlockKeyAttestation()Z' 'true' || return 1
+ fi
+--- /dev/null
++++ b/unica/mods/s9_infinity_Wallpaper/source/apply_m4_lite.sh
+@@ -0,0 +1,21 @@
++#!/usr/bin/env bash
++# Applied after APK rebuild and full wallpaper verification, only for M4 Lite.
++# Remove only the user-reviewed optional payloads, with fs_config cleanup.
++python3 "$SRC_DIR/unica/mods/s9_infinity_Wallpaper/source/build_m4_lite_wallpaper.py" \
++    --work-dir "$WORK_DIR" --rom-root "$SRC_DIR" || return 1
++for rel in \
++    product/app/Duo \
++    product/priv-app/Velvet \
++    system/priv-app/PhotoRemasterService \
++    system/app/VideoEditorLite_Dream_N \
++    system/priv-app/LiveEffectService \
++    system/priv-app/GalleryWidget \
++    system/priv-app/DynamicLockscreen \
++    system/priv-app/DigitalWellbeing \
++    system/hidden/INTERNAL_SDCARD/Music; do
++    [ -e "$WORK_DIR/system/$rel" ] || { LOGE "M4 Lite expected payload missing: $rel"; return 1; }
++    DELETE_FROM_WORK_DIR system "$rel" || return 1
++done
++python3 "$SRC_DIR/unica/mods/s9_infinity_Wallpaper/source/build_m4_lite_wallpaper.py" \
++    --verify-work "$WORK_DIR" || return 1
++unset rel
+--- /dev/null
++++ b/unica/mods/s9_infinity_Wallpaper/source/build_m4_lite_wallpaper.py
+@@ -0,0 +1,113 @@
++#!/usr/bin/env python3
++"""Build the M4 Lite single-default Infinity catalog from the verified Full APK."""
++import argparse
++import copy
++import hashlib
++import json
++import os
++from pathlib import Path
++import re
++import shutil
++import subprocess
++import tempfile
++import zipfile
++
++APK = Path('system/system/priv-app/wallpaper-res/wallpaper-res.apk')
++REMOVED = ('system/product/app/Duo', 'system/product/priv-app/Velvet',
++           'system/system/priv-app/PhotoRemasterService',
++           'system/system/app/VideoEditorLite_Dream_N',
++           'system/system/priv-app/LiveEffectService',
++           'system/system/priv-app/GalleryWidget',
++           'system/system/priv-app/DynamicLockscreen',
++           'system/system/priv-app/DigitalWellbeing',
++           'system/system/hidden/INTERNAL_SDCARD/Music')
++
++def digest(path):
++    with path.open('rb') as f:
++        return hashlib.file_digest(f, 'sha256').hexdigest()
++
++def catalog(archive):
++    data = json.loads(archive.read('res/raw/resources_info.json'))
++    return data
++
++def build(work, root):
++    target = work / APK
++    tools = root / 'out/tools/bin'
++    keys = root / 'external/android-tools/vendor/build/target/product/security'
++    with tempfile.TemporaryDirectory(prefix='m4-lite-wallpaper-', dir=target.parent) as td:
++        temp = Path(td)
++        unsigned, aligned, signed = (temp / n for n in ('unsigned.apk', 'aligned.apk', 'signed.apk'))
++        with zipfile.ZipFile(target) as src, zipfile.ZipFile(unsigned, 'w') as dst:
++            info = catalog(src)
++            entries = info['phone']
++            if len(entries) != 10 or entries[0].get('filename') != 'video_001.mp4' or entries[0].get('isDefault') is not True:
++                raise ValueError('Unexpected full Infinity catalog; refusing Lite conversion')
++            info['phone'] = [entries[0]]
++            for item in src.infolist():
++                name = item.filename
++                if name.startswith('META-INF/'):
++                    continue
++                match = re.fullmatch(r'res/(?:raw/video_|drawable-nodpi/wallpaper_)(\d{3})\.(?:mp4|webp)', name)
++                if match and int(match.group(1)) != 1:
++                    continue
++                entry = copy.copy(item)
++                if name == 'res/raw/resources_info.json':
++                    dst.writestr(entry, json.dumps(info, ensure_ascii=False, separators=(',', ':')).encode())
++                else:
++                    with src.open(item) as source, dst.open(entry, 'w') as dest:
++                        shutil.copyfileobj(source, dest, 1024 * 1024)
++        subprocess.run([str(tools/'zipalign'), '-f', '-p', '4', str(unsigned), str(aligned)], check=True)
++        subprocess.run(['java', '-jar', str(tools/'signapk.jar'), str(keys/'platform.x509.pem'),
++                        str(keys/'platform.pk8'), str(aligned), str(signed)], check=True)
++        verify_apk(signed, target)
++        os.chmod(signed, target.stat().st_mode & 0o777)
++        os.replace(signed, target)
++    print('PASS M4 Lite Infinity Blue catalog:', target.stat().st_size, 'bytes', digest(target))
++
++def verify_apk(apk, original=None):
++    with zipfile.ZipFile(apk) as z:
++        if z.testzip() is not None:
++            raise ValueError('Corrupt Lite wallpaper APK')
++        c = catalog(z)
++        e = c['phone']
++        if len(e) != 1 or e[0].get('filename') != 'video_001.mp4' or not e[0].get('isDefault'):
++            raise ValueError('Lite Infinity default catalog mismatch')
++        if e[0]['type_params']['service_class_name'] != 'com.samsung.android.wallpaper.live.infinity.InfinityWallpaper':
++            raise ValueError('Lite Infinity native engine mismatch')
++        names = set(z.namelist())
++        if not {'META-INF/CERT.SF', 'META-INF/CERT.RSA', 'res/raw/video_001.mp4',
++                'res/drawable-nodpi/wallpaper_001.webp'}.issubset(names):
++            raise ValueError('Lite wallpaper signature or required asset missing')
++        if any(re.fullmatch(r'res/raw/video_(?!001)\d{3}\.mp4', n) for n in names):
++            raise ValueError('Unexpected non-default Infinity video in Lite')
++        if original is not None:
++            with zipfile.ZipFile(original) as source:
++                if z.read('res/raw/video_001.mp4') != source.read('res/raw/video_001.mp4'):
++                    raise ValueError('Default Infinity video changed')
++
++def verify_work(work):
++    verify_apk(work / APK)
++    for rel in REMOVED:
++        if (work / rel).exists():
++            raise ValueError('Lite app still present: ' + rel)
++    for rel in ('system/system/priv-app/SpriteWallpaper/SpriteWallpaper.apk',
++                'system/system/priv-app/AODService_v80/AODService_v80.apk',
++                'system/system/priv-app/SecNfc/SecNfc.apk',
++                'system/system/priv-app/Bixby/Bixby.apk',
++                'system/product/priv-app/Messages/Messages.apk'):
++        if not (work / rel).is_file():
++            raise ValueError('Required Lite dependency missing: ' + rel)
++    print('PASS M4 Lite removal and retained wallpaper/NFC/Bixby/Messages checks')
++
++if __name__ == '__main__':
++    p = argparse.ArgumentParser()
++    p.add_argument('--work-dir', type=Path)
++    p.add_argument('--rom-root', type=Path)
++    p.add_argument('--verify-work', type=Path)
++    args = p.parse_args()
++    if args.verify_work:
++        verify_work(args.verify_work)
++    elif args.work_dir and args.rom_root:
++        build(args.work_dir, args.rom_root)
++    else:
++        p.error('Specify --work-dir and --rom-root, or --verify-work')
+--- a/unica/mods/settings/SecSettings.apk/res/values-vi/strings.xml
++++ b/unica/mods/settings/SecSettings.apk/res/values-vi/strings.xml
+@@ -18,11 +18,12 @@
+     <string name="unica_keybox_clear_title">Xóa dữ liệu keybox</string>
+     <string name="unica_keybox_load_title">Nhập tệp XML keybox</string>
+     <string name="unica_keybox_status_checking">Đang kiểm tra tính hợp lệ…</string>
+-    <string name="unica_keybox_status_loaded">Đã tải keybox</string>
++    <string name="unica_keybox_status_loaded">Đã tải keybox; đang chờ kiểm tra cục bộ</string>
+     <string name="unica_keybox_status_no_data">Không có dữ liệu keybox</string>
+-    <string name="unica_keybox_status_revoked">Keybox bị thu hồi</string>
+-    <string name="unica_keybox_status_valid">Keybox hợp lệ</string>
+-    <string name="unica_keybox_title">Giả mạo chứng thực phần cứng</string>
++    <string name="unica_keybox_status_revoked">Keybox có trong danh sách thu hồi</string>
++    <string name="unica_keybox_status_valid">Đã qua kiểm tra cục bộ; chưa xác nhận Play Integrity</string>
++    <string name="unica_keybox_summary">Dùng chuỗi chứng thư đã nhập bằng phần mềm. Không khôi phục bảo mật phần cứng và không bảo đảm Google cấp verdict.</string>
++    <string name="unica_keybox_title">Dùng keybox đã nhập cho chứng thực khóa</string>
+     <string name="unica_keybox_toast_cleared">Đã xóa dữ liệu keybox.</string>
+     <string name="unica_keybox_toast_error">Đã xảy ra lỗi.</string>
+     <string name="unica_keybox_toast_error_xml">Không thể phân tích cú pháp tệp XML.</string>
+--- a/unica/mods/settings/SecSettings.apk/res/values/strings.xml
++++ b/unica/mods/settings/SecSettings.apk/res/values/strings.xml
+@@ -20,11 +20,12 @@
+     <string name="unica_keybox_clear_title">Delete keybox data</string>
+     <string name="unica_keybox_load_title">Import keybox XML file</string>
+     <string name="unica_keybox_status_checking">Checking validity…</string>
+-    <string name="unica_keybox_status_loaded">Keybox loaded</string>
++    <string name="unica_keybox_status_loaded">Keybox loaded; local check pending</string>
+     <string name="unica_keybox_status_no_data">No keybox data</string>
+-    <string name="unica_keybox_status_revoked">Revoked keybox</string>
+-    <string name="unica_keybox_status_valid">Valid keybox</string>
+-    <string name="unica_keybox_title">Spoof hardware attestation</string>
++    <string name="unica_keybox_status_revoked">Keybox appears on the revocation list</string>
++    <string name="unica_keybox_status_valid">Local checks passed; Play Integrity not confirmed</string>
++    <string name="unica_keybox_summary">Uses an imported chain in software. It does not restore hardware-backed security or guarantee a Google verdict.</string>
++    <string name="unica_keybox_title">Use imported keybox for key attestation</string>
+     <string name="unica_keybox_toast_cleared">Keybox data cleared.</string>
+     <string name="unica_keybox_toast_error">An error occurred.</string>
+     <string name="unica_keybox_toast_error_xml">Could not parse XML file.</string>
+--- a/unica/mods/settings/SecSettings.apk/res/xml/unica_spoof_settings.xml
++++ b/unica/mods/settings/SecSettings.apk/res/xml/unica_spoof_settings.xml
+@@ -1,7 +1,7 @@
+ <?xml version="1.0" encoding="utf-8"?>
+ <PreferenceScreen android:title="@string/unica_spoof_settings_title" settings:hierarchicalParentFragment="io.mesalabs.unica.settings.UnicaSettingsFragment" settings:topLevelPreferenceKey="unica_spoof_settings"
+   xmlns:android="http://schemas.android.com/apk/res/android" xmlns:settings="http://schemas.android.com/apk/res-auto">
+-    <SecSwitchPreference android:title="@string/unica_keybox_title" android:key="unica_keybox" android:summary="@string/summary_placeholder" settings:controller="io.mesalabs.unica.settings.keybox.KeyboxPreferenceController" />
++    <SecSwitchPreference android:title="@string/unica_keybox_title" android:key="unica_keybox" android:summary="@string/unica_keybox_summary" settings:controller="io.mesalabs.unica.settings.keybox.KeyboxPreferenceController" />
+     <SecPreference android:title="@string/unica_keybox_load_title" android:key="unica_keybox_load" />
+     <SecPreference android:title="@string/unica_keybox_clear_title" android:key="unica_keybox_clear" settings:controller="io.mesalabs.unica.settings.keybox.KeyboxClearPreferenceController" />
+     <com.samsung.android.settings.widget.SecInsetCategoryPreference />
+--- a/unica/mods/settings/a376b_android17_boot_limits.py
++++ b/unica/mods/settings/a376b_android17_boot_limits.py
+@@ -16,12 +16,17 @@
+ FACTORY = "com/android/settings/search/SearchFeatureProviderImpl$$ExternalSyntheticLambda0"
+ PROVIDERS = "io/mesalabs/unica/search/UnicaSearchIndexableResources"
+ COLLECTOR = "com/samsung/android/settings/intelligence/search/categorizing/TopLevelKeysCollector"
++MODEL_GETTER = "com/samsung/android/settings/deviceinfo/aboutphone/ModelNameGetter"
++MODEL_METHOD = "getModelName()Ljava/lang/String;"
++MODEL_DONOR_SHA256 = "771f249d0f50fec234586e34bf16801ded210f3c34d2c4471e0d80f430ee7252"
++HIDE_DEV = "io/mesalabs/unica/settings/spoof/HideDeveloperStatusFragment"
++HIDE_CREATE = "onCreateView(Landroid/view/LayoutInflater;Landroid/view/ViewGroup;Landroid/os/Bundle;)Landroid/view/View;"
++SAMSUNG_HOOK = "io/mesalabs/unica/SamsungPropsHooks"
+ CONSTRUCTOR = "<init>(Landroid/content/Context;)V"
+ OMITTED = ("unica_allow_downgrade", "unica_allow_sdkbypass", "unica_secure_ss",
+            "unica_ss_detection", "unica_gphotos", "unica_bixby_action", "unica_asks")
+ 
+-OMITTED_SPOOF = ("unica_keybox", "unica_keybox_load", "unica_keybox_clear",
+-                 "unica_hma")
++OMITTED_SPOOF = ("unica_hma",)
+ 
+ def scope():
+     PRODUCT.scope()
+@@ -47,25 +52,153 @@
+         ET.fromstring(text)
+         outputs.append((path, text))
+     if "unica_bixby_app" in outputs[0][1] or 'android:key="unica_games_spoof"' not in outputs[0][1] or \
+-            'android:key="unica_hide_dev"' not in outputs[1][1]:
++            'android:key="unica_hide_dev"' not in outputs[1][1] or \
++            any('android:key="' + key + '"' not in outputs[1][1]
++                for key in ("unica_keybox", "unica_keybox_load", "unica_keybox_clear")):
+         raise RuntimeError("BZI6 optional Settings positive/negative control mismatch")
+     return outputs
+ 
+ 
++def verify_model_source(root):
++    model_paths = list(root.glob("smali*/" + MODEL_GETTER + ".smali"))
++    if len(model_paths) != 1:
++        raise RuntimeError("Expected one BZI6 About phone model getter")
++    model = PRODUCT.method(model_paths[0].read_text(), MODEL_METHOD).group()
++    if sha256(model.encode()).hexdigest() != MODEL_DONOR_SHA256 or \
++            model.count('"ro.product.model"') != 1 or '"ro.boot.em.model"' in model:
++        raise RuntimeError("Unreviewed BZI6 About phone model source")
++
++
++def prepare_hide_fragment(root):
++    paths = list(root.glob("smali*/" + HIDE_DEV + ".smali"))
++    if len(paths) != 1:
++        raise RuntimeError("Expected one BZI6 hide-developer fragment")
++    fragment = paths[0].read_text()
++    method = PRODUCT.method(fragment, HIDE_CREATE)
++    body = method.group()
++    if sha256(body.encode()).hexdigest() != "9b4c1ecd8af1eaa939e02d0ba7e5f36e1172482f7d87c946c43b0a55f97d4fae":
++        raise RuntimeError("Unreviewed BZI6 hide-developer fragment preimage")
++    old = '''    invoke-virtual {p0}, Landroidx/fragment/app/Fragment;->getActivity()Landroidx/fragment/app/FragmentActivity;
++
++    move-result-object p1
++
++    check-cast p1, Lcom/android/settings/SettingsActivity;
++
++    iget-object p1, p1, Lcom/android/settings/SettingsActivity;->mMainSwitch:Lcom/android/settings/widget/SettingsMainSwitchBar;'''
++    new = '''    iget-object p1, p0, Lio/mesalabs/unica/settings/spoof/HideDeveloperStatusFragment;->mContext:Landroid/content/Context;
++
++    invoke-static {p1}, Landroid/view/LayoutInflater;->from(Landroid/content/Context;)Landroid/view/LayoutInflater;
++
++    move-result-object p1
++
++    const-string p2, "layout"
++
++    const-string v0, "sec_settings_main_switch_bar"
++
++    invoke-static {p2, v0}, Lio/mesalabs/unica/utils/Utils;->getResourceId(Ljava/lang/String;Ljava/lang/String;)I
++
++    move-result p2
++
++    move-object v0, p3
++
++    check-cast v0, Landroid/view/ViewGroup;
++
++    const/4 v1, 0x0
++
++    invoke-virtual {p1, p2, v0, v1}, Landroid/view/LayoutInflater;->inflate(ILandroid/view/ViewGroup;Z)Landroid/view/View;
++
++    move-result-object p1
++
++    check-cast p1, Lcom/android/settings/widget/SettingsMainSwitchBar;
++
++    invoke-virtual {v0, p1, v1}, Landroid/view/ViewGroup;->addView(Landroid/view/View;I)V'''
++    if body.count(old) != 1:
++        raise RuntimeError("Unreviewed BZI6 hide-developer switch reference")
++    layout = (root / "res/layout/sec_settings_main_switch_bar.xml").read_text()
++    if '<com.android.settings.widget.SettingsMainSwitchBar ' not in layout:
++        raise RuntimeError("BZI6 donor switch layout differs")
++    patched_fragment = fragment[:method.start()] + body.replace(old, new, 1) + fragment[method.end():]
++    return paths[0], patched_fragment
++
++
+ def settings(root):
+     scope()
++    verify_model_source(root)
+     outputs = optional_xml(root)
++    path, patched_fragment = prepare_hide_fragment(root)
+     spec = importlib.util.spec_from_file_location("a376b_search", HERE / "a376b_search.py")
+     search = importlib.util.module_from_spec(spec)
+     spec.loader.exec_module(search)
+     search.stage(root)
++    path.write_text(patched_fragment)
+     for path, text in outputs:
+         path.write_text(text)
+-    print("PASS BZI6 Settings: hide unsupported options, ASKS, Bixby and omitted spoof modules; retain supported controls")
++    print("PASS BZI6 Settings: retain Keybox/PIF controls; hide unsupported options, ASKS, Bixby and HMA")
++
++
++def framework(root):
++    """Adapt Samsung's optional compatibility hook after the fork applies it."""
++    scope()
++    paths = list(root.glob("smali*/" + SAMSUNG_HOOK + ".smali"))
++    if len(paths) != 1:
++        raise RuntimeError("Expected one BZI6 SamsungPropsHooks")
++    text = paths[0].read_text()
++    signatures = {
++        "init(Landroid/content/Context;)V": "07f50e4aad9a8578c2fd4d7477f23cb04bfac63a034eb2d7265e1c83957e5186",
++        "setBuildField(Ljava/lang/String;Ljava/lang/Object;)V": "3af57e62470122318ac1e2517b785d71bd656e7ec0f5e0fa2357061aab317e7f",
++        "setVersionField(Ljava/lang/String;Ljava/lang/Object;)V": "013077c9e0dd42dfe3e6a583cdf4f1b96b2702097f4d343178fcabb0e4f852d5",
++    }
++    for signature, digest in signatures.items():
++        m = PRODUCT.method(text, signature)
++        if sha256(m.group().encode()).hexdigest() != digest:
++            raise RuntimeError("Unreviewed BZI6 SamsungPropsHooks method: " + signature)
++    m = PRODUCT.method(text, "init(Landroid/content/Context;)V")
++    body = m.group()
++    start = body.index("    # Google Play must see the physical Exynos9810 target.")
++    end = body.index("    :cond_generic_user_identity", start)
++    body = body[:start] + body[end:]
++    text = text[:m.start()] + body + text[m.end():]
++    marker = "invoke-virtual {v0, v1, p1}, Ljava/lang/reflect/Field;->set(Ljava/lang/Object;Ljava/lang/Object;)V"
++    for signature in list(signatures)[1:]:
++        m = PRODUCT.method(text, signature)
++        body = m.group()
++        if body.count(marker) != 1:
++            raise RuntimeError("Unexpected BZI6 Samsung field setter")
++        body = body.replace(marker, "invoke-static {v0, p1}, L" + SAMSUNG_HOOK + ";->setStaticField(Ljava/lang/reflect/Field;Ljava/lang/Object;)V", 1)
++        text = text[:m.start()] + body + text[m.end():]
++    spec = importlib.util.spec_from_file_location("bzi6_pif_writer", HERE.parent / "pif/a376b_android17_pif.py")
++    pif = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(pif)
++    if "->getUnsafe()Ljdk/internal/misc/Unsafe;" in text:
++        raise RuntimeError("BZI6 Samsung field writer already present")
++    text += "\n" + pif.UNSAFE_FIELD_WRITER.replace("Lio/mesalabs/unica/PlayIntegrityHooks;", "L" + SAMSUNG_HOOK + ";")
++    paths[0].write_text(text)
++    print("PASS BZI6 SamsungPropsHooks: A37 Google scope and ART field writer")
++
++
++def enable_legacy_attestation_fallback(work):
++    """Allow the tested legacy Keymaster factory attestation path for M4/G965F."""
++    path = work / "system/product/etc/build.prop"
++    if not path.is_file():
++        raise RuntimeError("Missing BZI6 product build properties for RKP fallback")
++    key = "remote_provisioning.tee.rkp_only"
++    matches = []
++    for partition in ("system", "vendor", "odm"):
++        for candidate in (work / partition).rglob("build.prop"):
++            values = [line for line in candidate.read_text().splitlines() if line.startswith(key + "=")]
++            if values:
++                matches.append((candidate, values))
++    if len(matches) != 1 or matches[0][0] != path or matches[0][1] not in ([key + "=1"], [key + "=0"]):
++        raise RuntimeError("Unreviewed BZI6 RKP-only property source: " + repr(matches))
++    text = path.read_text()
++    path.write_text(text.replace(key + "=1\n", key + "=0\n"))
++    if [line for line in path.read_text().splitlines() if line.startswith(key + "=")] != [key + "=0"]:
++        raise RuntimeError("Failed to stage BZI6 legacy attestation fallback")
+ 
+ 
+ def final_props(work):
+     scope()
++    enable_legacy_attestation_fallback(work)
+     count = 0
+     for partition in ("system", "vendor", "odm"):
+         for path in (work / partition).rglob("build.prop"):
+@@ -104,6 +237,42 @@
+ def verify_compiled(work, tools):
+     scope()
+     settings_apk = work / "system/system/priv-app/SecSettings/SecSettings.apk"
++    with zipfile.ZipFile(settings_apk) as archive:
++        xml_payloads = [archive.read(name) for name in archive.namelist()
++                        if name.startswith("res/") and name.endswith(".xml")]
++    def has_compiled_key(key):
++        return any(key.encode() in data or key.encode("utf-16le") in data for data in xml_payloads)
++    for key in ("unica_keybox", "unica_keybox_load", "unica_keybox_clear"):
++        if not has_compiled_key(key):
++            raise RuntimeError("Compiled BZI6 Settings lacks Keybox control: " + key)
++    if has_compiled_key("unica_hma"):
++        raise RuntimeError("Compiled BZI6 Settings unexpectedly exposes omitted HMA")
++    model = PRODUCT.method(PRODUCT.compiled_class(settings_apk, MODEL_GETTER, tools), MODEL_METHOD).group()
++    if model.count('"ro.product.model"') != 1 or '"ro.boot.em.model"' in model:
++        raise RuntimeError("Compiled BZI6 About phone does not use public product model")
++    hide = PRODUCT.method(PRODUCT.compiled_class(settings_apk, HIDE_DEV, tools), HIDE_CREATE).group()
++    if '"sec_settings_main_switch_bar"' not in hide or "->mMainSwitch:" in hide or \
++            "Landroid/view/ViewGroup;->addView(Landroid/view/View;I)V" not in hide:
++        raise RuntimeError("Compiled BZI6 hide-developer switch differs")
++    framework_jar = work / "system/system/framework/framework.jar"
++    samsung = PRODUCT.compiled_class(framework_jar, SAMSUNG_HOOK, tools)
++    init = PRODUCT.method(samsung, "init(Landroid/content/Context;)V").group()
++    if '"com.android.vending"' in init or '"com.google.android.gms"' in init or '"com.google.android.gsf"' in init or \
++            '"com.sec.android.app.camera"' not in init:
++        raise RuntimeError("Compiled BZI6 Samsung hook has unexpected Google or camera scope")
++    for sig in ("setBuildField(Ljava/lang/String;Ljava/lang/Object;)V", "setVersionField(Ljava/lang/String;Ljava/lang/Object;)V"):
++        if "->setStaticField(Ljava/lang/reflect/Field;Ljava/lang/Object;)V" not in PRODUCT.method(samsung, sig).group():
++            raise RuntimeError("Compiled BZI6 Samsung hook still uses reflective final writes")
++    writer = PRODUCT.method(samsung, "setStaticField(Ljava/lang/reflect/Field;Ljava/lang/Object;)V").group()
++    if "Ljdk/internal/misc/Unsafe;->putInt(" not in writer or "Ljdk/internal/misc/Unsafe;->putObject(" not in writer:
++        raise RuntimeError("Compiled BZI6 Samsung ART writer incomplete")
++    instr = PRODUCT.compiled_class(framework_jar, "android/app/Instrumentation", tools)
++    for sig in ("newApplication(Ljava/lang/Class;Landroid/content/Context;)Landroid/app/Application;", "newApplication(Ljava/lang/ClassLoader;Ljava/lang/String;Landroid/content/Context;)Landroid/app/Application;"):
++        body = PRODUCT.method(instr, sig).group()
++        a = body.find("L" + SAMSUNG_HOOK + ";->init(")
++        b = body.find("Lio/mesalabs/unica/PlayIntegrityHooks;->setProps(")
++        if a < 0 or b < 0 or a >= b:
++            raise RuntimeError("Compiled BZI6 Samsung/PIF hook order changed")
+     factory = PRODUCT.method(PRODUCT.compiled_class(settings_apk, FACTORY, tools), "invoke()Ljava/lang/Object;").group()
+     hook = "L" + PROVIDERS + ";->register(Lcom/android/settingslib/search/SearchIndexableResourcesBase;)V"
+     if factory.count("->addIndex(") != 211 or factory.count(hook) != 1:
+@@ -129,15 +298,18 @@
+                 if not re.fullmatch(r"classes\d*\.dex", name):
+                     continue
+                 data = archive.read(name)
+-                for desc in (b"Lio/mesalabs/unica/KeyboxImitationHooks;",
+-                             b"Lio/mesalabs/unica/HideAppListUtils;", b"Lio/mesalabs/unica/KnoxPatchHooks;"):
++                for desc in (b"Lio/mesalabs/unica/HideAppListUtils;", b"Lio/mesalabs/unica/KnoxPatchHooks;"):
+                     if desc in data:
+                         raise RuntimeError("Omitted M4 module hook present in compiled " + jar_name + ": " + desc.decode())
++    spec = importlib.util.spec_from_file_location("bzi6_keybox", HERE.parent / "keybox/a376b_android17_keybox.py")
++    keybox = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(keybox)
++    keybox.verify_compiled(work, tools)
+     spec = importlib.util.spec_from_file_location("bzi6_pif", HERE.parent / "pif/a376b_android17_pif.py")
+     pif = importlib.util.module_from_spec(spec)
+     spec.loader.exec_module(pif)
+     pif.verify(work, tools)
+-    print("PASS compiled BZI6 search and omitted module hook absence")
++    print("PASS compiled BZI6 search, Keybox engine and unrelated omitted module hook absence")
+ 
+ 
+ if __name__ == "__main__":
+@@ -147,6 +319,8 @@
+         (settings if sys.argv[1] == "settings" else intelligence)(Path(sys.argv[2]))
+     elif len(sys.argv) == 3 and sys.argv[1] == "final-props":
+         final_props(Path(sys.argv[2]))
++    elif len(sys.argv) == 3 and sys.argv[1] == "framework":
++        framework(Path(sys.argv[2]))
+     elif len(sys.argv) == 4 and sys.argv[1] == "verify-compiled":
+         verify_compiled(Path(sys.argv[2]), Path(sys.argv[3]))
+     else:
+--- a/unica/mods/settings/customize.sh
++++ b/unica/mods/settings/customize.sh
+@@ -57,12 +57,15 @@
+     'move-result p0' \
+     'const/4 p0, 0x1'
+ 
+-# Show real device model number
++# Show the physical model on existing targets. M4 intentionally displays the
++# public A37 model in About phone; its donor method is validated below.
++if [ "${ROM_SOURCE_CONFIG:-}" != "essi_a376b_android17" ]; then
+ SMALI_PATCH "system" "system/priv-app/SecSettings/SecSettings.apk" \
+     "smali_classes4/com/samsung/android/settings/deviceinfo/aboutphone/ModelNameGetter.smali" "replace" \
+     'getModelName()Ljava/lang/String;' \
+     'ro.product.model' \
+     'ro.boot.em.model'
++fi
+ 
+ LOG_STEP_IN "- Adding UN1CA Settings"
+ 
+@@ -94,6 +97,14 @@
+     fi
+ done < <(find "$MODPATH/SecSettings.apk" -type f)
+ 
++# M4 G965F: allow a complete EC-only attestation input while retaining the
++# existing Google root pin; the framework adapter provides RSA fallback.
++if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ] && \
++        [ "${STAR2LTE_BUILD_MODEL:-}" = "SM-G965F" ]; then
++    python3 "$SRC_DIR/unica/mods/keybox/a376b_android17_ec_only.py" settings \
++        "$APKTOOL_DIR/system/priv-app/SecSettings/SecSettings.apk" || return 1
++fi
++
+ # Add UN1CA Settings SearchIndexableData registrations
+ if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
+     python3 "$MODPATH/a376b_android17_boot_limits.py" settings \
+--- a/unica/patches/exynos9810_device_stack/customize.sh
++++ b/unica/patches/exynos9810_device_stack/customize.sh
+@@ -2216,6 +2216,7 @@
+ _EXYNOS9810_TARGET_IDENTITY()
+ {
+     local MODEL
++    local HARDWARE_MODEL
+     local NAME
+     local STOCK_INCREMENTAL
+     local VENDOR_SECURITY_PATCH
+@@ -2241,13 +2242,20 @@
+             ;;
+     esac
+ 
++    HARDWARE_MODEL="$MODEL"
++
+     LOG "- Applying $TARGET_CODENAME product/vendor identity"
+ 
+     _EXYNOS9810_SET_PROP_FILE "$WORK_DIR/system/system/build.prop" "ro.product.device" "$TARGET_CODENAME"
++    if IS_A376B_M4_BOOT_TEST; then
++        MODEL="SM-A376B"
++        NAME="a37xnaxx"
++    fi
++
+     _EXYNOS9810_SET_PROP_FILE "$WORK_DIR/system/system/build.prop" "ro.product.model" "$MODEL"
+     _EXYNOS9810_SET_PROP_FILE "$WORK_DIR/system/system/build.prop" "ro.product.name" "$NAME"
+     _EXYNOS9810_SET_PROP_FILE "$WORK_DIR/system/system/build.prop" "ro.build.flavor" "$NAME-user"
+-    _EXYNOS9810_SET_PROP_ALL "ro.factory.model" "$MODEL"
++    _EXYNOS9810_SET_PROP_ALL "ro.factory.model" "$HARDWARE_MODEL"
+ 
+     local FILE
+     local PREFIX
+@@ -3177,6 +3185,8 @@
+     # Default profile matches the built-in updater snapshot installed on 2026-10-11.
+     _EXYNOS9810_SET_PROP_ALL "persist.sys.pif.version" "20261011"
+     _EXYNOS9810_SET_PROP_ALL "persist.sys.pif.fingerprint" "google/bluejay_beta/bluejay:CANARY/ZP11.260918.007/16484274:user/release-keys"
++    _EXYNOS9810_SET_PROP_ALL "persist.sys.pif.security_patch" "2026-10-05"
++    _EXYNOS9810_SET_PROP_ALL "persist.sys.pif.first_api_level" "32"
+     _EXYNOS9810_SET_PROP_ALL "boot.fps" "30"
+     _EXYNOS9810_SET_PROP_ALL "shutdown.fps" "30"
+     _EXYNOS9810_DELETE_PROP_VENDOR_SIDE "ro.crypto.state"
+--- a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/customize.sh
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/customize.sh
+@@ -1790,6 +1790,15 @@
+         return 1
+     fi
+ 
++    # The software KM4 payload does not use Samsung's EFS-backed DAK files.
++    # Refuse a stale init file that mutates EFS at boot; this check is scoped
++    # to this service and does not claim that other vendor services never do so.
++    if grep -Eq '(^|[[:space:]])(/mnt/vendor)?/efs(/|[[:space:]]|$)' \
++        "$WORK_DIR/vendor/etc/init/android.hardware.keymaster@4.0-service.rc"; then
++        LOGE "Final software Keymaster 4.0 init still references EFS"
++        return 1
++    fi
++
+     for ENTRY in \
+         "lib64/libskeymaster4device.so" \
+         "bin/cass" \
+--- a/unica/patches/exynos9810_device_stack/exynos9810_finalization/a376b_android17_target_identity.py
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/a376b_android17_target_identity.py
+@@ -1,12 +1,12 @@
+ #!/usr/bin/env python3
+-"""Correct Android 17 partition-qualified identity for the G965F M4 profile.
++"""Expose the A37 donor identity while retaining the star2lte hardware target.
+ 
+-Reason: the BZI6 system/system_ext product properties outrank the fork's
+-unqualified target values and expose SM-A376B/essi on star2lte.
+-Files: only the device/model/name properties in system and system_ext build.prop.
+-Verify: exact donor preimage, scope and byte-preserving fixtures; later verify
+-getprop ro.product.model/name/device on the built image and running device.
+-Rollback: remove this adapter call; donor build.prop inputs remain unchanged.
++Reason: M4 must identify publicly as Samsung Galaxy A37 5G / SM-A376B while
++the physical target, blob selection, installer and codename remain star2lte.
++Files: public product model/name/device fields in system and system_ext.
++Verify: exact donor preimage, scope and byte-preserving fixtures; image gate
++checks every public product partition and preserves star2lte device identity.
++Rollback: revert this adapter and the scoped finalizer model/brand changes.
+ """
+ from pathlib import Path
+ import argparse
+@@ -28,11 +28,11 @@
+ }
+ TARGET = {
+     "ro.product.system.device": "star2lte",
+-    "ro.product.system.model": "SM-G965F",
+-    "ro.product.system.name": "star2ltexx",
++    "ro.product.system.model": "SM-A376B",
++    "ro.product.system.name": "a37xnaxx",
+     "ro.product.system_ext.device": "star2lte",
+-    "ro.product.system_ext.model": "SM-G965F",
+-    "ro.product.system_ext.name": "star2ltexx",
++    "ro.product.system_ext.model": "SM-A376B",
++    "ro.product.system_ext.name": "a37xnaxx",
+ }
+ 
+ 
+@@ -96,7 +96,7 @@
+             found = re.findall(r"^" + re.escape(key) + r"=(.*)$", text, re.M)
+             if found != [value]:
+                 raise ValueError("compiled target identity mismatch for " + key + ": " + repr(found))
+-    print("PASS compiled system/system_ext G965F identity properties")
++    print("PASS compiled system/system_ext A37 public identity with star2lte codename")
+ 
+ 
+ def fixture():
+@@ -114,10 +114,10 @@
+         verify(system, system_ext)
+         first = (system.read_bytes(), system_ext.read_bytes())
+         assert all(value in first[0] + first[1] for value in (
+-            b"ro.product.system.model=SM-G965F\n", b"ro.product.system.name=star2ltexx\n",
++            b"ro.product.system.model=SM-A376B\n", b"ro.product.system.name=a37xnaxx\n",
+             b"ro.product.system.device=star2lte\n",
+-            b"ro.product.system_ext.model=SM-G965F\n",
+-            b"ro.product.system_ext.name=star2ltexx\n",
++            b"ro.product.system_ext.model=SM-A376B\n",
++            b"ro.product.system_ext.name=a37xnaxx\n",
+             b"ro.product.system_ext.device=star2lte\n", b"ro.build.fingerprint=donor\n"))
+         apply(system, system_ext)
+         assert first == (system.read_bytes(), system_ext.read_bytes())
+--- a/unica/patches/exynos9810_device_stack/exynos9810_finalization/adb_defaults.py
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/adb_defaults.py
+@@ -45,6 +45,10 @@
+ 
+ 
+ def patch_database(text):
++    if is_bzi6_android17():
++        # Fresh M4 data should start with the public donor identity. INSERT OR
++        # IGNORE still preserves any value the user sets after first boot.
++        SEEDS["global"]["device_name"] = "Galaxy A37 5G"
+     for table in SEEDS:
+         name = "unicaSeed" + table.title() + "Defaults"
+         call = (f"    invoke-direct/range {{p0 .. p1}}, L{DATABASE};->"
+@@ -199,6 +203,11 @@
+ 
+ 
+ def verify_compiled(work, tools):
++    # Keep the compiled verifier's expectations identical to the M4 fresh-data
++    # seed.  This is INSERT OR IGNORE, so existing user-selected names remain
++    # untouched after SettingsProvider initializes the database.
++    if is_bzi6_android17():
++        SEEDS["global"]["device_name"] = "Galaxy A37 5G"
+     system = work / "system/system"
+     for key, value in PROPS.items():
+         found = re.findall(r"^" + re.escape(key) + r"=(.*)$",
+--- a/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
+@@ -1395,6 +1395,13 @@
+             ;;
+     esac
+ 
++    # Public M4 identity follows the A37 donor request; the physical target
++    # remains selected by TARGET_CODENAME/STAR2LTE_BUILD_MODEL and its blobs.
++    if IS_A376B_M4_BOOT_TEST; then
++        MODEL="SM-A376B"
++        NAME="a37xnaxx"
++    fi
++
+     LOG "- Enforcing final Exynos9810 target identity"
+ 
+     _EXYNOS9810_FINAL_SET_PROP "$WORK_DIR/system/system/build.prop" "ro.product.device" "$TARGET_CODENAME"
+@@ -6233,6 +6240,7 @@
+     local NFC_ROOT="$SRC_DIR/unica/patches/exynos9810_device_stack/nfc"
+     local COMMON_ROOT="$NFC_ROOT/common"
+     local TARGET_ROOT="$NFC_ROOT/$TARGET_CODENAME"
++    local FEATURE
+ 
+     [ -d "$COMMON_ROOT/vendor" ] && [ -d "$TARGET_ROOT/vendor" ] || {
+         LOGE "Exynos9810 S3NRN82 NFC payload is missing for $TARGET_CODENAME"
+@@ -6299,6 +6307,15 @@
+     _EXYNOS9810_FINAL_SET_METADATA "vendor" \
+         "etc/permissions/android.hardware.nfc.xml" \
+         0 0 644 "u:object_r:vendor_configs_file:s0"
++    # The four S9+ capability XMLs come from the shared NFC overlay, while
++    # the S9 baseline file_contexts has no exact entries for them. Pin their
++    # config label explicitly so they do not inherit vendor_file from the
++    # directory and the final ext4 SELinux audit sees vendor_configs_file.
++    for FEATURE in hce hcef ese uicc; do
++        _EXYNOS9810_FINAL_SET_METADATA "vendor" \
++            "etc/permissions/android.hardware.nfc.${FEATURE}.xml" \
++            0 0 644 "u:object_r:vendor_configs_file:s0" || return 1
++    done
+     _EXYNOS9810_FINAL_SET_METADATA "vendor" \
+         "etc/nfc/sec_s3nrn82_rfreg.bin" \
+         0 0 644 "u:object_r:vendor_file:s0"
+@@ -6580,6 +6597,16 @@
+ 
+     _EXYNOS9810_FINAL_RESTORE_FLOATING_FEATURE_FILES || return 1
+ 
++    if IS_A376B_M4_BOOT_TEST; then
++        _EXYNOS9810_FINAL_SET_FLOATING_FEATURE_BOTH \
++            "SEC_FLOATING_FEATURE_SETTINGS_CONFIG_BRAND_NAME" "Galaxy A37 5G" || return 1
++        # Preserve the S9+ Play Store/Settings capability contract while the
++        # donor Bixby package remains signed and installed. This advertises the
++        # existing Samsung feature; it does not remap the key or port Bixby UX.
++        _EXYNOS9810_FINAL_SET_FLOATING_FEATURE_BOTH \
++            "SEC_FLOATING_FEATURE_COMMON_SUPPORT_BIXBY" "TRUE" || return 1
++    fi
++
+     if [ "${STAR2LTE_M2_FIXED_RESOLUTION:-false}" = "true" ] || \
+             [ "${STAR2LTE_M4_FIXED_RESOLUTION:-false}" = "true" ]; then
+         LOG "- Keeping selected star2lte profile at native resolution (1440x2960, base density 560); no resolution switcher"
+--- a/unica/patches/exynos9810_device_stack/keymaster4/README.md
++++ b/unica/patches/exynos9810_device_stack/keymaster4/README.md
+@@ -6,14 +6,27 @@
+ Trustonic trusted application.
+ 
+ The service publishes `android.hardware.keymaster@4.0::IKeymasterDevice/default`
+-at the `SOFTWARE` security level. The boot-tested Exynos9810 Keymaster 3
+-service remains available at the `TRUSTED_ENVIRONMENT` level. Android's
+-Keystore2 compatibility layer supports this combination: it retains the KM4
+-software backend and then discovers KM3 for TEE-backed keys.
++using the software Keymaster implementation. An earlier device-stack stage
++prepares the Exynos9810 Keymaster 3 service as well, but the later
++`exynos9810_boot_restore/customize.sh` finalizer intentionally removes that
++service and its manifest entry. Its comments record that this TEE service
++failed after VaultKeeper removal and could block boot. Therefore, the final
++build must not be described as providing a working KM3 TEE backend merely
++because the earlier stage prepares it.
+ 
+-This gives Android 16 and applications a consistent Keymaster 4 API while
+-preserving existing KM3-backed storage and avoiding the secure-world command
+-failures seen with the N770F Keymaster 4 service on Exynos9810.
++This gives Android applications a consistent Keymaster 4 API and avoids the
++secure-world command failures seen with the N770F Keymaster 4 service on
++Exynos9810. On the M4 r5 G965F tested on 1 November 2026, the running service
++and software library match this payload by SHA-256; an app-context EC key probe
++reported `KeyInfo.isInsideSecureHardware() == false`, and its attestation
++extension reported software security. This result is specific to that build
++and probe. It does not establish that an earlier hardware-backed key can still
++be opened or that the software certificate is trusted by Google Play.
++
++Documentation correction: the old README claimed the final stack retained KM3
++TEE service and existing KM3-backed storage. Verify the finalizer's service and
++manifest removal, the live service/library hashes, and app KeyInfo/attestation
++results in `docs/m4-r5-attestation-audit.md` before changing this description.
+ 
+ Existing application ciphertext whose old hardware-backed key was already
+ lost cannot be recovered. A clean install creates new keys through this stack.
+--- a/unica/patches/exynos9810_device_stack/keymaster4/vendor/etc/init/android.hardware.keymaster@4.0-service.rc
++++ b/unica/patches/exynos9810_device_stack/keymaster4/vendor/etc/init/android.hardware.keymaster@4.0-service.rc
+@@ -4,11 +4,5 @@
+     user system
+     group system drmrpc
+ 
+-on post-fs
+-    mkdir /mnt/vendor/efs/DAK 0775 system system
+-    restorecon -R /mnt/vendor/efs/DAK
+-    chown system system /mnt/vendor/efs/DAK/gakkeybox
+-    chmod 0644 /mnt/vendor/efs/DAK/gakkeybox
+-
+ on post-fs-data
+-    mkdir /data/vendor/keymaster 0775 system system
+\ No newline at end of file
++    mkdir /data/vendor/keymaster 0775 system system

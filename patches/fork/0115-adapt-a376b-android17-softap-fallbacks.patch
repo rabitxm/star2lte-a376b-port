@@ -1,0 +1,113 @@
+diff --git a/unica/patches/product_feature/wifi/a376b_softap.py b/unica/patches/product_feature/wifi/a376b_softap.py
+--- a/unica/patches/product_feature/wifi/a376b_softap.py
++++ b/unica/patches/product_feature/wifi/a376b_softap.py
+@@ -1,12 +1,20 @@
+ #!/usr/bin/env python3
+-"""Port reviewed AZH4 SoftAP fallbacks without stale register/label diffs."""
++"""Port reviewed AZH4/BZI6 SoftAP fallbacks with pinned method preimages."""
+ from pathlib import Path
+ from hashlib import sha256
+ import re
+ import sys
++import os
+ 
+ 
+ def adapt(root, mode):
++    a17 = os.environ.get("ROM_SOURCE_CONFIG") == "essi_a376b_android17"
++    if a17:
++        for key, value in {"ROM_MILESTONE": "M4", "TARGET_CODENAME": "star2lte",
++                           "STAR2LTE_BUILD_MODEL": "SM-G965F", "SOURCE_PLATFORM_SDK_VERSION": "37",
++                           "SOURCE_FIRMWARE_CACHE_SUFFIX": "A376BXXU5BZI6"}.items():
++            if os.environ.get(key) != value:
++                raise RuntimeError("Unreviewed BZI6 SoftAP scope: " + key)
+     base = root / "system/framework/semwifi-service.jar/smali/com/samsung/android/server/wifi"
+     pending = {}
+ 
+@@ -29,6 +37,8 @@
+     if mode == "country":
+         path = read("ap/SemWifiApServiceImpl")
+         old = method(path, "supportWifiAp5GBasedOnCountry()Z", "9eea5a1e6cc964f22517d43699026e3ca533700ce67e27040f007d7667555592")
++        if a17:
++            method(path, "isRegionFor5GCountry()Z", "ddd8bfb2d6131a839a59f54b59639912ef0a643be8fcca6a8642f83a0d261e7a")
+         # Keep permission checks, valid HAL settings, debug override and the
+         # donor's Binder identity cleanup. Only missing/NA HAL data falls back.
+         new = old.replace("if-eqz v0, :cond_3", "if-eqz v0, :unica_country_fallback", 1)
+@@ -73,15 +83,19 @@
+         if 'const/16 v1, 0x1d\n\n    const-string v2, "support_mhs_power_saving"' not in pending[enum]:
+             raise RuntimeError("AZH4 power-saving command ordinal changed")
+         shell = read("SemSqeCommandHandler")
++        if a17:
++            # product_feature runs the reviewed APE adapter before SoftAP.
++            method(shell, "process(Ljava/lang/String;Ljava/io/PrintWriter;)I", "64eefb25371e2805168fc7f80898cd734c4eb06c6a49f48519b8f6f193d1b417")
++        unsupported, zero, writer = ("v13", "v14", "v1") if a17 else ("v10", "v11", "p2")
+         table = re.search(r"(?ms)^    \.packed-switch 0x0\n(.*?)^    \.end packed-switch", pending[shell])
+-        if table is None or 'const-string v10, "Not Supported"' not in pending[shell]:
++        if table is None or f'const-string {unsupported}, "Not Supported"' not in pending[shell]:
+             raise RuntimeError("AZH4 power-saving shell dispatch changed")
+         lines = table.group(1).splitlines(True)
+-        if lines[29].strip() != ":pswitch_c":
++        if lines[29].strip() != (":pswitch_e" if a17 else ":pswitch_c"):
+             raise RuntimeError("AZH4 power-saving command branch changed")
+         lines[29] = "        :pswitch_power_disabled\n"
+         replace(shell, table.group(), table.group().replace(table.group(1), "".join(lines), 1))
+-        replace(shell, "    :pswitch_data_0\n", "    :pswitch_power_disabled\n    invoke-virtual {p2, v10}, Ljava/io/PrintWriter;->println(Ljava/lang/String;)V\n\n    return v11\n\n    :pswitch_data_0\n")
++        replace(shell, "    :pswitch_data_0\n", f"    :pswitch_power_disabled\n    invoke-virtual {{{writer}, {unsupported}}}, Ljava/io/PrintWriter;->println(Ljava/lang/String;)V\n\n    return {zero}\n\n    :pswitch_data_0\n")
+     elif mode == "sharing-lite":
+         chip = read("ap/SemWifiApChipInfo")
+         method(chip, "checkWifiSharingAndPowerSave()V", "c7d535e871094deffd8fbfa5e11ea4110d40009f3f6611b16a8fb7bdcf36fa47")
+@@ -104,7 +118,7 @@
+     for path, text in pending.items():
+         if path.read_text() != text:
+             path.write_text(text)
+-    print("PASS AZH4 SoftAP " + mode)
++    print("PASS " + ("BZI6" if a17 else "AZH4") + " SoftAP " + mode)
+ 
+ 
+ if __name__ == "__main__":
+diff --git a/unica/patches/product_feature/customize.sh b/unica/patches/product_feature/customize.sh
+--- a/unica/patches/product_feature/customize.sh
++++ b/unica/patches/product_feature/customize.sh
+@@ -1112,7 +1112,9 @@
+ # SEC_PRODUCT_FEATURE_WLAN_SUPPORT_MOBILEAP_5G_BASEDON_COUNTRY
+ if ! $SOURCE_WLAN_SUPPORT_MOBILEAP_5G_BASEDON_COUNTRY; then
+     if $TARGET_WLAN_SUPPORT_MOBILEAP_5G_BASEDON_COUNTRY; then
+-        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] || \
++                { [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ] && \
++                  [ "${ROM_MILESTONE:-}" = M4 ] && [ "$SOURCE_PLATFORM_SDK_VERSION" = 37 ]; }; then
+             EVAL "python3 \"$MODPATH/wifi/a376b_softap.py\" \"$APKTOOL_DIR\" country" || return 1
+         else
+             APPLY_PATCH "system" "system/framework/semwifi-service.jar" \
+@@ -1213,7 +1215,9 @@
+ # SEC_PRODUCT_FEATURE_WLAN_SUPPORT_MOBILEAP_POWER_SAVEMODE
+ if $SOURCE_WLAN_SUPPORT_MOBILEAP_POWER_SAVEMODE; then
+     if ! $TARGET_WLAN_SUPPORT_MOBILEAP_POWER_SAVEMODE; then
+-        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] || \
++                { [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ] && \
++                  [ "${ROM_MILESTONE:-}" = M4 ] && [ "$SOURCE_PLATFORM_SDK_VERSION" = 37 ]; }; then
+             EVAL "python3 \"$MODPATH/wifi/a376b_softap.py\" \"$APKTOOL_DIR\" power" || return 1
+         else
+         APPLY_PATCH "system" "system/framework/semwifi-service.jar" \
+@@ -1227,7 +1231,9 @@
+         SMALI_PATCH "system" "system/framework/semwifi-service.jar" \
+             "smali/com/samsung/android/server/wifi/ap/SemWifiApPowerSaveImpl\$\$ExternalSyntheticLambda1.smali" "remove"
+         fi
+-        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] || \
++                { [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ] && \
++                  [ "${ROM_MILESTONE:-}" = M4 ] && [ "$SOURCE_PLATFORM_SDK_VERSION" = 37 ]; }; then
+             SMALI_PATCH "system" "system/framework/semwifi-service.jar" \
+                 "smali/com/samsung/android/server/wifi/ap/SemSoftApConfiguration.smali" "replaceall" \
+                 "SPF_POWER_SAVEMODE=true" "SPF_POWER_SAVEMODE=false"
+@@ -1288,7 +1294,9 @@
+ # SEC_PRODUCT_FEATURE_WLAN_SUPPORT_MOBILEAP_WIFISHARING_LITE
+ if ! $SOURCE_WLAN_SUPPORT_MOBILEAP_WIFISHARING_LITE; then
+     if $TARGET_WLAN_SUPPORT_MOBILEAP_WIFISHARING_LITE; then
+-        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] || \
++                { [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ] && \
++                  [ "${ROM_MILESTONE:-}" = M4 ] && [ "$SOURCE_PLATFORM_SDK_VERSION" = 37 ]; }; then
+             EVAL "python3 \"$MODPATH/wifi/a376b_softap.py\" \"$APKTOOL_DIR\" sharing-lite" || return 1
+         else
+         # Check for target flag instead as we've already took care of this SPF above

@@ -703,6 +703,502 @@
       {
         "path": "patches/fork/0104-enable-m2-volatile-metadata-diagnostic.patch",
         "sha256": "b9ab582aee7483e18ff8e526ada9931871bfeb946f5497f553b80862de8d9d73"
+      },
+      {
+        "path": "patches/fork/0105-preserve-cache-metadata-bind-in-installer.patch",
+        "sha256": "d8acc8cc2f32bdfa157c71c968f8adfeb28643d56ce42b4850100a613e1322ba"
+      },
+      {
+        "path": "patches/fork/0106-select-and-verify-m2-runtime-cache-logger.patch",
+        "sha256": "3a7e4264d39fe49c72affaa1fff4f12e7e0112a9377a267a9a98d3e0b6757fda"
+      },
+      {
+        "path": "patches/fork/0107-restore-a376b-vendor-kg-account-for-m2.patch",
+        "sha256": "4172fa9eff0791e9a610c6ab4d27fd430b1741e4c3d54afbb101b8abd5e8c89d"
+      },
+      {
+        "path": "patches/fork/0108-isolate-a376b-source-firmware-cache.patch",
+        "sha256": "e47567edd43ef721d4d3360fc9c87f2eb67a0c26d6b23ab56545ac8e599b6b40"
+      },
+      {
+        "path": "patches/fork/0109-adapt-a376b-android17-selinux-vndk33.patch",
+        "sha256": "609a6982b873e5fe950ce645043f86927ce9f803cefd644e8c7995ca0b25f644"
+      },
+      {
+        "path": "patches/fork/0110-preserve-a376b-android17-runtime-sim-tray-detection.patch",
+        "sha256": "e75166cdbc65a766e748dd93e0d6d994eba95c1df8e80c9c3cff7401fda502cd"
+      },
+      {
+        "path": "patches/fork/0111-guard-a376b-android17-optional-camera-claims.patch",
+        "sha256": "9fa638236d20c9be2919871b8550f8bfd92a1a48a7ccf27c4be2829cac17cb5a"
+      },
+      {
+        "path": "patches/fork/0112-match-a376b-sim-hash-to-fork-nodebug-decode.patch",
+        "sha256": "1e99d7228092b665864ecea1db14a7ebdfecdaf3896332b1c2272351b4afc2af"
+      },
+      {
+        "path": "patches/fork/0113-restore-a376b-android17-mdnie-hardware-path.patch",
+        "sha256": "c29016594bca549de138892b9777e4d5d2c081d00952814354d99a7e665e37fa"
+      },
+      {
+        "path": "patches/fork/0114-adapt-a376b-android17-wifi-ape-dispatch.patch",
+        "sha256": "63942e3ce1905948877c2250a98efaa4bcdf737499e4a4962161d38432bb007b"
+      },
+      {
+        "path": "patches/fork/0115-adapt-a376b-android17-softap-fallbacks.patch",
+        "sha256": "5fa81f2be694a6f5bb4ae96cdbb2660f62d5383bd45fa9301162794d287818de"
+      },
+      {
+        "path": "patches/fork/0116-adapt-bzi6-wlan-backoff-and-softap-chip-query.patch",
+        "sha256": "d094787a83114a889a2f14af8cde763aa582b65f509e47e95d6fcfae3d68df87"
+      },
+      {
+        "path": "patches/fork/0117-port-bzi6-platform-signature-integration.patch",
+        "sha256": "eaedb66cd18ce3dae337174810717beb46ad712c6e8b3da7956cfd12183f5e34"
+      },
+      {
+        "path": "patches/fork/0118-port-bzi6-split-lights-legacy-seh-extension.patch",
+        "sha256": "a6b4b79396fc0c2301a66cf5b896fd3ac73560d934862a6045f482309aaf1f3c"
+      },
+      {
+        "path": "patches/fork/0119-adapt-bzi6-rear-fingerprint-stack.patch",
+        "sha256": "752ed129396e09fcf43f73c1bb6c9e172dd78533ae02029b3d1d3e12b071b528"
+      },
+      {
+        "path": "patches/fork/0120-port-bzi6-omx-encoders-and-hevc-branch.patch",
+        "sha256": "31d6f904afa3329a4ca87cd9410237b3c4b160828df67fcec4e3d3bb95349879"
+      },
+      {
+        "path": "patches/fork/0121-adapt-bzi6-product-shipping-and-hdr.patch",
+        "sha256": "87a55f645896de3a21f56b4ddfaea45529ffedaa050534a4c7a25e2425b9ad23"
+      },
+      {
+        "path": "patches/fork/0122-adapt-bzi6-display-constants-and-compiled-gate.patch",
+        "sha256": "ca50d86ad0429505509b4560efa933dca6f0c61283b338f2ebc826eda238d9c0"
+      },
+      {
+        "path": "patches/fork/0123-resolve-bzi6-smali-by-exact-class-descriptor.patch",
+        "sha256": "2a3188ca707353bac85ad11423dbb893b054baf37fcd5c82ba787969874cb827"
+      },
+      {
+        "path": "patches/fork/0124-scope-m4-native-fixed-resolution-and-final-checks.patch",
+        "sha256": "4db62df9bd9e3a71066ac0d6178645ebf9503211563f741aa7fd283a5980366a"
+      },
+      {
+        "path": "patches/fork/0125-preserve-target-ese-baseline-on-bzi6.patch",
+        "sha256": "1fd95a14ef29b52910819787e56e11b5ba5c9e5b9305a323ee94a755af6c37c0"
+      },
+      {
+        "path": "patches/fork/0126-pin-retained-bzi6-wifi-ui-for-m4.patch",
+        "sha256": "74ddeaf49f1901ad5d33ec7bc945231284077e0efc5e10e31157f6aa76d86657"
+      },
+      {
+        "path": "patches/fork/0127-wire-scoped-m4-face-bixby-and-settings-selection.patch",
+        "sha256": "bf37d7ff31dfe90b20d425cbd7f63abc4f7616ab4d05a777c9ec39d8e9983cc7"
+      },
+      {
+        "path": "patches/fork/0128-register-isolated-bzi6-donor-and-selection-cache-key.patch",
+        "sha256": "ff47be24c5054f12069b896efdc2d34496857d43e1a18c964a087d17db858c67"
+      },
+      {
+        "path": "patches/fork/0129-isolate-bzi6-native32-runtime-and-image-gates.patch",
+        "sha256": "82a84e0da1cd3a2cb543ab07c0fccde88cb640d0e9b3af32d4fb76271c0194e7"
+      },
+      {
+        "path": "patches/fork/0130-isolate-bzi6-donor-native17-runtime-and-image-gates.patch",
+        "sha256": "f76ff71862e90bc8b2ef1e874af1a3c24acf9325403918bfd16da18cd8c96168"
+      },
+      {
+        "path": "patches/fork/0131-add-scoped-g965f-m4-android17-profile.patch",
+        "sha256": "dac8cd782b8311cdae28c6d59f6e76e004ce887596d06c5025b83f216494cf5e"
+      },
+      {
+        "path": "patches/fork/0132-use-bzi6-android17-nfc-apex-for-m4.patch",
+        "sha256": "57ff2ba7bdaba0953a3a13910c4d2ebbd27af0b2cab5849f8775953ff7ef525e"
+      },
+      {
+        "path": "patches/fork/0133-retain-bzi6-android17-camera-app-for-m4.patch",
+        "sha256": "35b4eb2f81f1c0847392cff7ed303291596f344e79f12a1b81c8b71d46860801"
+      },
+      {
+        "path": "patches/fork/0134-retain-bzi6-android17-keystore-spblob-for-m4.patch",
+        "sha256": "65cab23503c5d8b6b0703013f924113b0367578195aecbb3354aac8603c6e34f"
+      },
+      {
+        "path": "patches/fork/0135-port-bzi6-android17-p2p-callback-preservation.patch",
+        "sha256": "2afa91e6bbd16889c8881ad44ab7d10b7b347696683e56634a6497a6544210c0"
+      },
+      {
+        "path": "patches/fork/0136-allow-bzi6-arm64-stagefright-camera-port.patch",
+        "sha256": "1434df9d7cba8ee0e4c5c6d5968ee7d2f77be9287eea0f949f0dbac088a7f66e"
+      },
+      {
+        "path": "patches/fork/0137-map-bzi6-sdhms-dvfs-feature-for-m4.patch",
+        "sha256": "6e115e11e1487c80a6fe662f05a2c0850ef50202e9867084e16c73483d8ce574"
+      },
+      {
+        "path": "patches/fork/0138-resolve-bzi6-sdhms-source-cache-key.patch",
+        "sha256": "52eeb01f3aba1fe0e9d8074012e63260a3ce34df3026cf69b81c9704a46aa2aa"
+      },
+      {
+        "path": "patches/fork/0139-compose-bzi6-camera-and-media-native-patches.patch",
+        "sha256": "f4f087d9a2fa05a04f6d46d78a240097370476f781e271d96d2415d0c1d3b0b2"
+      },
+      {
+        "path": "patches/fork/0140-map-bzi6-usb-restrictor-handler.patch",
+        "sha256": "b881ddc7bff5a6d97c35c83d28c63dc6e744cc39aaaabcb0648e068f8eede570"
+      },
+      {
+        "path": "patches/fork/0141-retain-bzi6-sec-rescue-party.patch",
+        "sha256": "887aa36ca2b2cfda64f86f027fe42bd6f7de602cf2b7b4a3091271e0318e176a"
+      },
+      {
+        "path": "patches/fork/0142-adapt-bzi6-vendor-mismatch-warning.patch",
+        "sha256": "2711d3dd2f857c5dee57ac55eec27f844dabe0644c5427e0c64881aeb96f6047"
+      },
+      {
+        "path": "patches/fork/0143-retain-bzi6-nfc-sidecars-for-g965f.patch",
+        "sha256": "93dd48c8f59d2ed0e2841f5912f5bb56f6c26b5a4109bdd24a8ac28f26ed0b83"
+      },
+      {
+        "path": "patches/fork/0144-match-g965f-generated-target-sdk.patch",
+        "sha256": "092ce3155bede5598dcbc0d2f8324925350864efd4d4dfa29ee0bda13ac11f47"
+      },
+      {
+        "path": "patches/fork/0145-compose-bzi6-display-after-product-identity.patch",
+        "sha256": "ea73978222dc24df8027cbe8cfc58d701a9641dda472bf661824478f09b24879"
+      },
+      {
+        "path": "patches/fork/0146-retain-bzi6-strongbox-deviceid-noop.patch",
+        "sha256": "83d9bfe17ec14d5e8b6184d7d209ef0305ede864f6e422d5fc0e39b6ba1b8927"
+      },
+      {
+        "path": "patches/fork/0147-stage-relocated-bzi6-midas-moire-model.patch",
+        "sha256": "e92a711ba193a9a9aa945c3a11ffa06b878d02b58afca035a8c349314e75e68c"
+      },
+      {
+        "path": "patches/fork/0148-stage-bzi6-photoeditor-hs-segmenter-pairs.patch",
+        "sha256": "810f22ea278fe2fc24b48c6597be187467dfd0f7f318e66d40d707d1b0679b10"
+      },
+      {
+        "path": "patches/fork/0149-adapt-bzi6-image-cropper-layout.patch",
+        "sha256": "7c7a8e940412b7c4ddc8a76ba2bc141ea767a07fd9ce6be51c285a7ebd722307"
+      },
+      {
+        "path": "patches/fork/0150-fix-bzi6-batteryhealth-class-lookup.patch",
+        "sha256": "71a57e2cecdf64c4f8a4068d9b35b5e682517d86773e7976af847c7ddb8a162a"
+      },
+      {
+        "path": "patches/fork/0151-retain-bzi6-donor-package-blocklist.patch",
+        "sha256": "314a3973afeb2de3ddab0e8a33c229b00db16cc62adf0bf893fc19a956357a4a"
+      },
+      {
+        "path": "patches/fork/0152-retain-bzi6-donor-fota-suggestion.patch",
+        "sha256": "9f507af954b4c190931dddb736ccad9962ff616b459e0ab9fa9833f528d4a630"
+      },
+      {
+        "path": "patches/fork/0153-retain-bzi6-donor-remote-tile.patch",
+        "sha256": "929f1fe75aa0cb105cc3a3b14c96d1dff5280196a15cad3004fc318389ce844b"
+      },
+      {
+        "path": "patches/fork/0154-retain-bzi6-donor-network-speed.patch",
+        "sha256": "a94385791333cf4b179b30996875bad86e5578bc4d21bbc6bb5ec7308adcf271"
+      },
+      {
+        "path": "patches/fork/0155-retain-bzi6-donor-secure-folder-key.patch",
+        "sha256": "6ecf4ccbe17e36de0e5dbe0a5d08a2467d47e3891a794f620433dfdd643b7a70"
+      },
+      {
+        "path": "patches/fork/0156-retain-bzi6-donor-network-speed-systemui.patch",
+        "sha256": "3c6034e20e59ba039562a83a68eef1bce459bfbf00ea9022ac1bd29b96c15b7c"
+      },
+      {
+        "path": "patches/fork/0157-retain-bzi6-donor-smart-view-settings.patch",
+        "sha256": "80caaebedafdb5686d69c25bf4bc092efe503219ee6a2ad75024cd2056ec22e7"
+      },
+      {
+        "path": "patches/fork/0158-retain-bzi6-donor-dual-messenger.patch",
+        "sha256": "67b84c000eb9bd553ca8975538f1f65c6410588bc27c971502f87d8f2da5a32f"
+      },
+      {
+        "path": "patches/fork/0159-retain-bzi6-donor-knox-stack.patch",
+        "sha256": "c11c57d7f086917a290d0cdfd256b89cfa16bcab8e56111f2fcdd2993d41fa8a"
+      },
+      {
+        "path": "patches/fork/0160-match-bzi6-device-image-property.patch",
+        "sha256": "0cba69691c4992f3d774c56f5d1d252f71ff68dbf3f7a6d699babbc1cbb5625a"
+      },
+      {
+        "path": "patches/fork/0161-retain-bzi6-donor-hide-my-applist.patch",
+        "sha256": "8a700afc2086567d35cbf4bebb4e93e3c6789f08cb8d9091a9f40f77c6accaf5"
+      },
+      {
+        "path": "patches/fork/0162-retain-bzi6-donor-key-attestation.patch",
+        "sha256": "22d1381ec115ded70e5094e3da678fc828bd2f1c97d9364a244de8f1ec4436a9"
+      },
+      {
+        "path": "patches/fork/0163-retain-bzi6-donor-knox-attestation.patch",
+        "sha256": "cb480c8cc1c45736103e1128b94b38717fb5b2cac8ec8a750dc160955eb3a339"
+      },
+      {
+        "path": "patches/fork/0164-adapt-bzi6-paired-live-wallpaper-default.patch",
+        "sha256": "31c2f9d06dc5c572b47172d3d4af09ddc25daefb1190b93eed4b01739dbeaefd"
+      },
+      {
+        "path": "patches/fork/0165-review-absent-bzi6-legacy-ota-settings-gate.patch",
+        "sha256": "7d0a6e1955da36897e9747502a11bab26035d8facb51bb825200a24e0107cde6"
+      },
+      {
+        "path": "patches/fork/0166-retain-reviewed-bzi6-optional-donor-behaviors.patch",
+        "sha256": "3ec831c24f2e6aad833a62270a88d58de8b55e4395ab8b63a066856045f04329"
+      },
+      {
+        "path": "patches/fork/0167-port-bzi6-floating-feature-primary-getter-hooks.patch",
+        "sha256": "b6ba7ad20028b83377f3753bee84aad64fb9688ade6545ca69c0e630350da79f"
+      },
+      {
+        "path": "patches/fork/0168-hide-unsupported-m4-module-controls-and-retain-asks.patch",
+        "sha256": "8f2c4ff6b46dc49a67e1eea3fc2b34fc0042b6a582e71ffdfd726f54bbbfd690"
+      },
+      {
+        "path": "patches/fork/0169-resolve-source-cache-inside-vendor-restore-module.patch",
+        "sha256": "b75f084e8360451c8e9ab33b734eccca1cee267379f53bd1cf6225f4361fda65"
+      },
+      {
+        "path": "patches/fork/0170-retain-locked-bzi6-camera-in-final-ocr-reapply.patch",
+        "sha256": "ae672d851a8cc3fd122691a8e8532a69db1a6fa0a5c13514682843d05e85a829"
+      },
+      {
+        "path": "patches/fork/0171-port-bzi6-play-integrity-fix-and-live-settings.patch",
+        "sha256": "9ee7810d5cf4108858f101b139693ca5f55ba20b4b6a016a44b15ebaf74c5216"
+      },
+      {
+        "path": "patches/fork/0172-remove-stale-scloud-preinstall-config-after-debloat.patch",
+        "sha256": "185b787f2536d2743b68b2b63b271fe45f6ad30b06c1efbc825677ba1eeb254b"
+      },
+      {
+        "path": "patches/fork/0173-review-bzi6-secure-folder-configuration-desktop-check.patch",
+        "sha256": "546b0192e5e74abae6dce01bea56770432fa0327d98b36a06a62f7035dc59417"
+      },
+      {
+        "path": "patches/fork/0174-retain-bzi6-native-brief-components.patch",
+        "sha256": "ac663ef3dc36c1629ff0800b169712701a61e3a831c6bb5434f296781014752d"
+      },
+      {
+        "path": "patches/fork/0175-port-bzi6-heads-up-fallback-observer.patch",
+        "sha256": "45d8b70c7db2f42f44f3122abbfdc32d55a406ae6d763b97f5855f13975918c5"
+      },
+      {
+        "path": "patches/fork/0176-pin-native-bzi6-apps-before-s22-only-workarounds.patch",
+        "sha256": "cded018d40df81923560eeb15df8aacd6d2af034a9d23c1cfe5b93e367aa8b37"
+      },
+      {
+        "path": "patches/fork/0177-retain-native-bzi6-mdf-and-avoid-sigpipe-false-failure.patch",
+        "sha256": "4fe75f276b0f7bd0c6503bf8f92f09a88bfc8d6e8096b956d11f88478730a842"
+      },
+      {
+        "path": "patches/fork/0178-preserve-bzi6-proc-compaction-policy-input.patch",
+        "sha256": "26f52fa58a9c95da7eb3f74ae9a8ab342bd2b6ea5c564a1396d4e95309918d46"
+      },
+      {
+        "path": "patches/fork/0179-omit-absent-bzi6-otapreopt-slot-compatibility-rule.patch",
+        "sha256": "49cd8d1463f6f080f5eab0704ad953480bea55bdaa9c8eb790e7e713f79d7f7f"
+      },
+      {
+        "path": "patches/fork/0180-preserve-locked-bzi6-native-apks-through-global-rebuild.patch",
+        "sha256": "ecdbd97b314780bfebd2b1504ca006515c5e3cf566f41c7acffa18b8e57ad04f"
+      },
+      {
+        "path": "patches/fork/0181-verify-native-bzi6-setupwizard-selection.patch",
+        "sha256": "8eb10ff13118e98e4fa422b57dad8b90190ef7ae4725d4d0d4aa7d45524d608d"
+      },
+      {
+        "path": "patches/fork/0182-clear-restored-bzi6-unsupported-camera-claims.patch",
+        "sha256": "1a6addd007aa4a7d25dff3cd57e7c915443bdafddc7e5da0495f0d7917fed977"
+      },
+      {
+        "path": "patches/fork/0183-distinguish-pinned-camera-input-from-omx-apk-output.patch",
+        "sha256": "14649f46ab6ff2e6056875d3e13e2592d9e8d82f42051c7d8941e3893f526872"
+      },
+      {
+        "path": "patches/fork/0184-rebuild-reviewed-bzi6-framework-jars-after-source-patches.patch",
+        "sha256": "3f2cb542ed579fa751e0869d3c97f6888612c0c37d065776beb5ff2964dc60f5"
+      },
+      {
+        "path": "patches/fork/0185-resolve-bzi6-compiled-system-ext-in-essi-system.patch",
+        "sha256": "59c7788d8d7a4188f40d4f62372e6e7f4c65cc9f6f61d6f40babd8be62ac803b"
+      },
+      {
+        "path": "patches/fork/0186-share-essi-archive-resolution-with-wifi-ui-verifier.patch",
+        "sha256": "3a8890fc490acb8f48c7ff114c9ffef90a93315b0b27292fa85b5dfaedde135e"
+      },
+      {
+        "path": "patches/fork/0187-verify-final-native32-sphal-labels-in-ext4.patch",
+        "sha256": "a94169ab771bfbfd40067fd84a19901a8d0ef2194b3ae7ae548ef010d62c692d"
+      },
+      {
+        "path": "patches/fork/0188-normalize-m4-remotedisplay-library-metadata.patch",
+        "sha256": "e33a06b39634cf60ab0edc4c9cb984a8e5423ae61049564f4890b6d3a68c1a74"
+      },
+      {
+        "path": "patches/fork/0189-deduplicate-m4-fstab-mount-actions.patch",
+        "sha256": "0ce0b7ab4422fa37d542d30cb0039021021c83afcd43d3970c1f26a61a6926c1"
+      },
+      {
+        "path": "patches/fork/0190-stage-m4-ueventd-rules-at-imported-path.patch",
+        "sha256": "ee5a654067039279925edf5cd1efc4dae2a623e740a4a8223db0c1b6bf265bbb"
+      },
+      {
+        "path": "patches/fork/0191-add-m4-runtime-init-debug-profile-and-image-gate.patch",
+        "sha256": "c89a8bb79a7c2cc3df3ae2c07ca373b5d46053f1d2d5e59fe0678676f57564c6"
+      },
+      {
+        "path": "patches/fork/0192-retain-graphics-v6-for-m4-hybrid-vendor-consumers.patch",
+        "sha256": "eef504db19d1469575bbdedb5d7c7802a7f371576dbf9f6fe792e4fda32adf45"
+      },
+      {
+        "path": "patches/fork/0193-enable-existing-gralloc32-fallback-on-m4.patch",
+        "sha256": "faba72c5dac24d77c304174619408a5be8cac299d8f033366d0ef40caa8b10a7"
+      },
+      {
+        "path": "patches/fork/0194-cover-inline-and-preload-m4-mapper-api-guards.patch",
+        "sha256": "447905ee9e99935197dc38ee23f7240429fd365c0abf4399fb1561b0808f94b8"
+      },
+      {
+        "path": "patches/fork/0195-add-locked-m4-native-connectivity-apex-composition-helper.patch",
+        "sha256": "04ebf36be478114d798b5c84739dda2e92d1dc9d345aa81228fe888952724be3"
+      },
+      {
+        "path": "patches/fork/0196-port-real-bzi6-l4s-settings-api-into-diagnostic-network-apex.patch",
+        "sha256": "fc7e23f099ce81c8690ab4ead66c970e5f0d095ae186816d710a641369ce0a30"
+      },
+      {
+        "path": "patches/fork/0197-port-bzi6-network-stats-and-transport-identity-closure.patch",
+        "sha256": "a98a9fc79f4380c7844a22f86af824e8f13269f0a300ab1b1012af05339d7d33"
+      },
+      {
+        "path": "patches/fork/0198-retain-meminfo-error-path-for-unopened-gpu-bpf-map.patch",
+        "sha256": "11f9ee07bfc8a08239e24b63e4d8987bb3bd043c885c3ebfa044742abda9e32b"
+      },
+      {
+        "path": "patches/fork/0199-integrate-measured-m4-postboot-runtime-composition.patch",
+        "sha256": "f372be333a5b07479d223d740c9ba6ec33ef1f2785b5389c6c9f3031cb596da9"
+      },
+      {
+        "path": "patches/fork/0200-omit-unsupported-dex-sdhms-special-policy.patch",
+        "sha256": "c1f1b5fa57b0becef9782208e2d8dc5dc58d16203d0724a93b8f5db3fa4653d7"
+      },
+      {
+        "path": "patches/fork/0201-keep-bzi6-facewidget-lifecycle-on-main.patch",
+        "sha256": "061591ff14781ce2f8a717855346241e3edc33f51f432fd67b3561b95d53dc10"
+      },
+      {
+        "path": "patches/fork/0202-use-bzi6-nfc-apex-jni-pair-for-m4.patch",
+        "sha256": "994951a4c994c75ec899521b77014ce0e0a67700e9095b2e38bdab8d09da93b8"
+      },
+      {
+        "path": "patches/fork/0203-stringify-postboot-diagnostic-json-path-keys.patch",
+        "sha256": "d8506793f5fe327ac49f173028357aa80ca489afdf2554bfe6206f4965a2a14e"
+      },
+      {
+        "path": "patches/fork/0204-allow-reviewed-postboot-runtime-apex-in-m4-gate.patch",
+        "sha256": "d09459d44b9f0065a6fed954610180a6eee791f0d6f9524eda505a30eb5f52ee"
+      },
+      {
+        "path": "patches/fork/0205-follow-folded-system-ext-runtime-image-path.patch",
+        "sha256": "87c4aded04114de8fd46fbb403b76264ce41c8bf3ba741474c1afead55f96454"
+      },
+      {
+        "path": "patches/fork/0206-verify-bzi6-native-camera-for-m4.patch",
+        "sha256": "1d416f25fb554cd9bbb27be9c3064b34762279ab19a9b9e3bad60a6bbf9fcb0d"
+      },
+      {
+        "path": "patches/fork/0207-provide-a37-netd-resolver-from-m4-apex.patch",
+        "sha256": "625213fc725ad83e8879b4aa59c9a174417990612ba868b79d5ca2e28e53dc89"
+      },
+      {
+        "path": "patches/fork/0208-use-string-keys-in-postboot-diagnostic-report.patch",
+        "sha256": "0adb1c4be0a19f8551faf1732119f2655b7d6d9fa7db03ab027ef78f59f2e59d"
+      },
+      {
+        "path": "patches/fork/0209-sync-tethering-container-manifest.patch",
+        "sha256": "f9e3ee88dcce4b5552332efe219663d5f40213ec8bb6611408543fc5ecdf1f9a"
+      },
+      {
+        "path": "patches/fork/0210-retain-resolver-tls-dependency-closure.patch",
+        "sha256": "ee30b970f88baaae08659985a2cbf26f41148cb835099665656b3733023a5464"
+      },
+      {
+        "path": "patches/fork/0211-use-system-namespace-for-bzi6-resolver.patch",
+        "sha256": "8be2f789f1ee065683a3424b5484223b563c36283922007aaaec9d3a7550c6fa"
+      },
+      {
+        "path": "patches/fork/0212-restore-legacy-ion-device-label-for-m4.patch",
+        "sha256": "68fc4a255009a6810cbeb6bfc61c3bd9f73e424f46db5b02c5eb3b4259e6ca8f"
+      },
+      {
+        "path": "patches/fork/0213-record-release-verifier-import-scope-fix.patch",
+        "sha256": "0237e3b7cc955cad989562a4107d8b79fe5a22b25fffd88cee7f7fa49e763a2e"
+      },
+      {
+        "path": "patches/fork/0214-label-s9-backlight-for-m4-sdhms.patch",
+        "sha256": "cb2cbe3006a3692bf99a51920d717c01c84c9c297629e8392ceda62f3285c288"
+      },
+      {
+        "path": "patches/fork/0215-label-s9-max-backlight-for-m4-sdhms.patch",
+        "sha256": "34edf8df25c8a1ad2753d6b5fb4e9b0d36fb8503ba4b7e7770ef369467d05641"
+      },
+      {
+        "path": "patches/fork/0216-fix-m4-bzi6-pac3-brightness-scale.patch",
+        "sha256": "422a758e3b514d7e17251b07710afb54176fe83396788323f7ffb160290d8628"
+      },
+      {
+        "path": "patches/fork/0217-avoid-bzi6-kg30-service-wait-on-m4.patch",
+        "sha256": "8f1848c76d1897176b1f06461bf837ca16a338a364115d46a19995133e529218"
+      },
+      {
+        "path": "patches/fork/0218-label-s9-rtc-nodes-for-m4-sdhms.patch",
+        "sha256": "8ee79ae7bc103bedd4ece513940e05664becce344ddd513bb2505d4f10a6e098"
+      },
+      {
+        "path": "patches/fork/0219-skip-unavailable-optional-samsung-internet.patch",
+        "sha256": "defe64419062d21ce00e71a3b998003158ec3e4ec72611ec8376fdf3b3c354e2"
+      },
+      {
+        "path": "patches/fork/0220-skip-unsupported-bzi6-fdf1-command.patch",
+        "sha256": "ef11bda169e52ecf408e33a97463dbae0bc5e7557b52796a762c02e81e834198"
+      },
+      {
+        "path": "patches/fork/0221-disable-absent-ott-call-listener.patch",
+        "sha256": "f75bbfbaa0c52e62609696698f86230f451f1253f5a68fecb07808cd0adb7266"
+      },
+      {
+        "path": "patches/fork/0222-disable-bzi6-dbfw-plus-capability.patch",
+        "sha256": "dfa9ad278433426ecaae5ddf828a5bb0dd9673d1145aa2ff6c8325cc032a3225"
+      },
+      {
+        "path": "patches/fork/0223-normalize-all-bzi6-dbfw-senders.patch",
+        "sha256": "13898cfcc2e3a8db1a49cda350defc360e8a536a6a5957adec038faa13ca82bd"
+      },
+      {
+        "path": "patches/fork/0224-bridge-legacy-aod-background-hook.patch",
+        "sha256": "319a278f05018fdfa6e3a654c9bbae7b6d982c7f2d543578681bc9251626ad56"
+      },
+      {
+        "path": "patches/fork/0225-fix-m4-target-partition-identity.patch",
+        "sha256": "12f6a9ef166240f0d40a107a346919a5e26eee5f6f17e8cdfafdcaa39b36ba83"
+      },
+      {
+        "path": "patches/fork/0226-fix-m4-aod-payload-preimage-check.patch",
+        "sha256": "ae7516a54e1238ee18ad7acf0e4791940d8a5a6f6dad5be2136bd23b0319f8bd"
+      },
+      {
+        "path": "patches/fork/0227-clear-stale-kernel-installer-before-extract.patch",
+        "sha256": "4cdcb07575ad36f0c2f953d8690902941e3936024a70e3b6413a9697656cff43"
+      },
+      {
+        "path": "patches/fork/0228-sync-m4-integrity-and-lite-installer.patch",
+        "sha256": "85d5a267c29906e3b631b575e3bb07aaa0ebc575e52780446c4a0cecd9d96572"
       }
     ]
   },
@@ -32086,6 +32582,349 @@
     "expected_installed_boot_sha256": "55f3af8c3dc9c5115fd80f944849c8205c2d2bc5459bb2ecc7114d842669fe77",
     "runtime_lock": "rom/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_runtime_compat.lock.json",
     "normal_kernel_default_unchanged": true,
-    "report": "docs/m2-integrated-runtime-build.md"
+    "report": "docs/m2-integrated-runtime-build.md",
+    "init_debug_profile": "rom/target/star2lte/profiles/m2-g965f-a376b-android16-runtime-init-debug.sh",
+    "runtime_lock_sha256": "6638cc27787ea01269a27c427630570eba3b882e61db6b14e7e1ab761fa5856c"
+  },
+  "m2_vendor_kg_account_diagnostic": {
+    "scope": "A376B Android16 M2 runtime compatibility on G965F only",
+    "donor_source": "SM-A376B_XXV/vendor/etc/passwd,group",
+    "passwd_sha256": "a14026a68a5674d57d5a2c77b5900a3702390bc622ed658683893a2a1b5717b8",
+    "group_sha256": "1b25c9cf8338905b5d71f3154e83030589fa4fadcbf5a91236cd90cb9cf0a5ba",
+    "patch": "patches/fork/0107-restore-a376b-vendor-kg-account-for-m2.patch",
+    "patch_sha256": "4172fa9eff0791e9a610c6ab4d27fd430b1741e4c3d54afbb101b8abd5e8c89d"
+  },
+  "m4_attempt0207_netd_resolver_repair": {
+    "status": "SOURCE_PATCHED_BUILDER_FIX_VERIFIED_RUNTIME_PENDING",
+    "reason_log": "logs/20261028-m4-repair-build/recovery-after-attempt0207/cache-unica/logcat_live.txt:377916",
+    "patch": "patches/fork/0207-provide-a37-netd-resolver-from-m4-apex.patch",
+    "patch_sha256": "625213fc725ad83e8879b4aa59c9a174417990612ba868b79d5ca2e28e53dc89",
+    "network_lock": "rom/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_network_native.lock.json",
+    "network_lock_sha256": "4fa4a2bc0e768533b2e2c58bc9cab7db3d099f2377b4423f57c3089096b6ef84",
+    "bzi6_libnetd_resolv_sha256": "ccfa0d2f6c1d296daf7f5ce3d9087d70243d795c8dce508eafac1cf46fcfb849",
+    "stats_compat_output_sha256": "0698d84c1d8306a0dbc30871fccd37505d43ab5a5de397d65319a117065f6853",
+    "normal_m4_profile_unchanged": true,
+    "runtime_network_acceptance": false
+  },
+  "m4_attempt0208_postboot_report_key_fix": {
+    "status": "SOURCE_PATCHED_RESUME_PENDING",
+    "reason_log": "logs/20261028-m4-repair-build/attempt0208-build.txt:2341-2351",
+    "patch": "patches/fork/0208-use-string-keys-in-postboot-diagnostic-report.patch",
+    "patch_sha256": "0adb1c4be0a19f8551faf1732119f2655b7d6d9fa7db03ab027ef78f59f2e59d",
+    "payload_semantics_changed": false
+  },
+  "m4_attempt0209_tethering_apex_manifest_sync": {
+    "status": "DEVICE_APEX_ACTIVATION_AND_BPFLOADER_PASS_NETD_TLS_DEPENDENCY_FAILURE",
+    "reason_log": "logs/20261028-m4-repair-build/attempt0208/postboot-recovery/cache-unica/logcat_live.txt:6203-6205",
+    "patch": "patches/fork/0209-sync-tethering-container-manifest.patch",
+    "patch_sha256": "f9e3ee88dcce4b5552332efe219663d5f40213ec8bb6611408543fc5ecdf1f9a",
+    "network_lock": "rom/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_network_native.lock.json",
+    "network_lock_sha256": "4fa4a2bc0e768533b2e2c58bc9cab7db3d099f2377b4423f57c3089096b6ef84",
+    "output_sha256": "0698d84c1d8306a0dbc30871fccd37505d43ab5a5de397d65319a117065f6853",
+    "outer_matches_payload_manifest": true,
+    "device_apex_activation": true,
+    "normal_m4_profile_unchanged": true,
+    "runtime_evidence": "logs/20261028-m4-repair-build/attempt0209/postboot-recovery/cache-unica/logcat_live.txt:54545-54559",
+    "previous_patch_sha256_before_report_record_correction": "92398ccad610e6e3f7994a7f99fb0192d07a9a0625e7f7b45a8e2436af0d7ce3",
+    "report_record_correction": "recount malformed diff hunk lengths; existing report hunk was previously skipped; intended helper and payload unchanged"
+  },
+  "m4_attempt0210_resolver_tls_closure": {
+    "status": "DEVICE_FAILED_FMT12_NAMESPACE_ABI_ORIGINAL_APEX_RESTORED",
+    "reason_log": "logs/20261028-m4-repair-build/attempt0209/postboot-recovery/cache-unica/logcat_live.txt:54555",
+    "patch": "patches/fork/0210-retain-resolver-tls-dependency-closure.patch",
+    "patch_sha256": "ee30b970f88baaae08659985a2cbf26f41148cb835099665656b3733023a5464",
+    "network_lock": "rom/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_network_native.lock.json",
+    "network_lock_sha256": "0830c265fe0019f1d5006409ac17fb9d703de30a1697db40b56680544e1d6de6",
+    "output_sha256": "bd17e835c1140b20f18145ff9e42f2068f950d23d3ceec3de14c582aa30af848",
+    "added_private_members": [
+      "lib64/libcrypto.so",
+      "lib64/libssl.so"
+    ],
+    "normal_m4_profile_unchanged": true,
+    "chroot_runtime": "BLOCKED_BY_RECOVERY_KERNEL_MADV_WIPEONFORK_EINVAL",
+    "device_network_acceptance": false,
+    "runtime_evidence": "logs/20261028-m4-repair-build/attempt0210/device-test/postboot-recovery/cache-unica/logcat_live.txt:10639",
+    "static_audit_initial_pass_invalidated": true,
+    "rollback": "PASS original APEX hash restored; protected raw hashes unchanged"
+  },
+  "m4_attempt0211_system_resolver_namespace": {
+    "status": "DEVICE_BOOT_COMPLETED_MAIN_SYSTEMSERVER_NETD_STABLE_UI_BLACK_ION_LABEL_IDENTIFIED",
+    "patch": "patches/fork/0211-use-system-namespace-for-bzi6-resolver.patch",
+    "patch_sha256": "8be2f789f1ee065683a3424b5484223b563c36283922007aaaec9d3a7550c6fa",
+    "network_lock": "rom/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_network_native.lock.json",
+    "network_lock_sha256": "7f14364182b181091d7b65af69381e2aa3f3ba8a98963b0de50e6c3c58ab03dc",
+    "selected_apex_sha256": "650f75fa946ee5fbe44e38418c4581738e7654abcea527832c97d092d6d7671d",
+    "system_resolver_sha256": "ccfa0d2f6c1d296daf7f5ce3d9087d70243d795c8dce508eafac1cf46fcfb849",
+    "linker_config_sha256": "0eb6fef30c067a54638019471c75bb5cb408955b38e4727eebfe61524963c480",
+    "normal_profile_changed": false,
+    "kernel_changed": false,
+    "network_acceptance": false,
+    "netd_initialization": true,
+    "system_server_120s_stable": true,
+    "initial_observer_false_unstable": "pidof included temporary child; corrected /proc parent+start-time monitor passed",
+    "runtime_evidence": "logs/20261028-m4-repair-build/attempt0211/device-test/live-after-observer/main-server-stability-120s.json",
+    "hardware_acceptance": false
+  },
+  "m4_attempt0212_legacy_ion_context": {
+    "status": "DEVICE_PERSISTENT_REBOOT_WELCOME_CONFIRMED_MAIN_SYSTEMSERVER_120S_STABLE",
+    "patch": "patches/fork/0212-restore-legacy-ion-device-label-for-m4.patch",
+    "patch_sha256": "68fc4a255009a6810cbeb6bfc61c3bd9f73e424f46db5b02c5eb3b4259e6ca8f",
+    "runtime_lock": "rom/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_runtime_compat.lock.json",
+    "runtime_lock_sha256": "74fb2023b31fb03baf1f767ba8f2bb1c455c3a800fc443388bcd8b48e9f626dc",
+    "rule": "/dev/ion    u:object_r:ion_device:s0",
+    "device_contexts_old_sha256": "a3b099f7b865369ae065f831a77f6e463edd0fbceb773f24f820b209a695181d",
+    "device_contexts_new_sha256": "a51ada9de879d930036d71e1a16b449918fb5e9e745686fa1daaa0cfb93448f7",
+    "selinux": "Enforcing",
+    "allow_rules_changed": false,
+    "kernel_vendor_radio_changed": false,
+    "userdata_wiped": false,
+    "full_rom_package": "PENDING",
+    "boot_completed": true,
+    "physical_welcome_confirmed": true,
+    "device_evidence": "logs/20261028-m4-repair-build/attempt0212-ion-label/device-test/boot-result.json",
+    "scope": "one SYSTEM plat_file_contexts file; previous0211 resolver unit retained",
+    "full_patch_replay": {
+      "patches": 203,
+      "files": 140,
+      "byte_identical": true,
+      "historical_default_fuzz_preserved": true
+    }
+  },
+  "m4_attempt0213_release_verifier_import_record": {
+    "patch": "patches/fork/0213-record-release-verifier-import-scope-fix.patch",
+    "patch_sha256": "0237e3b7cc955cad989562a4107d8b79fe5a22b25fffd88cee7f7fa49e763a2e",
+    "status": "RECORD_EXISTING_TESTED_SOURCE_NO_PAYLOAD_CHANGE",
+    "reason": "Full series comparison exposed missing one-line local-import removal in exported patch records"
+  },
+  "m4_attempt0214_thermal_brightness": {
+    "patch": "patches/fork/0214-label-s9-backlight-for-m4-sdhms.patch",
+    "patch_sha256": "cb2cbe3006a3692bf99a51920d717c01c84c9c297629e8392ceda62f3285c288",
+    "status": "FLASHED_FRESH_BRIGHTNESS_LABEL_PASS_MAX_BRIGHTNESS_EACCES_FOUND",
+    "candidate": "rom/out/releases/M4/star2lte-1793185796-jPRfTA",
+    "runtime_evidence": "logs/20261028-m4-thermal-0214-runtime/runtime-after-boot.txt"
+  },
+  "m4_attempt0215_thermal_max_brightness": {
+    "patch": "patches/fork/0215-label-s9-max-backlight-for-m4-sdhms.patch",
+    "patch_sha256": "34edf8df25c8a1ad2753d6b5fb4e9b0d36fb8503ba4b7e7770ef369467d05641",
+    "status": "FLASHED_FRESH_BOOTED_BACKLIGHT_LABELS_PASS_THERMAL_HAL_COOLING_THRESHOLDS_OPEN",
+    "candidate": "rom/out/releases/M4/star2lte-1793191531-88WPtN",
+    "package_sha256": "6d0c43e77c3bae6f392250cb5c4625fb6fc3af0041637b44bfd7e96ff61ae58d",
+    "target_files_sha256": "8a1e1e694b2915bd10b98a99333b337e95a9f06863c5575ee309f2b582467132",
+    "stage_manifest": "rom/out/releases/M4/star2lte-1793191531-88WPtN/M4-0215-ZIP32-legacy-manifest.json",
+    "runtime_evidence": "logs/m4-thermal-0215-install-run/thermal-errors-after-boot.txt",
+    "install_evidence": "logs/m4-thermal-0215-install-run/install-complete.txt",
+    "rollback": "reverse0215; preserve candidate0214"
+  },
+  "m4_attempt0216_brightness_scale": {
+    "patch": "patches/fork/0216-fix-m4-bzi6-pac3-brightness-scale.patch",
+    "patch_sha256": "422a758e3b514d7e17251b07710afb54176fe83396788323f7ffb160290d8628",
+    "nested_patch_sha256": "1bc4307b1c21dac6acf6ff63835d496f4dcf19ef5bb7511cedafb74c94a63e67",
+    "decoded_adapter_preimage_sha256": "a673e484f7471dc6529d0e3e0ae518086692c021336bfa2ed35e5c31b3b90c88",
+    "expected_adapter_output_sha256": "5887361cb9d89c07cde0827cc22ae1f3ce00af1f538c2f948fddb663c00418d5",
+    "scope": "M4 A376B BZI6 SDK37 star2lte G965F legacy main backlight",
+    "status": "BUILT_HASHED_ZIP32_FLASH_DEFERRED_RUNTIME_PENDING",
+    "candidate": "rom/out/releases/M4/star2lte-1793199175-ncgBlt",
+    "package_sha256": "828a491708c47e967cbea9164faaebfd17f1bb9a90b470a52a420c8737d5acf7",
+    "target_files_sha256": "7f882c3d8f5dc4bda2db3b2806918c8c4ba344f85b6b34e9aa7bd1656b3bfffc",
+    "stage_manifest": "rom/out/releases/M4/star2lte-1793199175-ncgBlt/M4-0216-ZIP32-legacy-manifest.json",
+    "runtime_scale_gate": "Settings20/60/120 should yield raw brightness about2000/6000/12000 while preserving off/wake/limiter behavior",
+    "rollback": "remove 0216 from series and lock, restore nested patch/hash guard, rebuild; retain candidate0215 until replacement runtime verification"
+  },
+  "m4_kg30_nonblocking_patch0217": {
+    "patch": "patches/fork/0217-avoid-bzi6-kg30-service-wait-on-m4.patch",
+    "patch_sha256": "8f1848c76d1897176b1f06461bf837ca16a338a364115d46a19995133e529218",
+    "helper": "rom/unica/patches/exynos9810_device_stack/exynos9810_finalization/a376b_android17_kg30_nonblocking.py",
+    "helper_sha256": "82809f4c09e3e9adef480ac96fa7e03c8dba08e68aa98306e2bf23df92df1938",
+    "lock": "rom/unica/patches/exynos9810_device_stack/exynos9810_finalization/a376b_android17_kg30_nonblocking.lock.json",
+    "lock_sha256": "21fd4598caaa68893cea503a937d8880c534ceac9b28aac652a379771e5a018d",
+    "status": "BUILD0218_THREE_COLD_BOOT_WATCHDOG_PASS_PROVIDER_ABSENT_FAIL_CLOSED",
+    "donor_services_jar_sha256": "efb433ade1059327c8a591731839899e7f6a6da1d7e7895f6e5bc996a182170e",
+    "compiled_controller_sha256": "7cc6d0437cc75c808e80348b77f879055d6fd7d80b505675b097df31ebdf507c",
+    "scope": "M4 A376B BZI6 SDK37 star2lte G965F runtime-compatible profile",
+    "reason": "First-boot ANR showed SystemServer waiting in KnoxGuard30 TA-state startup while KG30 AIDL provider is absent from the G965F vendor stack",
+    "preserved": "Fail-closed 0xff02 response, state 5 mapping, retry cap 3, 100ms delay, binder validation and remote-call behavior",
+    "host_verification": "Pinned clean donor decode, idempotent apply, wrong donor/profile rejection, Apktool assemble/decode, compiled checkService/no-wait and retry/fail-close contract PASS",
+    "runtime_verification": "PASS three G965F cold boots under Enforcing; SystemServer stable 120s/60s/60s, zero watchdog/ANR/fatal; absent provider returns fail-closed error 15728643; provider-present and unresponsive-provider paths remain untested",
+    "rollback": "Remove 0217 from patches/fork/series and sources.lock.json, reverse the helper hook and rebuild from the pinned donor; keep M4-0217 as rollback",
+    "candidate": "rom/out/releases/M4/star2lte-1793251536-X0X1kH",
+    "package_sha256": "58526b9c2d628efd74ac2dfd11039bcb4ba1cd583c6b504f76b84ee575dd159d",
+    "target_files_sha256": "e9c05a11dd783183d9a2703a6af7902cea9fe8bdf51edc64eb97ce35d2db2035",
+    "stage_manifest": "rom/out/releases/M4/star2lte-1793251536-X0X1kH/SHA256SUMS.legacy",
+    "runtime_evidence": "logs/20261029-m4-kg30-nonblocking-0218/run",
+    "cold_boots": 3,
+    "selinux": "Enforcing",
+    "systemserver_stability_seconds": [
+      120,
+      60,
+      60
+    ],
+    "watchdog_anr_fatal_counts": [
+      0,
+      0,
+      0
+    ]
+  },
+  "m4_attempt0218_rtc_exact_labels": {
+    "patch": "patches/fork/0218-label-s9-rtc-nodes-for-m4-sdhms.patch",
+    "patch_sha256": "8ee79ae7bc103bedd4ece513940e05664becce344ddd513bb2505d4f10a6e098",
+    "helper": "rom/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_thermal.py",
+    "helper_sha256": "23890a5a066cf2d3d85586010133a75901bd1cb5c6a73596eafc6fb4e4b3db7d",
+    "lock": "rom/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_thermal.lock.json",
+    "lock_sha256": "0f0f2fec83dea335c337a95fcb69dd9a7921d2734ef91380d5295e7fd2f0282d",
+    "status": "SOURCE_AND_SEPOLICY_COMPILE_PASS_RUNTIME_PENDING",
+    "scope": "M4 A376B BZI6 SDK37 star2lte G965F SDHMS RTC metadata reads",
+    "runtime_nodes": [
+      "/sys/devices/platform/141c0000.speedy/i2c-17/17-0000/s2mps18-rtc/rtc/rtc0/date",
+      "/sys/devices/platform/141c0000.speedy/i2c-17/17-0000/s2mps18-rtc/rtc/rtc0/time",
+      "/sys/devices/platform/141c0000.speedy/i2c-17/17-0000/s2mps18-rtc/rtc/rtc0/since_epoch"
+    ],
+    "reason": "M4-0218 SDHMS fstat EACCES on three generic-sysfs RTC nodes; existing sysfs_rtc policy already grants system_app read/getattr/open",
+    "host_verification": "Helper positive/idempotence and per-node duplicate/conflict/missing-permission tests PASS; actual vendor CIL fixture receives exactly three genfscon lines and no allow rules; complete split policy secilc compile PASS; full ordered replay of 208 patches/144 touched paths byte-identical PASS",
+    "temporary_runtime_trial": "chcon to sysfs_rtc returned Permission denied; trap restored/verified all three original sysfs labels",
+    "runtime_verification": "PENDING final ext4 label readback and fresh Enforcing SDHMS RTC EACCES check",
+    "rollback": "Remove 0218 from patch series/source lock and rebuild retained M4-0218; remove the three exact RTC nodes from the helper lock"
+  },
+  "m4_attempt0219_optional_samsung_internet_preload": {
+    "patch": "patches/fork/0219-skip-unavailable-optional-samsung-internet.patch",
+    "patch_sha256": "defe64419062d21ce00e71a3b998003158ec3e4ec72611ec8376fdf3b3c354e2",
+    "status": "HOST_FIX_REPLAYED_BUILD0222_URL_ABSENT_SKIP_URL_PRESENT_DOWNLOAD_FAILS",
+    "reason_log": "logs/20261029-m4-g965f-bt-native-0220/build.txt:1228-1229",
+    "scope": "Optional Galaxy Store Samsung Internet preload only",
+    "reason": "The optional preload lookup may return no URL; skip only that absent optional preload while preserving hard failure for a returned URL whose download fails.",
+    "verification": "Bash syntax and URL-absent/URL-present harness paths passed; M4 attempt0222 clean build recorded the absent-URL path and continued."
+  },
+  "m4_attempt0220_bzi6_fdf1_sender": {
+    "patch": "patches/fork/0220-skip-unsupported-bzi6-fdf1-command.patch",
+    "patch_sha256": "ef11bda169e52ecf408e33a97463dbae0bc5e7557b52796a762c02e81e834198",
+    "status": "SOURCE_FIXTURE_PASS_BUILD_PENDING",
+    "helper": "rom/unica/patches/bluetooth/a376b_android17_fdf1_skip.py",
+    "helper_sha256": "f8122bb8621235333dfdafdece568617507670b67763665f5de1e90fb4df4d51",
+    "helper_lock": "rom/unica/patches/bluetooth/a376b_android17_fdf1_skip.lock.json",
+    "helper_lock_sha256": "2a5c2f6ab10a83a59bbbabeb7060a2ae24e46eb223d2f8fde10d8d043754f19c",
+    "native_backend_helper": "rom/unica/patches/bluetooth/a376b_android17_native_backend.py",
+    "native_backend_helper_sha256": "906ff16c9285b9883a1d2301ed0ec1e7bc9743d7248fa0c207f5475ec2cd5575",
+    "native_backend_lock": "rom/unica/patches/bluetooth/a376b_android17_native_backend.lock.json",
+    "native_backend_lock_sha256": "436d92160dc973d02dcc664ba7692f2347c547e82e374e8260410b64558ce698",
+    "compiled_image_verifier": "rom/scripts/internal/verify_m4_runtime_image.py",
+    "compiled_image_verifier_sha256": "2fb28e9a2181326d41fa4f9b7965096840d16d177086a8aa88ac2b989fc72aa1",
+    "profile": "rom/target/star2lte/profiles/m4-g965f-a376b-android17-no-ksu.sh",
+    "profile_sha256": "e0ddea394a356d474de3fc11c0e1afcdeb4a0ff1cfd5f7992760a486164dbc13",
+    "scope": "M4 / A376BXXU5BZI6 / SDK37 / star2lte / SM-G965F only",
+    "donor_apex_sha256": "8f7d0753689594b0d1890647ca2213c3922e8e163b2e5982c48ddeaac075484b",
+    "donor_jni_sha256": "45cf1a8eb404dbafccf0ce74de725fcbaa926931daf17325dca7d0cfb88050aa",
+    "donor_output_sha256": "8e5e7293038e171fae1eb3482bcce45e894adc7e8df5ef75524baaf97b4c8de5",
+    "final_work_jni_sha256": "26585f22ffb02a294578e6b652f3c14ff238989ff674f98050c2aec135db0ecf",
+    "gnu_build_id": "d98e0bf66e0d1c1cae5e2209c36e0462",
+    "sender": "BtifAvStateMachine::StateOpened::OnEnter()",
+    "context_preimage_sha256": "6d4df6616c33a5a9c1410e475ea65bf5f85c827325aef7bf5641f3ca1345cb55",
+    "send_call_va": "0x6979e8",
+    "send_call_preimage_hex": "f31f0d94",
+    "send_call_replacement_hex": "1f2003d5",
+    "reason_log": "logs/20261029-m4-g965f-flash-0222/flash-01/runtime/logcat-afterboot.txt:96022; logs/20261029-m4-g965f-bt-native-0222/build.txt:886-888; logs/20261029-m4-g965f-fdf1-followup-0223/prebuild-device/bluetooth-events.txt",
+    "reason": "The live G965F M4 run repeatedly crashes Bluetooth while waiting on BZI6 optional HCI opcode 0xfdf1; disassembly identifies the exact BZI6 enqueue omitted by the older Android16 signature sweep.",
+    "verification": "Host fixture passes donor APEX/JNI hash, Build ID, unique context/output hashes, one-call mutation, idempotence and wrong-scope/wrong-target/wrong-preimage negatives. Full ordered replay and build/image/package/runtime validation remain pending."
+  },
+  "m4_runtime_0221_disable_absent_ott_call_listener": {
+    "date": "2026-10-30",
+    "patch": "patches/fork/0221-disable-absent-ott-call-listener.patch",
+    "patch_sha256": "f75bbfbaa0c52e62609696698f86230f451f1253f5a68fecb07808cd0adb7266",
+    "helper": "rom/unica/patches/exynos9810_device_stack/exynos9810_finalization/a376b_android17_call_listener.py",
+    "helper_sha256": "95bdddecbaa7df02e3939bf5ee186dedd68b4a3a8a9427c6cfbfd0ffc13ef85e",
+    "helper_lock": "rom/unica/patches/exynos9810_device_stack/exynos9810_finalization/a376b_android17_call_listener.lock.json",
+    "helper_lock_sha256": "7c528eaa1e2726129afcdc45d2cc12c9d6a40e3dcf0b7112fab63a747ec22854",
+    "scope": "M4 BZI6 SDK37 star2lte G965F diagnostic profile",
+    "status": "SOURCE_COMPILED_RUNTIME_PASS_REAL_CALL_PENDING",
+    "reason_and_files_and_verification": "See patch header and docs/m4-post-0223-runtime-repair.md",
+    "rollback": "Exact baseline APK/JNI retained privately per one-file trial; no kernel/vendor/radio/data change"
+  },
+  "m4_runtime_0222_disable_bzi6_dbfw_plus_capability": {
+    "date": "2026-10-30",
+    "patch": "patches/fork/0222-disable-bzi6-dbfw-plus-capability.patch",
+    "patch_sha256": "dfa9ad278433426ecaae5ddf828a5bb0dd9673d1145aa2ff6c8325cc032a3225",
+    "helper": "rom/unica/patches/bluetooth/a376b_android17_dbfw_capability.py",
+    "helper_sha256": "6fd6e7b49431a57a15549304db1cf5a989a6f9441062c2f8f0de5d4c6b2e9522",
+    "helper_lock": "rom/unica/patches/bluetooth/a376b_android17_dbfw_capability.lock.json",
+    "helper_lock_sha256": "75def7602a3df100e01e74bcad9f2d2cf9dcc59931a7846fede0eef664517ced",
+    "scope": "M4 BZI6 SDK37 star2lte G965F diagnostic profile",
+    "status": "HFP_MESSAGES_REMOVED_RUNTIME_INSUFFICIENT_COMPOSE_WITH_0223",
+    "reason_and_files_and_verification": "See patch header and docs/m4-post-0223-runtime-repair.md",
+    "rollback": "Exact baseline APK/JNI retained privately per one-file trial; no kernel/vendor/radio/data change"
+  },
+  "m4_runtime_0223_normalize_all_bzi6_dbfw_senders": {
+    "date": "2026-10-30",
+    "patch": "patches/fork/0223-normalize-all-bzi6-dbfw-senders.patch",
+    "patch_sha256": "13898cfcc2e3a8db1a49cda350defc360e8a536a6a5957adec038faa13ca82bd",
+    "helper": "rom/unica/patches/bluetooth/a376b_android17_dbfw_senders.py",
+    "helper_sha256": "5a988efade6e66e62f831479b1c047a71487575aad29307ad136d51432853cf5",
+    "helper_lock": "rom/unica/patches/bluetooth/a376b_android17_dbfw_senders.lock.json",
+    "helper_lock_sha256": "93e7cf9a6e3f9bd1d4c77edfaab7c59a9c6ab7cbe25011cb227f876645161b40",
+    "scope": "M4 BZI6 SDK37 star2lte G965F diagnostic profile",
+    "status": "STARTUP_TOGGLES_REBOOT_PAIRING_TWO_INCOMING_OPP_FILES_PASS_AUDIO_PENDING",
+    "reason_and_files_and_verification": "See patch header and docs/m4-post-0223-runtime-repair.md",
+    "rollback": "Exact baseline APK/JNI retained privately per one-file trial; no kernel/vendor/radio/data change"
+  },
+  "m4_runtime_0224_bridge_legacy_aod_background_hook": {
+    "date": "2026-10-30",
+    "patch": "patches/fork/0224-bridge-legacy-aod-background-hook.patch",
+    "patch_sha256": "319a278f05018fdfa6e3a654c9bbae7b6d982c7f2d543578681bc9251626ad56",
+    "helper": "rom/unica/patches/exynos9810_device_stack/exynos9810_finalization/a376b_android17_facewidget_legacy.py",
+    "helper_sha256": "a669964c6e6bea42849980d58ffeed8aa2e62ef7fe6bf4316c77d99a908490b5",
+    "helper_lock": "rom/unica/patches/exynos9810_device_stack/exynos9810_finalization/a376b_android17_facewidget_legacy.lock.json",
+    "helper_lock_sha256": "d235429829fd697d3d088e77fc8ee3f1801310acaea311863c5f2f2c7f4371c3",
+    "scope": "M4 BZI6 SDK37 star2lte G965F diagnostic profile",
+    "status": "COMPILED_REFLECTION_REBOOT_STABILITY_SLEEP_WAKE_PASS_AOD_EXTENDED_UI_ACCEPTANCE_OPEN",
+    "reason_and_files_and_verification": "See patch header and docs/m4-post-0223-runtime-repair.md",
+    "rollback": "Exact baseline APK/JNI retained privately per one-file trial; no kernel/vendor/radio/data change"
+  },
+  "m4_runtime_20261030_composition": {
+    "framework_res_sha256": "d965ee80323faa52c6120b0af0a3afc71c0b818c1f09626101d3d3ea5b011fb9",
+    "bluetooth_jni_sha256": "2885d0bcfbbf15a26521f7bf1574e18a52b22dda8c6b00a81e996781a608acdf",
+    "systemui_candidate_sha256": "30ccaf1dd9d0327583591e4e81661f0f8226be54e0698648943575bd094ad588",
+    "compiled_image_verifier_sha256": "e35356b160b1383455049baecfc0210dc4093f95559608ae30717537451b7c4e",
+    "source_replay": {
+      "patches": 214,
+      "paths": 158,
+      "result": "PASS byte-identical"
+    },
+    "complete_rom_rebuilt": false,
+    "composed_bluetooth_lock_sha256": {
+      "rom/unica/patches/bluetooth/a376b_android17_fdf1_skip.lock.json": "0b3d3b0bc2266b807852e91d7a581a02c4e61a07dc94a08c017b32ec1d1d00fd",
+      "rom/unica/patches/bluetooth/a376b_android17_native_backend.lock.json": "0fdc85bd215b60359ef83d8238614ae97d16dd0b99106dade6f3cd7be454d15f",
+      "rom/unica/patches/bluetooth/a376b_android17_dbfw_capability.lock.json": "75def7602a3df100e01e74bcad9f2d2cf9dcc59931a7846fede0eef664517ced",
+      "rom/unica/patches/bluetooth/a376b_android17_dbfw_senders.lock.json": "93e7cf9a6e3f9bd1d4c77edfaab7c59a9c6ab7cbe25011cb227f876645161b40"
+    },
+    "physical_welcome_user_confirmed": true,
+    "accessory_acceptance": "PAIRING_AND_TWO_INCOMING_OPP_FILES_PASS_WITH_PHONE; A2DP_AVRCP_HFP_AUDIO_RECONNECT_UNTESTED",
+    "manual_reboot_user_confirmed": true,
+    "bluetooth_phone_transfer_evidence": "docs/m4-bluetooth-phone-opp-validation.md"
+  },
+  "m4_runtime_0225_fix_m4_target_partition_identity": {
+    "date": "2026-10-30",
+    "patch": "patches/fork/0225-fix-m4-target-partition-identity.patch",
+    "patch_sha256": "12f6a9ef166240f0d40a107a346919a5e26eee5f6f17e8cdfafdcaa39b36ba83",
+    "helper": "rom/unica/patches/exynos9810_device_stack/exynos9810_finalization/a376b_android17_target_identity.py",
+    "helper_sha256": "a7699407ad50646309929697a5ac53a6de2b2608649749de145a7bc7379d2661",
+    "scope": "M4 BZI6 SDK37 star2lte SM-G965F only",
+    "status": "PATCH_REPLAY_BUILD_PACKAGE_IMAGE_PASS_DEVICE_PENDING",
+    "reason_and_files_and_verification": "Donor system and folded system_ext qualified model/name/device values outrank generic F props. Helper/customizer, ordered patch, and scripts/internal/verify_m4_runtime_image.py metadata entry for system/framework/framework-res.apk; exact preimage, wrong-scope/preimage negatives, idempotence, compiled identity, ext4/fs_config/SELinux, 50 locked SYSTEM files, SYSTEM/VENDOR/ODM e2fsck and complete signed package with eight verified ZIP32 stages PASS in build-0229. Device runtime remains pending.",
+    "rollback": "Remove scoped identity helper call and revert exact framework-res metadata entry; restore previous retained M4 package if runtime trial fails."
+  },
+  "m4_runtime_0226_fix_m4_aod_payload_preimage_check": {
+    "date": "2026-10-30",
+    "patch": "patches/fork/0226-fix-m4-aod-payload-preimage-check.patch",
+    "patch_sha256": "ae7516a54e1238ee18ad7acf0e4791940d8a5a6f6dad5be2136bd23b0319f8bd",
+    "scope": "M4 BZI6 SDK37 star2lte SM-G965F only",
+    "status": "PATCH_REPLAY_BUILD_PACKAGE_IMAGE_PASS_DEVICE_PENDING",
+    "reason_and_files_and_verification": "Finalization precedes the Infinity Wallpaper mod that replaces donor AODService. Customize helper now verifies the locked installed S9 Infinity payload. Payload hash and ordered patch replay pass; final ext4 image contains exact b374094fe87c6ab9f231096ddad4cd1bb0945be74c3247c9a441af8a3262b9f3 APK hash; full package and eight signed ZIP32 stage checks pass in build-0229. Device runtime remains pending.",
+    "rollback": "Restore the AOD preimage check argument to work_dir and repackage in a unique M4 run; keep previous retained package."
+  },
+  "m4_runtime_0227_clear_stale_kernel_installer": {
+    "date": "2026-10-31",
+    "patch": "patches/fork/0227-clear-stale-kernel-installer-before-extract.patch",
+    "patch_sha256": "4cdcb07575ad36f0c2f953d8690902941e3936024a70e3b6413a9697656cff43",
+    "scope": "Star2LTE TWRP installer temporary kernel extraction directory",
+    "status": "SOURCE_PATCH_REPLAY_FIXTURE_PASS_NEXT_BUILD_PENDING",
+    "reason_and_files_and_verification": "Attempt0229 stage08 tmpfs retry exposed stale /tmp/exynos9810/kernel content; noninteractive unzip failed with \"unzip: can't read standard input: Not a typewriter\" and E9810: Failed to extract kernel installer. A successful retry cleared the same temporary directory before extraction and stage08 returned RC=0. Patch changes rom/target/star2lte/installer/install-end.edify to clear that temp path before mkdir/unzip. Next clean package must verify generated updater command order, temp-path fixture, and all image/package gates.",
+    "rollback": "Revert Patch0227 and rebuild in a new M4 run; no device payload is changed."
   }
 }

@@ -1,0 +1,22 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] rebuild reviewed bzi6 framework jars after source patches
+
+# Reason: m4-package-attempt37-0183.txt rejects stale SSRM PreMonitor.getBrightness bytecode. Actual clean log skipped ssrm/esecomm/semwifi/secinputdev/gamemanager JARs using old Exynos9810 list, although M4 source adapters changed their decoded classes. Extend existing M2 rebuild override to exact reviewed M4 scope; retain unrelated native APK guards.
+# Affected: scripts/apktool.sh legacy JAR skip-list dispatch
+# Verify: Actual SSRM stale compiled failure and clean skip logs; scoped BUILD dispatch and rebuilding existing decoded JARs, full compiled product/WLAN/ABI gates and source replay.
+# Rollback: Remove0184; M1/M2 behavior unchanged.
+
+--- a/scripts/apktool.sh
++++ b/scripts/apktool.sh
+@@ -68,6 +68,11 @@
+             esac
+ 
+             if [[ "$PARTITION/$FILE" == $SKIP_PATTERN ]]; then
++                if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++                    python3 "$SRC_DIR/unica/mods/settings/a376b_android17_boot_limits.py" scope || return 1
++                    LOG "- Rebuilding reviewed BZI6 M4 JAR despite legacy skip-list: ${INPUT_FILE//$WORK_DIR/}"
++                    continue
++                fi
+                 if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] && \
+                         [ "$TARGET_CODENAME" = "star2lte" ] && [ "${ROM_MILESTONE:-}" = "M2" ]; then
+                     LOG "- Rebuilding modified A376B M2 JAR despite legacy skip-list: ${INPUT_FILE//$WORK_DIR/}"

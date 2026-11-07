@@ -1,0 +1,88 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] Resolve source cache inside vendor restore module
+
+# Reason: boot-restore-preflight-0168.txt:126 reports BZI6 runtime donor marker mismatch. make_rom computes SOURCE_FIRMWARE_PATH without exporting it, while apply_modules runs as a child process. The restore module therefore passes FW_DIR itself instead of the selected donor root. finalization-preflight-0169.txt:12 proves the same dependency in finalization. Resolve the key locally in both modules with GET_FIRMWARE_CACHE_KEY, including the locked BZI6 suffix.
+# Affected: unica/patches/exynos9810_device_stack/{exynos9810_boot_restore,exynos9810_finalization}/customize.sh (six runtime donor callers).
+# Verify: M1/M2/M4 cache selectors, actual BZI6 source_root/hash verification and wrong-cache negative, shell syntax, hash-lock/replay and final-stage/clean build continuation.
+# Rollback: remove0169 from series/source lock and restore previous module. No build-system replacement or firmware/kernel/radio mutation.
+
+--- a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/customize.sh
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/customize.sh
+@@ -1,6 +1,10 @@
+ SKIPUNZIP=1
+ 
+ [ "$TARGET_PLATFORM" = "exynos9810" ] || return 0
++
++# This module runs in a child shell; make_rom's unexported cache-key local is
++# unavailable here. Resolve the selected donor through the existing helper.
++EXYNOS9810_SOURCE_CACHE_KEY="$(GET_FIRMWARE_CACHE_KEY "$SOURCE_FIRMWARE")" || return 1
+ 
+ EXYNOS9810_ALLOW_EXTERNAL_DONOR="${EXYNOS9810_ALLOW_EXTERNAL_DONOR:-false}"
+ EXYNOS9810_METADATA_DIR="$SRC_DIR/platform/exynos9810/metadata"
+@@ -1992,7 +1996,7 @@
+     # separate from M2's older S22 Tethering/V6 compatibility experiment.
+     python3 "$MODPATH/a376b_android17_runtime_compat.py" apply \
+         --work-dir "$WORK_DIR" \
+-        --donor-root "$FW_DIR/$SOURCE_FIRMWARE_PATH" || return 1
++        --donor-root "$FW_DIR/$EXYNOS9810_SOURCE_CACHE_KEY" || return 1
+     _EXYNOS9810_SET_METADATA_SAFE system system/bin/cameraserver \
+         0 2000 755 "u:object_r:cameraserver_exec:s0"
+     _EXYNOS9810_SET_METADATA_SAFE system system/priv-app/SamsungCamera/SamsungCamera.apk \
+@@ -2024,7 +2028,7 @@
+ if [ "${EXYNOS9810_M2_RUNTIME_COMPAT:-false}" = "true" ]; then
+     python3 "$MODPATH/a376b_runtime_compat.py" apply --work-dir "$WORK_DIR" \
+         --compat-root "$FW_DIR/SM-S901B_EUX/system/system" \
+-        --account-vendor-root "$FW_DIR/$SOURCE_FIRMWARE_PATH/vendor" || return 1
++        --account-vendor-root "$FW_DIR/$EXYNOS9810_SOURCE_CACHE_KEY/vendor" || return 1
+     _EXYNOS9810_SET_METADATA_SAFE vendor vendor/etc/passwd 0 0 644 "u:object_r:vendor_configs_file:s0"
+     _EXYNOS9810_SET_METADATA_SAFE vendor vendor/etc/group 0 0 644 "u:object_r:vendor_configs_file:s0"
+     _EXYNOS9810_SET_METADATA_SAFE system system/apex/com.google.android.tethering_compressed.apex \
+@@ -2051,7 +2055,7 @@
+     if [ "$M4_METADATA_SCOPE" = "M4" ]; then
+         python3 "$MODPATH/a376b_metadata_bind.py" "$WORK_DIR" --milestone M4 || return 1
+         python3 "$MODPATH/a376b_android17_runtime_compat.py" verify \
+-            --work-dir "$WORK_DIR" --donor-root "$FW_DIR/$SOURCE_FIRMWARE_PATH" || return 1
++            --work-dir "$WORK_DIR" --donor-root "$FW_DIR/$EXYNOS9810_SOURCE_CACHE_KEY" || return 1
+     else
+         python3 "$MODPATH/a376b_metadata_bind.py" "$WORK_DIR" || return 1
+         python3 "$MODPATH/a376b_empty_vendor_flags.py" "$WORK_DIR" || return 1
+--- a/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
+@@ -1,6 +1,10 @@
+ SKIPUNZIP=1
+ 
+ [ "$TARGET_PLATFORM" = "exynos9810" ] || return 0
++
++# Resolve the selected donor locally; make_rom's shell-local key is not
++# inherited by this separate finalization module process.
++EXYNOS9810_SOURCE_CACHE_KEY="$(GET_FIRMWARE_CACHE_KEY "$SOURCE_FIRMWARE")" || return 1
+ 
+ EXYNOS9810_KERNELSU_NEXT_APK="${EXYNOS9810_KERNELSU_NEXT_APK:-$MODPATH/kernelsu/KernelSUNext.apk}"
+ EXYNOS9810_ALLOW_EXTERNAL_DONOR="${EXYNOS9810_ALLOW_EXTERNAL_DONOR:-false}"
+@@ -1938,7 +1942,7 @@
+     }
+     local RUNTIME_HELPER="$SRC_DIR/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_runtime_compat.py"
+     python3 "$RUNTIME_HELPER" verify --work-dir "$WORK_DIR" \
+-        --donor-root "$FW_DIR/$SOURCE_FIRMWARE_PATH"
++        --donor-root "$FW_DIR/$EXYNOS9810_SOURCE_CACHE_KEY"
+ }
+ 
+ _EXYNOS9810_FINAL_TUNE_AUDIO_VOLUME_CURVES()
+@@ -2942,7 +2946,7 @@
+         }
+         local RUNTIME_HELPER="$SRC_DIR/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_runtime_compat.py"
+         python3 "$RUNTIME_HELPER" apply --work-dir "$WORK_DIR" \
+-            --donor-root "$FW_DIR/$SOURCE_FIRMWARE_PATH" || return 1
++            --donor-root "$FW_DIR/$EXYNOS9810_SOURCE_CACHE_KEY" || return 1
+         _EXYNOS9810_FINAL_SET_METADATA system system/bin/cameraserver \
+             0 2000 755 "u:object_r:cameraserver_exec:s0" || return 1
+         _EXYNOS9810_FINAL_SET_METADATA system system/priv-app/SamsungCamera/SamsungCamera.apk \
+@@ -2970,7 +2974,7 @@
+         }
+         CAMERASERVER_SRC="$WORK_DIR/tmp/a376b-cameraserver"
+         python3 "$SRC/patches/a376b_cameraserver.py" \
+-            "$FW_DIR/$SOURCE_FIRMWARE_PATH/system/system/bin/cameraserver" \
++            "$FW_DIR/$EXYNOS9810_SOURCE_CACHE_KEY/system/system/bin/cameraserver" \
+             "$CAMERASERVER_SRC" || return 1
+         CAMERASERVER_SHA="73cba451858345a2860966cb0a7e7faff64abb4f4946193956571476e0ddad7b"
+     fi

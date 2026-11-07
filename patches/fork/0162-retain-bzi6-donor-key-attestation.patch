@@ -1,0 +1,35 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] Retain BZI6 donor key-attestation behavior
+
+# Reason: attempt34 lines1204 and1206 show the optional Keybox imitation patch requires missing framework DEX files `IKeystoreSecurityLevel$Stub$Proxy.smali` and `IKeystoreService$Stub$Proxy.smali`; line1226 records build failure. BZI6 uses a different Keystore2 layout, so keep donor attestation behavior rather than partially adding hooks.
+# Affected: scripts/internal/apply_modules.sh.
+# Verify: exact M4/G965F/star2lte/SDK37/target SDK31/board API33/BZI6 route retains donor behavior; wrong model/milestone fail closed; AZH4 M2 route and unrelated modules remain active; shell syntax, all152 ordered patch hashes/replay and clean attempt35.
+# Rollback: remove patch0162 from patches/fork/series and sources.lock.json, then restore the prior dispatcher.
+
+--- a/scripts/internal/apply_modules.sh
++++ b/scripts/internal/apply_modules.sh
+@@ -28,6 +28,24 @@
+             return 1
+         fi
+         LOGW "BZI6 PackageManager/ActivityStarter code differs; retaining donor Hide My Applist behavior for M4"
++        return 0
++    fi
++
++    # BZI6 moved Keystore2 interfaces out of the framework DEX locations used
++    # by the optional Keybox imitation hooks; retain donor attestation behavior.
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ] && \
++            [[ "$MODPATH" == */mods/keybox ]]; then
++        if [ "${ROM_MILESTONE:-}" != M4 ] || [ "${TARGET_CODENAME:-}" != star2lte ] || \
++                [ "${STAR2LTE_BUILD_MODEL:-}" != SM-G965F ] || \
++                [ "${SOURCE_PLATFORM_SDK_VERSION:-}" != 37 ] || \
++                [ "${TARGET_PLATFORM_SDK_VERSION:-}" != 31 ] || \
++                [ "${TARGET_BOARD_API_LEVEL:-}" != 33 ] || \
++                [ "${SOURCE_FIRMWARE_CACHE_SUFFIX:-}" != A376BXXU5BZI6 ] || \
++                [ "${SOURCE_FIRMWARE:-}" != SM-A376B/XXV/LOCAL ]; then
++            LOGE "Unreviewed BZI6 Keybox donor-retention scope"
++            return 1
++        fi
++        LOGW "BZI6 Keystore2 interfaces differ from framework Keybox hooks; retaining donor key-attestation behavior for M4"
+         return 0
+     fi
+ 

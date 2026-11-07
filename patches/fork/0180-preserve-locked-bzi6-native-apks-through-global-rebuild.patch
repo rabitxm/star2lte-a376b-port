@@ -1,0 +1,74 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] preserve locked bzi6 native apks through global rebuild
+
+# Reason: Clean attempt37 logs Building/Signing SamsungCamera, Smart Suggestions and Secure Folder even though finalization explicitly retains donor apps. The global rebuild traverses inspection-only decode caches, changing locked APK bytes and Samsung signatures. Guard seven exact native APK paths with hash/scope verification and verify the final raw APKs after all rebuilds.
+# Affected: scripts/apktool.sh BUILD guard; verify_bzi6_final_apps.py SecureFolder/all selection; compiled release defaults gate
+# Verify: Actual attempt37 output/input hash comparison, production BUILD skip/payload and wrong-scope negatives; all other APKs including SystemUI/Settings/framework/services use existing rebuild. Re-run full compiled/policy/image gates via fork.
+# Rollback: Remove0180 and restore previous APK rebuild route; M1/M2 unchanged.
+
+--- a/unica/patches/exynos9810_device_stack/exynos9810_finalization/verify_bzi6_final_apps.py
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/verify_bzi6_final_apps.py
+@@ -7,7 +7,7 @@
+ SPEC = importlib.util.spec_from_file_location("bzi6_product", Path(__file__).resolve().parents[2] / "product_feature/a376b_android17_product.py")
+ PRODUCT = importlib.util.module_from_spec(SPEC)
+ SPEC.loader.exec_module(PRODUCT)
+-LOCKS = {'SamsungCamera': ('priv-app/SamsungCamera/SamsungCamera.apk', '21a830e6d2f4d73456f6837a73edf8170ddc84222ff710b71fb1318ae7fc61c1'), 'DressRoom': ('priv-app/DressRoom/DressRoom.apk', '8170f83056eb897f2d7d4bb4b90e683df11e0166383369e78ac7dccc11c64ac1'), 'IPService': ('priv-app/IPService/IPService.apk', 'e4b2bbd84701483d1c34cfa70779e0887cc0a2c4abc41955c34ef439d9ad4875'), 'RubinVersion38': ('priv-app/RubinVersion38/RubinVersion38.apk', 'f06ac40479edc764a0b0fa98c4a4c885133d5d4d47861ad1510ada1c4754a4e8'), 'SamsungSmartSuggestions': ('priv-app/SamsungSmartSuggestions/SamsungSmartSuggestions.apk', 'ef2a4fdb52d8ec46084cd443999f605189761858d456d9cb8444b43713901ab9'), 'PhotoEditor_Full': ('priv-app/PhotoEditor_Full/PhotoEditor_Full.apk', '4f60668935b59bda60b2c4521447cc5051b0fc1c30f21fcaaf8677582061b411')}
++LOCKS = {'SamsungCamera': ('priv-app/SamsungCamera/SamsungCamera.apk', '21a830e6d2f4d73456f6837a73edf8170ddc84222ff710b71fb1318ae7fc61c1'), 'DressRoom': ('priv-app/DressRoom/DressRoom.apk', '8170f83056eb897f2d7d4bb4b90e683df11e0166383369e78ac7dccc11c64ac1'), 'IPService': ('priv-app/IPService/IPService.apk', 'e4b2bbd84701483d1c34cfa70779e0887cc0a2c4abc41955c34ef439d9ad4875'), 'RubinVersion38': ('priv-app/RubinVersion38/RubinVersion38.apk', 'f06ac40479edc764a0b0fa98c4a4c885133d5d4d47861ad1510ada1c4754a4e8'), 'SamsungSmartSuggestions': ('priv-app/SamsungSmartSuggestions/SamsungSmartSuggestions.apk', 'ef2a4fdb52d8ec46084cd443999f605189761858d456d9cb8444b43713901ab9'), 'PhotoEditor_Full': ('priv-app/PhotoEditor_Full/PhotoEditor_Full.apk', '4f60668935b59bda60b2c4521447cc5051b0fc1c30f21fcaaf8677582061b411'), 'SecureFolder': ('priv-app/SecureFolder/SecureFolder.apk', '61910a208296a9b20fdb4e59568a33c5630cc31f29b5f406b180376f7a2b895e')}
+ 
+ def verify(work, names):
+     PRODUCT.scope()
+@@ -21,4 +21,4 @@
+     print("PASS locked native BZI6 apps: " + ", ".join(names))
+ 
+ if __name__ == "__main__":
+-    verify(Path(sys.argv[1]), sys.argv[2:])
++    verify(Path(sys.argv[1]), list(LOCKS) if sys.argv[2:] == ["--all"] else sys.argv[2:])
+--- a/scripts/apktool.sh
++++ b/scripts/apktool.sh
+@@ -26,6 +26,35 @@
+     if [ ! -d "$OUTPUT_PATH" ]; then
+         LOGE "Folder not found: ${OUTPUT_PATH//$SRC_DIR\//}"
+         exit 1
++    fi
++
++    # Native BZI6 apps were explicitly retained by finalization. Decoding
++    # for inspection must not platform-sign them in the global rebuild pass.
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++        case "$PARTITION/$FILE" in
++            system/priv-app/SamsungCamera/SamsungCamera.apk|\
++            system/system/priv-app/SamsungCamera/SamsungCamera.apk|\
++            system/priv-app/DressRoom/DressRoom.apk|\
++            system/system/priv-app/DressRoom/DressRoom.apk|\
++            system/priv-app/IPService/IPService.apk|\
++            system/system/priv-app/IPService/IPService.apk|\
++            system/priv-app/RubinVersion38/RubinVersion38.apk|\
++            system/system/priv-app/RubinVersion38/RubinVersion38.apk|\
++            system/priv-app/SamsungSmartSuggestions/SamsungSmartSuggestions.apk|\
++            system/system/priv-app/SamsungSmartSuggestions/SamsungSmartSuggestions.apk|\
++            system/priv-app/PhotoEditor_Full/PhotoEditor_Full.apk|\
++            system/system/priv-app/PhotoEditor_Full/PhotoEditor_Full.apk|\
++            system/priv-app/SecureFolder/SecureFolder.apk|\
++            system/system/priv-app/SecureFolder/SecureFolder.apk)
++                local NATIVE_APP="${FILE##*/}"
++                NATIVE_APP="${NATIVE_APP%.apk}"
++                python3 "$SRC_DIR/unica/patches/exynos9810_device_stack/exynos9810_finalization/verify_bzi6_final_apps.py" \
++                    "$WORK_DIR" "$NATIVE_APP" || return 1
++                LOG "- Preserving locked BZI6 native APK and Samsung signature: $NATIVE_APP"
++                rm -rf "$OUTPUT_PATH/build" "$OUTPUT_PATH/dist"
++                return 0
++                ;;
++        esac
+     fi
+ 
+     local SKIP_LIST
+--- a/scripts/internal/verify_exynos9810_release_defaults.py
++++ b/scripts/internal/verify_exynos9810_release_defaults.py
+@@ -54,6 +54,8 @@
+         runtime=ROOT/"unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_runtime_compat.py"
+         donor=ROOT/"out/fw/SM-A376B_XXV_A376BXXU5BZI6"
+         subprocess.run([sys.executable,str(runtime),"verify","--work-dir",str(work),"--donor-root",str(donor)],check=True)
++        donor_apps=ROOT/"unica/patches/exynos9810_device_stack/exynos9810_finalization/verify_bzi6_final_apps.py"
++        subprocess.run([sys.executable,str(donor_apps),str(work),"--all"],check=True)
+     if os.environ.get("ROM_SOURCE_CONFIG") == "essi_a376b_android16":
+         if (target, os.environ.get("ROM_MILESTONE")) != ("star2lte", "M2"):
+             raise RuntimeError("Unreviewed native32 A376B release profile")

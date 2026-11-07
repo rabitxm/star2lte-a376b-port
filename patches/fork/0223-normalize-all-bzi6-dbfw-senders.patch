@@ -1,0 +1,428 @@
+# Reason: HFP normalization removed its messages but other optional DBFW+ sends still caused FDF1 timeout.
+# Files: Bluetooth sender helper/lock/dispatch, three composed JNI locks and M4 image verifier.
+# Verify: 13 instruction slots, Build ID/context/opcode/null callbacks/indirect table, preserved non-null callback guard, negative fixtures, source replay, final hash, runtime toggles/stability.
+# Rollback: exact prior JNI 2b1f7bd8 backed up on PC; no kernel/vendor/radio/data changes.
+--- a/unica/patches/bluetooth/customize.sh
++++ b/unica/patches/bluetooth/customize.sh
+@@ -202,4 +202,9 @@
+     python3 "$SRC_DIR/unica/patches/bluetooth/a376b_android17_dbfw_capability.py" \
+         apply --jni "$WORK_DIR/system/system/lib64/libbluetooth_jni.so" || \
+         ABORT "M4 BZI6 DBFW+ capability preimage/scope verification failed"
+-fi
++    # Other DBFW paths have separate capabilities; retain async callbacks and
++    # normalize the main debug flag plus twelve audited null-callback sends.
++    python3 "$SRC_DIR/unica/patches/bluetooth/a376b_android17_dbfw_senders.py" \
++        apply --jni "$WORK_DIR/system/system/lib64/libbluetooth_jni.so" || \
++        ABORT "M4 BZI6 DBFW sender preimage/scope verification failed"
++fi
+--- a/scripts/internal/verify_m4_runtime_image.py
++++ b/scripts/internal/verify_m4_runtime_image.py
+@@ -28,6 +28,7 @@
+ BT_BACKEND_HELPER = ROOT / "unica/patches/bluetooth/a376b_android17_native_backend.py"
+ BT_FDF1_HELPER = ROOT / "unica/patches/bluetooth/a376b_android17_fdf1_skip.py"
+ BT_CAPABILITY_HELPER = ROOT / "unica/patches/bluetooth/a376b_android17_dbfw_capability.py"
++BT_SENDERS_HELPER = ROOT / "unica/patches/bluetooth/a376b_android17_dbfw_senders.py"
+ 
+ 
+ def metadata(partition, rel):
+@@ -164,6 +165,8 @@
+         spec.loader.exec_module(bt_fdf1)
+         bt_fdf1.verify(work / "system/system/lib64/libbluetooth_jni.so", expected_final_hash=True)
+         run(["python3", str(BT_CAPABILITY_HELPER), "verify", "--final-hash",
++             "--jni", str(work / "system/system/lib64/libbluetooth_jni.so")])
++        run(["python3", str(BT_SENDERS_HELPER), "verify", "--final-hash",
+              "--jni", str(work / "system/system/lib64/libbluetooth_jni.so")])
+     if partition == "system":
+         paths = [rel.removeprefix("system/") for rel in runtime.manifest()["files"]
+--- a/unica/patches/bluetooth/a376b_android17_fdf1_skip.lock.json
++++ b/unica/patches/bluetooth/a376b_android17_fdf1_skip.lock.json
+@@ -19,6 +19,6 @@
+   "send_call_preimage_hex": "f31f0d94",
+   "send_call_replacement_hex": "1f2003d5",
+   "context_output_sha256": "0c13e7ad71a51df2b82c2634b25bb349a7aa6fcb9d00199bcff311b34806dfed",
+-  "final_work_jni_sha256": "2b1f7bd88bdc01f8f227a6c6d24f1d87bb0857004d7533f541a7a9762d64571f",
++  "final_work_jni_sha256": "2885d0bcfbbf15a26521f7bf1574e18a52b22dda8c6b00a81e996781a608acdf",
+   "reason": "Attempt0222 runtime repeatedly timed out waiting for HCI opcode 0xfdf1. The M4 build log showed its Android16 signatures did not match BZI6; disassembly pins the still-active BZI6 call in StateOpened::OnEnter. Skip only this unsupported optional vendor-debug HCI send on the exact M4/G965F BZI6 profile; do not fabricate a reply or modify other Bluetooth operations."
+ }
+--- a/unica/patches/bluetooth/a376b_android17_native_backend.lock.json
++++ b/unica/patches/bluetooth/a376b_android17_native_backend.lock.json
+@@ -10,7 +10,7 @@
+   "donor_apex_sha256": "8f7d0753689594b0d1890647ca2213c3922e8e163b2e5982c48ddeaac075484b",
+   "donor_jni_sha256": "45cf1a8eb404dbafccf0ce74de725fcbaa926931daf17325dca7d0cfb88050aa",
+   "donor_native_output_sha256": "eb29ceb4eb948ee8ae8202020bbb5c0afbd1c57071984480e6ceb1ba93b30a9f",
+-  "final_work_jni_sha256": "2b1f7bd88bdc01f8f227a6c6d24f1d87bb0857004d7533f541a7a9762d64571f",
++  "final_work_jni_sha256": "2885d0bcfbbf15a26521f7bf1574e18a52b22dda8c6b00a81e996781a608acdf",
+   "gnu_build_id": "d98e0bf66e0d1c1cae5e2209c36e0462",
+   "branch_va": "0x7aac04",
+   "preimage_hex": "8816523948050037",
+--- a/unica/patches/bluetooth/a376b_android17_dbfw_capability.lock.json
++++ b/unica/patches/bluetooth/a376b_android17_dbfw_capability.lock.json
+@@ -12,7 +12,7 @@
+   "disabled_path_first16_hex": "284000b0e1031f2ae2031f2a1f310139",
+   "donor_quirk_sha256": "e66bbd7539757c84a54abc6a9f72d577133245249bc089a2b7e08d70c156236c",
+   "donor_combined_sha256": "8a57215f41fbb6ddee3de5cf185b00f9988c0c58a387bff7a5a595caedd0424b",
+-  "final_work_jni_sha256": "2b1f7bd88bdc01f8f227a6c6d24f1d87bb0857004d7533f541a7a9762d64571f",
++  "final_work_jni_sha256": "2885d0bcfbbf15a26521f7bf1574e18a52b22dda8c6b00a81e996781a608acdf",
+   "previous_final_work_jni_sha256": "26585f22ffb02a294578e6b652f3c14ff238989ff674f98050c2aec135db0ecf",
+   "reason": "The setter stores unsupported DBFW+ capability to global+0x48 and enables a group of vendor-debug commands. Force the byte to zero and use the existing zero-capability branch, which clears secondary state+0x4c and passes disabled arguments. Keep original HFP call bodies and all non-debug transport behavior intact."
+ }
+--- /dev/null
++++ b/unica/patches/bluetooth/a376b_android17_dbfw_senders.py
+@@ -0,0 +1,155 @@
++#!/usr/bin/env python3
++"""Normalize unsupported BZI6 DBFW+ and omit audited optional debug sends.
++
++Reason: the HFP capability quirk alone still leaves FDF1 timeouts on G965F.
++Files: thirteen locked instructions in JNI, with existing transport intact.
++Verify: exact Build ID, contexts, opcode/callback/call semantics, retained
++non-null callback guard, negative fixtures and final composed image hash.
++"""
++from pathlib import Path
++import argparse
++import hashlib
++import importlib.util
++import json
++import os
++import struct
++
++HERE = Path(__file__).resolve().parent
++spec = importlib.util.spec_from_file_location('m4_fdf1', HERE / 'a376b_android17_fdf1_skip.py')
++fdf1 = importlib.util.module_from_spec(spec)
++spec.loader.exec_module(fdf1)
++LOCK = json.loads((HERE / 'a376b_android17_dbfw_senders.lock.json').read_text())
++
++
++def sha(data):
++    return hashlib.sha256(data).hexdigest()
++
++
++def code(data, va, size=4):
++    start = fdf1.file_offset_for_va(data, int(va, 16) if isinstance(va, str) else va)
++    return start, data[start:start + size]
++
++
++def layout(data):
++    if fdf1.build_id(data) != LOCK['gnu_build_id']:
++        raise ValueError('DBFW sender Build ID changed')
++    table_va = int(LOCK['indirect_enqueue_table_va'], 16)
++    phoff, phentsize, phnum, *_ = fdf1.elf_tables(data)
++    pointers = []
++    for index in range(phnum):
++        typ, _, off, va, _, size, _, _ = struct.unpack_from('<IIQQQQQQ', data, phoff + index * phentsize)
++        if typ == 1 and va <= table_va and table_va + 8 <= va + size:
++            pointers.append(struct.unpack_from('<Q', data, off + table_va - va)[0])
++    if pointers != [int(LOCK['indirect_enqueue_target_va'], 16)]:
++        raise ValueError('DBFW indirect enqueue table changed')
++    guard = LOCK['nonnull_callback_guard']
++    _, body = code(data, guard['start_va'], int(guard['end_va_exclusive'], 16) - int(guard['start_va'], 16))
++    if sha(body) != guard['sha256']:
++        raise ValueError('DBFW non-null callback/guard must remain intact')
++    edits = []
++    for edit in LOCK['edits']:
++        offset, instruction = code(data, edit['va'])
++        before, after = bytes.fromhex(edit['preimage_hex']), bytes.fromhex(edit['replacement_hex'])
++        if len(before) != 4 or len(after) != 4:
++            raise ValueError('DBFW edit is not one instruction')
++        original = struct.unpack('<I', before)[0]
++        if edit['kind'] == 'null-callback-send':
++            if code(data, edit['opcode_va'])[1] != bytes.fromhex('20be9f52') or code(data, edit['null_callback_va'])[1] != bytes.fromhex('e3031faa'):
++                raise ValueError('DBFW send is not locked FDF1 with null callback')
++            if after != bytes.fromhex('1f2003d5'):
++                raise ValueError('DBFW send replacement must be NOP')
++            if edit['blr_register'] is None:
++                imm = original & 0x3ffffff
++                if imm & 0x2000000:
++                    imm -= 0x4000000
++                if original & 0xfc000000 != 0x94000000 or int(edit['va'], 16) + imm * 4 != int(edit['direct_target_va'], 16):
++                    raise ValueError('DBFW BL target changed')
++            elif original != 0xd63f0000 | (edit['blr_register'] << 5):
++                raise ValueError('DBFW indirect call register changed')
++        elif edit['kind'] == 'global-capability-zero':
++            replacement = struct.unpack('<I', after)[0]
++            if original != 0x392d8288 or replacement != original | 31:
++                raise ValueError('DBFW global quirk must only zero STRB [x20,#0xb60]')
++        else:
++            raise ValueError('Unknown DBFW edit kind')
++        start, context = code(data, edit['context_start_va'], int(edit['context_end_va_exclusive'], 16) - int(edit['context_start_va'], 16))
++        state = 'before' if instruction == before and sha(context) == edit['context_preimage_sha256'] else 'after' if instruction == after and sha(context) == edit['context_output_sha256'] else None
++        if state is None:
++            raise ValueError('DBFW sender context mismatch at ' + edit['va'])
++        edits.append((offset, after, state))
++    if len(edits) != 13 or len({offset for offset, _, _ in edits}) != 13:
++        raise ValueError('Expected exactly thirteen distinct DBFW instructions')
++    return edits
++
++
++def patch_bytes(data):
++    edits = layout(data)
++    states = {state for _, _, state in edits}
++    if len(states) != 1:
++        raise ValueError('Partially applied DBFW sender patch rejected')
++    if states == {'after'}:
++        return data, 'already-patched'
++    result = bytearray(data)
++    for offset, after, _ in edits:
++        result[offset:offset + 4] = after
++    layout(bytes(result))
++    return bytes(result), 'patched'
++
++
++def fixture():
++    donor = fdf1.extract_donor_jni()
++    result, state = patch_bytes(donor)
++    if state != 'patched' or sha(result) != LOCK['donor_output_sha256'] or patch_bytes(result) != (result, 'already-patched'):
++        raise ValueError('DBFW donor output/idempotence mismatch')
++    allowed = {offset + byte for offset, _, _ in layout(donor) for byte in range(4)}
++    if any(a != b and i not in allowed for i, (a, b) in enumerate(zip(donor, result))) or len(result) != len(donor):
++        raise ValueError('DBFW mutation escaped thirteen instruction slots')
++    negative = [fdf1.file_offset_for_va(donor, int(e['context_start_va'], 16)) for e in LOCK['edits']]
++    negative += [fdf1.file_offset_for_va(donor, int(e['null_callback_va'], 16)) for e in LOCK['edits'] if e['kind'] == 'null-callback-send']
++    negative += [fdf1.file_offset_for_va(donor, int(LOCK['nonnull_callback_guard']['call_va'], 16))]
++    for offset in negative:
++        wrong = bytearray(donor)
++        wrong[offset] ^= 1
++        try:
++            patch_bytes(bytes(wrong))
++        except ValueError:
++            continue
++        raise ValueError('Changed DBFW context/callback accepted')
++    partial = bytearray(donor)
++    offset, after, _ = layout(donor)[0]
++    partial[offset:offset + 4] = after
++    try:
++        patch_bytes(bytes(partial))
++    except ValueError:
++        pass
++    else:
++        raise ValueError('Partial DBFW patch accepted')
++    print('PASS thirteen instruction boundary; null callbacks/BL/BLR table; global zero; nonnull callback retained; donor, idempotence and negative fixtures')
++
++
++def main():
++    parser = argparse.ArgumentParser()
++    parser.add_argument('command', choices=['fixture', 'apply', 'verify'])
++    parser.add_argument('--jni', type=Path)
++    parser.add_argument('--final-hash', action='store_true')
++    args = parser.parse_args()
++    fdf1.check_scope()
++    if args.command == 'fixture':
++        fixture()
++        return
++    if not args.jni or args.jni.is_symlink() or not args.jni.is_file():
++        raise ValueError('DBFW sender JNI target missing or symlinked')
++    data = args.jni.read_bytes()
++    result, state = patch_bytes(data)
++    if args.command == 'apply' and state == 'patched':
++        temp = args.jni.with_name(args.jni.name + '.senders.tmp')
++        temp.write_bytes(result)
++        temp.chmod(args.jni.stat().st_mode & 0o777)
++        os.replace(temp, args.jni)
++    if args.command == 'verify' and (state != 'already-patched' or args.final_hash and sha(data) != LOCK['final_work_jni_sha256']):
++        raise ValueError('DBFW final composed JNI mismatch')
++    print('PASS locked BZI6 DBFW senders: ' + state)
++
++
++if __name__ == '__main__':
++    main()
+--- /dev/null
++++ b/unica/patches/bluetooth/a376b_android17_dbfw_senders.lock.json
+@@ -0,0 +1,199 @@
++{
++  "scope": "M4/G965F/BZI6 existing unsupported-FDF1 opt-in",
++  "gnu_build_id": "d98e0bf66e0d1c1cae5e2209c36e0462",
++  "donor_jni_sha256": "45cf1a8eb404dbafccf0ce74de725fcbaa926931daf17325dca7d0cfb88050aa",
++  "donor_output_sha256": "64ba830562a0b570658ac79f426a88e226a4c3a0463584c8db8d372e001a3328",
++  "final_work_jni_sha256": "2885d0bcfbbf15a26521f7bf1574e18a52b22dda8c6b00a81e996781a608acdf",
++  "previous_capability_jni_sha256": "2b1f7bd88bdc01f8f227a6c6d24f1d87bb0857004d7533f541a7a9762d64571f",
++  "edits": [
++    {
++      "kind": "null-callback-send",
++      "va": "0x6cb38c",
++      "opcode_va": "0x6cb37c",
++      "null_callback_va": "0x6cb388",
++      "context_start_va": "0x6cb374",
++      "context_end_va_exclusive": "0x6cb390",
++      "preimage_hex": "00013fd6",
++      "replacement_hex": "1f2003d5",
++      "context_preimage_sha256": "e1faa512f9c3dfcbb912ea61f5726b33559db23e54bd5158b8b109efd1cb8b62",
++      "context_output_sha256": "1242d4414b36ffbd6c7106d45ec925e16baa1d0314baadcb7a8dd7d0300ad723",
++      "direct_target_va": "0x9df9b4",
++      "blr_register": 8
++    },
++    {
++      "kind": "null-callback-send",
++      "va": "0x6cb478",
++      "opcode_va": "0x6cb460",
++      "null_callback_va": "0x6cb46c",
++      "context_start_va": "0x6cb458",
++      "context_end_va_exclusive": "0x6cb47c",
++      "preimage_hex": "00013fd6",
++      "replacement_hex": "1f2003d5",
++      "context_preimage_sha256": "317683ff9bf74d2b9bcb622211c9311de0616a40d2585332b96d0b7be8851706",
++      "context_output_sha256": "83f2e3b4dbd9ca5ff4702c9ccd9cfaba58b33cac5806a8787a9beeb011d004a1",
++      "direct_target_va": "0x9df9b4",
++      "blr_register": 8
++    },
++    {
++      "kind": "null-callback-send",
++      "va": "0x6ea9e4",
++      "opcode_va": "0x6ea9d0",
++      "null_callback_va": "0x6ea9d8",
++      "context_start_va": "0x6ea880",
++      "context_end_va_exclusive": "0x6ea9e8",
++      "preimage_hex": "20013fd6",
++      "replacement_hex": "1f2003d5",
++      "context_preimage_sha256": "b3a8c4b9a55d2eacaf61cdb3545bccd6a0a8fddb91bfa06090e2503f49dbd58d",
++      "context_output_sha256": "8ca2c0073b676d7829bd39c7ef7ca02c81039802314add1ac0fd0f7786cbc843",
++      "direct_target_va": "0x9df9b4",
++      "blr_register": 9
++    },
++    {
++      "kind": "null-callback-send",
++      "va": "0x70c424",
++      "opcode_va": "0x70c418",
++      "null_callback_va": "0x70c420",
++      "context_start_va": "0x70c418",
++      "context_end_va_exclusive": "0x70c428",
++      "preimage_hex": "644d0b94",
++      "replacement_hex": "1f2003d5",
++      "context_preimage_sha256": "8cdf7f4508d5030fe8a626f13365397d3c68f2c3a6bfa9f613ffbb086fd3f1e0",
++      "context_output_sha256": "1517bece417145d806120d5cae81d09982ccd3ebc4ca6951ce8893d187e26f8d",
++      "direct_target_va": "0x9df9b4",
++      "blr_register": null
++    },
++    {
++      "kind": "null-callback-send",
++      "va": "0x70c4f0",
++      "opcode_va": "0x70c4e4",
++      "null_callback_va": "0x70c4ec",
++      "context_start_va": "0x70c4e4",
++      "context_end_va_exclusive": "0x70c4f4",
++      "preimage_hex": "314d0b94",
++      "replacement_hex": "1f2003d5",
++      "context_preimage_sha256": "5ca64fb3f0c0008831cce0f377617274e678408095fc3db19bca21cad8bf10aa",
++      "context_output_sha256": "1517bece417145d806120d5cae81d09982ccd3ebc4ca6951ce8893d187e26f8d",
++      "direct_target_va": "0x9df9b4",
++      "blr_register": null
++    },
++    {
++      "kind": "null-callback-send",
++      "va": "0x70c504",
++      "opcode_va": "0x70c4f8",
++      "null_callback_va": "0x70c500",
++      "context_start_va": "0x70c4f8",
++      "context_end_va_exclusive": "0x70c508",
++      "preimage_hex": "2c4d0b94",
++      "replacement_hex": "1f2003d5",
++      "context_preimage_sha256": "292822ae704018b3940e88de0ffd7cd8ab9219d32b7c1dc1fd08694798ec9ab8",
++      "context_output_sha256": "1517bece417145d806120d5cae81d09982ccd3ebc4ca6951ce8893d187e26f8d",
++      "direct_target_va": "0x9df9b4",
++      "blr_register": null
++    },
++    {
++      "kind": "null-callback-send",
++      "va": "0x70c658",
++      "opcode_va": "0x70c64c",
++      "null_callback_va": "0x70c654",
++      "context_start_va": "0x70c64c",
++      "context_end_va_exclusive": "0x70c65c",
++      "preimage_hex": "d74c0b94",
++      "replacement_hex": "1f2003d5",
++      "context_preimage_sha256": "d224f49532d4e498600a93ee73ccb31af1e3d871d8c1366b88aaf58c028009f6",
++      "context_output_sha256": "f010dd51a644f6797d68baa15e61f3c29c450ee1dabf5a6ede05316dd42d3a4a",
++      "direct_target_va": "0x9df9b4",
++      "blr_register": null
++    },
++    {
++      "kind": "null-callback-send",
++      "va": "0x70c6a8",
++      "opcode_va": "0x70c69c",
++      "null_callback_va": "0x70c6a4",
++      "context_start_va": "0x70c69c",
++      "context_end_va_exclusive": "0x70c6ac",
++      "preimage_hex": "c34c0b94",
++      "replacement_hex": "1f2003d5",
++      "context_preimage_sha256": "cda6b5a7f5a9e7e3062a7576a029720253e8c27153d8ed4d7392c9705b0578ca",
++      "context_output_sha256": "f010dd51a644f6797d68baa15e61f3c29c450ee1dabf5a6ede05316dd42d3a4a",
++      "direct_target_va": "0x9df9b4",
++      "blr_register": null
++    },
++    {
++      "kind": "null-callback-send",
++      "va": "0x70c91c",
++      "opcode_va": "0x70c910",
++      "null_callback_va": "0x70c918",
++      "context_start_va": "0x70c910",
++      "context_end_va_exclusive": "0x70c920",
++      "preimage_hex": "264c0b94",
++      "replacement_hex": "1f2003d5",
++      "context_preimage_sha256": "c9c031414d40793f85456b8153d8e2949f3aa17d1fcdd245750b061d8cfa4915",
++      "context_output_sha256": "7b4bf94833f8714f222d01493333e34809dad93731226c23cbf1e2438fedd506",
++      "direct_target_va": "0x9df9b4",
++      "blr_register": null
++    },
++    {
++      "kind": "null-callback-send",
++      "va": "0x70c930",
++      "opcode_va": "0x70c924",
++      "null_callback_va": "0x70c92c",
++      "context_start_va": "0x70c924",
++      "context_end_va_exclusive": "0x70c934",
++      "preimage_hex": "214c0b94",
++      "replacement_hex": "1f2003d5",
++      "context_preimage_sha256": "ef59df20c6c10169ef7553816e5bf01c655651ebed7e58f6b5a5293d0168ed41",
++      "context_output_sha256": "7b4bf94833f8714f222d01493333e34809dad93731226c23cbf1e2438fedd506",
++      "direct_target_va": "0x9df9b4",
++      "blr_register": null
++    },
++    {
++      "kind": "null-callback-send",
++      "va": "0x9ff628",
++      "opcode_va": "0x9ff618",
++      "null_callback_va": "0x9ff620",
++      "context_start_va": "0x9ff610",
++      "context_end_va_exclusive": "0x9ff62c",
++      "preimage_hex": "e380ff97",
++      "replacement_hex": "1f2003d5",
++      "context_preimage_sha256": "34891bba103c94c0f57b18eb8be1fedf9b0fb51fad97d6c4f5a2004d4806ccd2",
++      "context_output_sha256": "bcbc3afcdf8af419cc22070853fff509a305964de371389bd8667551fc61d05f",
++      "direct_target_va": "0x9df9b4",
++      "blr_register": null
++    },
++    {
++      "kind": "null-callback-send",
++      "va": "0xa06128",
++      "opcode_va": "0xa06118",
++      "null_callback_va": "0xa06120",
++      "context_start_va": "0xa06110",
++      "context_end_va_exclusive": "0xa0612c",
++      "preimage_hex": "2366ff97",
++      "replacement_hex": "1f2003d5",
++      "context_preimage_sha256": "fd151c0933d0bc7fea528dedc536326fa8cf3fc124662e6b2f5df202b699803b",
++      "context_output_sha256": "a2725c956dade0c0aa5f67a515d0a394bc73291b3916ad23373b253eb7d85f02",
++      "direct_target_va": "0x9df9b4",
++      "blr_register": null
++    },
++    {
++      "kind": "global-capability-zero",
++      "va": "0x6ea574",
++      "context_start_va": "0x6ea560",
++      "context_end_va_exclusive": "0x6ea57c",
++      "preimage_hex": "88822d39",
++      "replacement_hex": "9f822d39",
++      "context_preimage_sha256": "04b9e114dda17543813577e78d10adc10257bc987948d069cde069d30835c5ff",
++      "context_output_sha256": "0a35ddf33e0f4fccacb453192839e2b31189e1bde3a548a0e81aaae4e32329b6"
++    }
++  ],
++  "nonnull_callback_guard": {
++    "start_va": "0x98d968",
++    "end_va_exclusive": "0x98d9ac",
++    "sha256": "26ae9cea7c954add23bbdbee5e37b847259825b86ee7dc22ed60cdb5926faf23",
++    "global_flag_va": "0xf10b60",
++    "call_va": "0x98d9a8",
++    "note": "Retain callback and send body; original TBZ guard sees normalized global capability zero."
++  },
++  "indirect_enqueue_table_va": "0xe9beb8",
++  "indirect_enqueue_target_va": "0x9df9b4",
++  "reason": "HFP-specific capability normalization removed its startup messages but other optional DBFW sends remained. Normalize main DBFW+ global capability and skip all 12 remaining audited null-callback FDF1 sends; retain nonnull callback code under its original disabled-capability guard."
++}

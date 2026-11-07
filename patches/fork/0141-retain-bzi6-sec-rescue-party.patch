@@ -1,0 +1,50 @@
+--- a/unica/patches/miscs/customize.sh
++++ b/unica/patches/miscs/customize.sh
+@@ -13,10 +13,43 @@
+     'ro.product.vendor.device'
+ 
+ # Disable RescueParty
+-SMALI_PATCH "system" "system/framework/services.jar" \
+-    "smali/com/android/server/RescueParty.smali" "return" \
+-    '-$$Nest$smisDisabled()Z' \
+-    'true'
++if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++    if [ "${ROM_MILESTONE:-}" != M4 ] || [ "${TARGET_CODENAME:-}" != star2lte ] || \
++            [ "${STAR2LTE_BUILD_MODEL:-}" != SM-G965F ] || \
++            [ "${SOURCE_PLATFORM_SDK_VERSION:-}" != 37 ] || \
++            [ "${SOURCE_FIRMWARE_CACHE_SUFFIX:-}" != A376BXXU5BZI6 ]; then
++        LOGE "Unreviewed BZI6 RescueParty dispatch scope"
++        return 1
++    fi
++
++    _AOSP_RESCUEPARTY_SMALI="$APKTOOL_DIR/system/framework/services.jar/smali/com/android/server/RescueParty.smali"
++    _SAMSUNG_RESCUEPARTY_SMALI="$APKTOOL_DIR/system/framework/services.jar/smali/com/android/server/SecRescueParty.smali"
++    _EXPECTED_SEC_RESCUEPARTY_SHA256="7c27e2d00fe9ad358a880004a4a7272b57f592e1204cc9798d09776259e3a716"
++    [ ! -f "$_AOSP_RESCUEPARTY_SMALI" ] || {
++        LOGE "Unexpected BZI6 AOSP RescueParty class; review before adapting"
++        return 1
++    }
++    [ -f "$_SAMSUNG_RESCUEPARTY_SMALI" ] || {
++        LOGE "BZI6 Samsung SecRescueParty class is missing"
++        return 1
++    }
++    _ACTUAL_SEC_RESCUEPARTY_SHA256="$(sha256sum "$_SAMSUNG_RESCUEPARTY_SMALI" | cut -d ' ' -f 1)"
++    [ "$_ACTUAL_SEC_RESCUEPARTY_SHA256" = "$_EXPECTED_SEC_RESCUEPARTY_SHA256" ] || {
++        LOGE "Unreviewed BZI6 SecRescueParty class hash: $_ACTUAL_SEC_RESCUEPARTY_SHA256"
++        return 1
++    }
++    grep -Fq 'SecRescueParty;->secRescuePartyRegisterHealthObserver(Landroid/content/Context;)V' \
++        "$APKTOOL_DIR/system/framework/services.jar/smali/com/android/server/SystemServer.smali" || {
++        LOGE "BZI6 SystemServer SecRescueParty registration is missing"
++        return 1
++    }
++    LOGW "Retaining hash-pinned BZI6 SecRescueParty; legacy AOSP RescueParty adapter does not apply"
++else
++    SMALI_PATCH "system" "system/framework/services.jar" \
++        "smali/com/android/server/RescueParty.smali" "return" \
++        '-$$Nest$smisDisabled()Z' \
++        'true'
++fi
+ 
+ # Better model detection in FreecessController
+ SMALI_PATCH "system" "system/framework/services.jar" \

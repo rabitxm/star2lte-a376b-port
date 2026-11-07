@@ -1,0 +1,237 @@
+# Reason: pinned legacy Infinity AOD lacks the BZI6 optional background-disconnect hook and aborts SystemUI.
+# Files: exact VersionCheckingProxy adapter/lock, finalization dispatch, compiled/image gate including legacy AOD bytes.
+# Verify: source/compiled/AOD hashes; compiled reflection cases missing/concrete/throwing/other target, onDestroy preserved, baseline negative control, DEX semantic diff, runtime sleep-wake/plugin stability.
+# Rollback: original SystemUI APK retained with exact hash; preserve kernel/vendor/RIL/data.
+--- a/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
+@@ -7571,6 +7571,11 @@
+         apply-work --systemui-dir "$APKTOOL_DIR/system_ext/priv-app/SystemUI/SystemUI.apk" || return 1
+     python3 "$SRC_DIR/unica/patches/exynos9810_device_stack/exynos9810_finalization/a376b_android17_facewidget_thread.py" \
+         verify-work --systemui-dir "$APKTOOL_DIR/system_ext/priv-app/SystemUI/SystemUI.apk" || return 1
++    # Infinity's pinned legacy AOD predates one optional background hook.
++    # Concrete implementations and the normal onDestroy path remain active.
++    python3 "$SRC_DIR/unica/patches/exynos9810_device_stack/exynos9810_finalization/a376b_android17_facewidget_legacy.py" \
++        apply-work --systemui-dir "$APKTOOL_DIR/system_ext/priv-app/SystemUI/SystemUI.apk" \
++        --aod-apk "$WORK_DIR/system/system/priv-app/AODService_v80/AODService_v80.apk" || return 1
+ fi
+ 
+ # Reapply the measured M4 post-boot diagnostic composition after the final
+--- a/scripts/internal/verify_m4_runtime_image.py
++++ b/scripts/internal/verify_m4_runtime_image.py
+@@ -23,6 +23,7 @@
+ POSTBOOT_HELPER = ROOT / "unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_postboot_diagnostic.py"
+ THERMAL_HELPER = ROOT / "unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_thermal.py"
+ FACEWIDGET_HELPER = ROOT / "unica/patches/exynos9810_device_stack/exynos9810_finalization/a376b_android17_facewidget_thread.py"
++FACEWIDGET_LEGACY_HELPER = ROOT / "unica/patches/exynos9810_device_stack/exynos9810_finalization/a376b_android17_facewidget_legacy.py"
+ CALL_LISTENER_HELPER = ROOT / "unica/patches/exynos9810_device_stack/exynos9810_finalization/a376b_android17_call_listener.py"
+ KG30_HELPER = ROOT / "unica/patches/exynos9810_device_stack/exynos9810_finalization/a376b_android17_kg30_nonblocking.py"
+ BT_BACKEND_HELPER = ROOT / "unica/patches/bluetooth/a376b_android17_native_backend.py"
+@@ -50,6 +51,7 @@
+             "system/etc/selinux/plat_file_contexts": (0o644, (0, 0), "file_contexts_file"),
+             "system/priv-app/SamsungDeviceHealthManagerService/SamsungDeviceHealthManagerService.apk": (0o644, (0, 0), "system_file"),
+             "system_ext/priv-app/SystemUI/SystemUI.apk": (0o644, (0, 0), "system_file"),
++            "system/priv-app/AODService_v80/AODService_v80.apk": (0o644, (0, 0), "system_file"),
+             "system/apex/com.android.nfcservices.capex": (0o644, (0, 0), "system_file"),
+             "system/priv-app/SecNfc/SecNfc.apk": (0o644, (0, 0), "system_file"),
+             "system/etc/init/aconfigd.rc": (0o644, (0, 0), "system_file"),
+@@ -220,7 +222,11 @@
+                 raise ValueError("M4 compiled SystemUI or bundled Apktool is missing")
+             run(["python3", str(FACEWIDGET_HELPER), "verify-apk", "--apk", str(systemui_apk),
+                  "--apktool", str(apktool), "--temp-root", tempfile.gettempdir()])
+-            paths.append(systemui_rel)
++            aod_rel = "system/priv-app/AODService_v80/AODService_v80.apk"
++            run(["python3", str(FACEWIDGET_LEGACY_HELPER), "verify-apk", "--apk", str(systemui_apk),
++                 "--apktool", str(apktool), "--temp-root", tempfile.gettempdir(),
++                 "--aod-apk", str(work / "system" / aod_rel)])
++            paths.extend([systemui_rel, aod_rel])
+             # Verify the compiled component declaration and then compare the
+             # same framework-res bytes/metadata inside the real SYSTEM image.
+             framework_res_rel = "system/framework/framework-res.apk"
+--- /dev/null
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/a376b_android17_facewidget_legacy.py
+@@ -0,0 +1,170 @@
++#!/usr/bin/env python3
++"""Bridge one absent optional background hook on the pinned legacy AOD plugin.
++
++Reason: SystemUI dies with AbstractMethodError during plugin disconnect.
++File: VersionCheckingProxy only; preserve all concrete callbacks/onDestroy.
++Verify: exact class/AOD inputs, source and compiled class hashes, negative
++fixtures and device reflection tests before replacing the SystemUI APK.
++"""
++from pathlib import Path
++import argparse
++import hashlib
++import json
++import os
++import subprocess
++import tempfile
++
++LOCK = json.loads(Path(__file__).with_suffix('.lock.json').read_text())
++CLASS = 'Lcom/android/systemui/plugins/annotations/VersionCheckingProxy;'
++METHOD = '''.method private static skipLegacyBackgroundHook(Ljava/lang/reflect/Method;Ljava/lang/Object;)Z
++    .locals 3
++
++    if-eqz p1, :legacy_no
++
++    invoke-virtual {p0}, Ljava/lang/reflect/Method;->getName()Ljava/lang/String;
++    move-result-object v0
++    const-string v1, "disconnectPluginOnBackground"
++    invoke-virtual {v1, v0}, Ljava/lang/String;->equals(Ljava/lang/Object;)Z
++    move-result v0
++    if-eqz v0, :legacy_no
++
++    invoke-virtual {p0}, Ljava/lang/reflect/Method;->getDeclaringClass()Ljava/lang/Class;
++    move-result-object v0
++    invoke-virtual {v0}, Ljava/lang/Class;->getName()Ljava/lang/String;
++    move-result-object v0
++    const-string v1, "com.android.systemui.plugins.keyguardstatusview.PluginKeyguardStatusView"
++    invoke-virtual {v1, v0}, Ljava/lang/String;->equals(Ljava/lang/Object;)Z
++    move-result v0
++    if-eqz v0, :legacy_no
++
++    invoke-virtual {p0}, Ljava/lang/reflect/Method;->getReturnType()Ljava/lang/Class;
++    move-result-object v0
++    sget-object v1, Ljava/lang/Void;->TYPE:Ljava/lang/Class;
++    if-ne v0, v1, :legacy_no
++
++    invoke-virtual {p0}, Ljava/lang/reflect/Method;->getParameterTypes()[Ljava/lang/Class;
++    move-result-object v0
++    array-length v1, v0
++    if-nez v1, :legacy_no
++
++    invoke-virtual {p1}, Ljava/lang/Object;->getClass()Ljava/lang/Class;
++    move-result-object v1
++    invoke-virtual {v1}, Ljava/lang/Class;->getName()Ljava/lang/String;
++    move-result-object v2
++    const-string p1, "com.samsung.android.app.facewidget.plugin.PluginKeyguardStatusViewImpl"
++    invoke-virtual {p1, v2}, Ljava/lang/String;->equals(Ljava/lang/Object;)Z
++    move-result v2
++    if-eqz v2, :legacy_no
++
++    :legacy_try_start
++    invoke-virtual {p0}, Ljava/lang/reflect/Method;->getName()Ljava/lang/String;
++    move-result-object p0
++    invoke-virtual {v1, p0, v0}, Ljava/lang/Class;->getMethod(Ljava/lang/String;[Ljava/lang/Class;)Ljava/lang/reflect/Method;
++    move-result-object p0
++    invoke-virtual {p0}, Ljava/lang/reflect/Method;->getModifiers()I
++    move-result p0
++    invoke-static {p0}, Ljava/lang/reflect/Modifier;->isAbstract(I)Z
++    move-result p0
++    :legacy_try_end
++    .catch Ljava/lang/NoSuchMethodException; {:legacy_try_start .. :legacy_try_end} :legacy_absent
++
++    return p0
++
++    :legacy_absent
++    move-exception p0
++    const/4 v0, 0x1
++    return v0
++
++    :legacy_no
++    const/4 v0, 0x0
++    return v0
++.end method
++
++'''
++ANCHOR = '    const-class p1, Lcom/android/systemui/plugins/annotations/VersionCheck;'
++GUARD = f'''    iget-object v0, p0, {CLASS}->mTargetInstance:Ljava/lang/Object;
++
++    invoke-static {{p2, v0}}, {CLASS}->skipLegacyBackgroundHook(Ljava/lang/reflect/Method;Ljava/lang/Object;)Z
++    move-result v0
++    if-eqz v0, :legacy_invoke_original
++    const/4 v0, 0x0
++    return-object v0
++
++    :legacy_invoke_original
++'''
++
++
++def sha(data):
++    return hashlib.sha256(data).hexdigest()
++
++
++def scope():
++    expected = {'ROM_SOURCE_CONFIG': 'essi_a376b_android17', 'ROM_MILESTONE': 'M4',
++                'TARGET_CODENAME': 'star2lte', 'STAR2LTE_BUILD_MODEL': 'SM-G965F',
++                'SOURCE_PLATFORM_SDK_VERSION': '37', 'EXYNOS9810_M4_RUNTIME_COMPAT': 'true'}
++    if any(os.environ.get(k) != v for k, v in expected.items()):
++        raise ValueError('Legacy FaceWidget scope mismatch')
++
++
++def patch_bytes(data):
++    if sha(data) == LOCK['output_sha256']:
++        return data
++    if sha(data) != LOCK['source_sha256']:
++        raise ValueError('Legacy FaceWidget proxy source mismatch')
++    text = data.decode()
++    if text.count(ANCHOR) != 1 or text.count('# virtual methods\n') != 1:
++        raise ValueError('Legacy FaceWidget proxy anchors changed')
++    text = text.replace('# virtual methods\n', METHOD + '# virtual methods\n', 1)
++    result = text.replace(ANCHOR, GUARD + ANCHOR, 1).encode()
++    if sha(result) != LOCK['output_sha256']:
++        raise ValueError('Legacy FaceWidget proxy output mismatch')
++    return result
++
++
++def verify_aod(path):
++    if path.is_symlink() or not path.is_file() or sha(path.read_bytes()) != LOCK['legacy_aod_sha256']:
++        raise ValueError('Legacy AOD payload changed; review optional callback ABI')
++
++
++def main():
++    parser = argparse.ArgumentParser()
++    parser.add_argument('command', choices=['apply-work', 'verify-work', 'verify-apk', 'fixture'])
++    parser.add_argument('--systemui-dir', type=Path)
++    parser.add_argument('--aod-apk', type=Path, required=True)
++    parser.add_argument('--apk', type=Path)
++    parser.add_argument('--apktool', type=Path)
++    parser.add_argument('--temp-root', type=Path)
++    args = parser.parse_args()
++    scope()
++    verify_aod(args.aod_apk)
++    if args.command == 'verify-apk':
++        with tempfile.TemporaryDirectory(prefix='m4-legacy-proxy-', dir=args.temp_root) as td:
++            decoded = Path(td) / 'decoded'
++            subprocess.run([str(args.apktool), 'd', '--no-res', '--no-debug-info', '-o', str(decoded), str(args.apk)], check=True, capture_output=True)
++            data = (decoded / LOCK['source_class']).read_bytes()
++            if sha(data) != LOCK['roundtrip_sha256']:
++                raise ValueError('Compiled legacy FaceWidget proxy mismatch')
++    else:
++        path = args.systemui_dir / LOCK['source_class']
++        if path.is_symlink():
++            raise ValueError('Legacy FaceWidget proxy cannot be a symlink')
++        data = path.read_bytes()
++        if args.command == 'fixture':
++            result = patch_bytes(data)
++            assert patch_bytes(result) == result
++            wrong = bytearray(data); wrong[0] ^= 1
++            try:
++                patch_bytes(bytes(wrong))
++            except ValueError:
++                pass
++            else:
++                raise ValueError('Changed proxy accepted')
++        elif args.command == 'apply-work':
++            path.write_bytes(patch_bytes(data))
++        elif sha(data) != LOCK['output_sha256']:
++            raise ValueError('Legacy FaceWidget proxy patch absent')
++    print('PASS locked legacy AOD optional-hook bridge: ' + args.command)
++
++
++if __name__ == '__main__':
++    main()
+--- /dev/null
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/a376b_android17_facewidget_legacy.lock.json
+@@ -0,0 +1,12 @@
++{
++  "scope": "M4/G965F/BZI6 legacy Infinity AOD plugin only",
++  "source_class": "smali_classes2/com/android/systemui/plugins/annotations/VersionCheckingProxy.smali",
++  "source_sha256": "9d0faaab341d9163e58a30c995401de76c26b1d5d79628328e1364da99256db2",
++  "legacy_aod_sha256": "b374094fe87c6ab9f231096ddad4cd1bb0945be74c3247c9a441af8a3262b9f3",
++  "interface": "com.android.systemui.plugins.keyguardstatusview.PluginKeyguardStatusView",
++  "target": "com.samsung.android.app.facewidget.plugin.PluginKeyguardStatusViewImpl",
++  "optional_method": "disconnectPluginOnBackground",
++  "reason": "Legacy AOD predates optional background hook. Preserve concrete callbacks and Plugin.onDestroy; omit only absent/abstract zero-argument void hook on pinned legacy target.",
++  "output_sha256": "a238cb636be32d220613e8624951277aaec8d401da70b0f66ec0edffaedbaaa9",
++  "roundtrip_sha256": "d8633ebecd20adea635db1ea906b53f0722d2df4f1a0a63b39e4a5739a2b8c58"
++}

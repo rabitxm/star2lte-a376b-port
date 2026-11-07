@@ -1,0 +1,201 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] port diagnostic stats API and shared transport identity closure
+
+# Reason: actual M4 StatsPullAtomService crashes with NoSuchMethodError querySummary(NetworkTemplate;JJI). Actual services.jar audit identifies five missing API signatures. Empty stats stubs or dropping flags would hide the incompatible boundary.
+# Affected: existing diagnostic network APEX helper/lock plus scoped stats adapter. Optional --stats-compat implies196 L4S, donates actual BZI6 query/sanitizer/setter, five shared identity/template/persistence classes, and two utility methods. Three legacy entry points and TYPE_TEST remain. No service implementation, Binder interface, kernel, vendor or radio replacement; normal ROM profiles unchanged.
+# Verify: all2161 main/t Java classes round-trip, original method/static kinds/field types retained, expected8 changed classes only, all385 actual services references resolve,36 new refs audited (Long.compare requires actual runtime fixture). Locked input/JAR/APEX hashes, deterministic assembly, AVB/APKv3/75 labels and4KiB. L4S-only composition retains its196 hash. Runtime fixture covers flags/rejections, generic transport filters, Parcel, v7/v8 persistence and old entry points.
+# Rollback: original BZI6 APEX pair/libui and V6 removal; full original BOOT/VENDOR. Snapshot the two stats directories verified from S22 Dependencies and restore their exact file/UID/GID/mode/SELinux/mtime state when reverting to the old v7 reader. No fresh-format, EFS/modem write or new kernel build.
+
+--- a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_network_native.py
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_network_native.py
+@@ -10,7 +10,7 @@
+ module=F/'unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_native32.py'
+ spec=importlib.util.spec_from_file_location('native32',module);native=importlib.util.module_from_spec(spec);spec.loader.exec_module(native)
+ run=native.run;sha=native.digest
+-P=argparse.ArgumentParser();P.add_argument('output',type=Path);P.add_argument('--l4s-compat',action='store_true');a=P.parse_args();O=a.output.resolve();O.mkdir(parents=True,exist_ok=False)
++P=argparse.ArgumentParser();P.add_argument('output',type=Path);P.add_argument('--l4s-compat',action='store_true');P.add_argument('--stats-compat',action='store_true');a=P.parse_args();a.l4s_compat=a.l4s_compat or a.stats_compat;O=a.output.resolve();O.mkdir(parents=True,exist_ok=False)
+ inputs={tag:(F/entry['path'],entry['sha256']) for tag,entry in LOCK['inputs'].items()}
+ assert sha(K/'apex_pubkey')=='fedf8b2943754e4848f9d3edb25f228adec6a6e26d5b7fa8816851c0cd7155dd'
+ assert sha(K/'container.x509.pem')=='ee98540809da3112f84e0e3ab1ae13b9108b5121dd5c2f0c7bea8851e2cf272a'
+@@ -30,7 +30,14 @@
+  java_path,java_report=java_mod.apply(O/'s22/javalib/framework-connectivity.jar',O/'bzi6/javalib/framework-connectivity.jar',O/'l4s',T,run)
+  assert sha(java_path)==LOCK['l4s_compat']['java_jar_sha256']
+  shutil.copyfile(java_path,merged/'javalib/framework-connectivity.jar')
+-config=[];contexts=[];metadata={}
++stats_report=None
++if a.stats_compat:
++ spec=importlib.util.spec_from_file_location('network_stats',Path(__file__).with_name('a376b_android17_network_stats.py'));stats_mod=importlib.util.module_from_spec(spec);spec.loader.exec_module(stats_mod)
++ targets,stats_report=stats_mod.apply(merged/'javalib/framework-connectivity.jar',O/'bzi6/javalib/framework-connectivity.jar',O/'s22/javalib/framework-connectivity-t.jar',O/'bzi6/javalib/framework-connectivity-t.jar',O/'stats',T,run)
++ for tag,dest in [('main','framework-connectivity.jar'),('t','framework-connectivity-t.jar')]:
++  assert sha(targets[tag])==LOCK['stats_compat']['java_jar_sha256'][tag]
++  shutil.copyfile(targets[tag],merged/'javalib'/dest)
++config=[];contexts=[];metadata={} 
+ for i,p in enumerate([merged]+sorted(merged.rglob('*'))):
+  r=str(p.relative_to(merged));r='' if r=='.' else r
+  st=run(['debugfs','-R','stat /'+r,O/'s22.img']);mode=re.search(r'Mode:\s+0*(\d+)',st).group(1);uid,gid=re.search(r'User:\s+(\d+)\s+Group:\s+(\d+)',st).groups()
+@@ -51,10 +58,10 @@
+  if p.is_symlink():assert q.is_symlink() and os.readlink(p)==os.readlink(q),r
+  elif p.is_file():
+   if p.read_bytes()!=q.read_bytes():changed.append(r)
+-assert changed==sorted([rel]+(['javalib/framework-connectivity.jar'] if a.l4s_compat else [])),changed;assert (verified/rel).read_bytes()==new.read_bytes()
++assert changed==sorted([rel]+(['javalib/framework-connectivity.jar'] if a.l4s_compat else [])+(['javalib/framework-connectivity-t.jar'] if a.stats_compat else [])),changed;assert (verified/rel).read_bytes()==new.read_bytes()
+ for r,expected in metadata.items():
+  st=run(['debugfs','-R','stat /'+r,image]);mode=re.search(r'Mode:\s+0*(\d+)',st).group(1);uid,gid=re.search(r'User:\s+(\d+)\s+Group:\s+(\d+)',st).groups();label=O/'verify-label';label.unlink(missing_ok=True);run(['debugfs','-R',f'ea_get -f "{label}" /{r} security.selinux',image]);assert label.exists();found=(mode,uid,gid,label.read_bytes().rstrip(b'\0').decode());assert found==expected,(r,found,expected)
+-salt=hashlib.sha256((O/'s22.img').read_bytes()+new.read_bytes()+((merged/'javalib/framework-connectivity.jar').read_bytes() if a.l4s_compat else b'')).hexdigest();run([T/'avbtool','add_hashtree_footer','--do_not_generate_fec','--algorithm','SHA256_RSA4096','--key',K/'payload.pem','--prop','apex.key:com.android.tethering','--image',image,'--salt',salt,'--hash_algorithm','sha256']);run([T/'avbtool','verify_image','--image',image,'--key',K/'payload.pem'])
++salt=hashlib.sha256((O/'s22.img').read_bytes()+new.read_bytes()+((merged/'javalib/framework-connectivity.jar').read_bytes() if a.l4s_compat else b'')+((merged/'javalib/framework-connectivity-t.jar').read_bytes() if a.stats_compat else b'')).hexdigest();run([T/'avbtool','add_hashtree_footer','--do_not_generate_fec','--algorithm','SHA256_RSA4096','--key',K/'payload.pem','--prop','apex.key:com.android.tethering','--image',image,'--salt',salt,'--hash_algorithm','sha256']);run([T/'avbtool','verify_image','--image',image,'--key',K/'payload.pem'])
+ unsigned=O/'unsigned.apex';signed=O/'com.android.tethering.apex'
+ with zipfile.ZipFile(O/'s22.apex') as src,zipfile.ZipFile(unsigned,'w',compression=zipfile.ZIP_STORED) as dst:
+  for entry in src.infolist():
+@@ -71,8 +78,8 @@
+  with zipfile.ZipFile(O/'s22.apex') as src:
+   for entry in src.infolist():
+    if not entry.filename.startswith('META-INF/') and entry.filename not in ('apex_payload.img','apex_pubkey'):assert z.read(entry.filename)==src.read(entry.filename),entry.filename
+-expected=LOCK['l4s_compat'] if a.l4s_compat else LOCK
++expected=LOCK['stats_compat'] if a.stats_compat else LOCK['l4s_compat'] if a.l4s_compat else LOCK
+ if sha(signed)!=expected['output_sha256'] or signed.stat().st_size!=expected['output_bytes']:
+  raise RuntimeError('M4 native networking APEX reproducibility/hash gate failed')
+-report={'java_l4s':java_report,'result':'PASS','changed_payload_files':changed,'metadata_paths_verified':len(metadata),'old_native_sha256':sha(old),'new_native_sha256':sha(new),'output_sha256':sha(signed),'bytes':signed.stat().st_size,'payload_avb':'PASS','container_v3':verification.strip(),'payload_zip_offset':offset,'other_container_metadata_unchanged':True,'signing_identity':'explicit existing local native32 diagnostic keys; not Samsung original signing','phone_deployed':False,'network_acceptance':False}
++report={'java_stats':stats_report,'java_l4s':java_report,'result':'PASS','changed_payload_files':changed,'metadata_paths_verified':len(metadata),'old_native_sha256':sha(old),'new_native_sha256':sha(new),'output_sha256':sha(signed),'bytes':signed.stat().st_size,'payload_avb':'PASS','container_v3':verification.strip(),'payload_zip_offset':offset,'other_container_metadata_unchanged':True,'signing_identity':'explicit existing local native32 diagnostic keys; not Samsung original signing','phone_deployed':False,'network_acceptance':False}
+ (O/'report.json').write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report,indent=2),flush=True)
+--- a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_network_native.lock.json
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_network_native.lock.json
+@@ -28,5 +28,14 @@
+     "output_bytes": 67911680,
+     "scope": "diagnostic only; add exact BZI6 L4S getter/setter and actual Settings semantics; no API success stub",
+     "java_jar_sha256": "91e443b8a6705ac3f20d986b70b449ceee604a821a43cbdb80ed07a2c4b4b4c7"
++  },
++  "stats_compat": {
++    "scope": "diagnostic; donor stats overloads and complete shared transport/template/identity persistence unit; legacy entry points retained",
++    "output_sha256": "f17fa222e1f127d349e61b592c705c127f682ad4d22dda164c03397857862cc6",
++    "output_bytes": 67911680,
++    "java_jar_sha256": {
++      "main": "cb000f867b4a969954b157f50a1c07920fc047a3232ee51086dc0fb0ace541f3",
++      "t": "bd65d527e221beec24f329ff0cb980a52c8a024075fb004121062bb1314bb7e8"
++    }
+   }
+ }
+--- /dev/null
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_network_stats.py
+@@ -0,0 +1,122 @@
++"""Diagnostic network-stats API closure from locked BZI6 donor JARs.
++Reason: real StatsPullAtomService querySummary(NetworkTemplate;JJI) fatal.
++Keep old Binder service interfaces; donate transport identity/template persistence
++as one shared bootclasspath unit and retain old entry points explicitly.
++"""
++from pathlib import Path
++import re,shutil,zipfile,hashlib,json,importlib.util
++spec=importlib.util.spec_from_file_location('l4s_adapter',Path(__file__).with_name('a376b_android17_network_l4s.py'));l4s=importlib.util.module_from_spec(spec);spec.loader.exec_module(l4s)
++methods=l4s.methods;digest=l4s.digest
++
++def canonical(text):
++ result=l4s.canonical(text)
++ for key,body in result['methods'].items():
++  labels={}
++  def rename(match):
++   token=match.group()
++   if token.startswith('"'):return token
++   if token not in labels:labels[token]=':label_'+str(len(labels))
++   return labels[token]
++  # Ignore quoted strings and field/type colons; retain exact branch-target identity.
++  result['methods'][key]=re.sub(r'"(?:\\.|[^"\\])*"|(?<![\w$>;]):[A-Za-z0-9_]+',rename,body)
++ return result
++FULL=['android/net/NetworkTemplate.smali','android/net/NetworkTemplate$Builder.smali','android/net/NetworkIdentity.smali','android/net/NetworkIdentity$Builder.smali','android/net/connectivity/android/net/NetworkIdentitySet.smali']
++MANAGER='android/app/usage/NetworkStatsManager.smali'
++UTIL='android/net/connectivity/com/android/net/module/util/NetworkCapabilitiesUtils.smali'
++COLLECTION='android/net/connectivity/com/android/net/module/util/CollectionUtils.smali'
++NEW_METHODS=['querySummary(Landroid/net/NetworkTemplate;JJI)Landroid/app/usage/NetworkStats;','querySummaryForDevice(Landroid/net/NetworkTemplate;JJI)Landroid/app/usage/NetworkStats$Bucket;','queryTaggedSummary(Landroid/net/NetworkTemplate;JJI)Landroid/app/usage/NetworkStats;','sanitizeQueryFlags(I)I']
++EXPECTED={
++ 'old_main':'91e443b8a6705ac3f20d986b70b449ceee604a821a43cbdb80ed07a2c4b4b4c7',
++ 'new_main':'391f21176a39a112285efe9b492fdb8d50b3c1dc36b5ea4f07da7dabe91c3b33',
++ 'old_t':'2953c4396e9a9548e00be6b5ed610b8b62e0ea01da78543d9ec8d76f09487830',
++ 'new_t':'fae20cc45231ef0fc887db4e5363c62a939798d6fbe8731b7064f2f035839393'}
++
++def add_field(text,donor,name,section):
++ line=re.findall(r'^\.field [^\n]* '+re.escape(name)+r':[^\n]*$',donor,re.M);assert len(line)==1
++ assert not re.search(r'^\.field [^\n]* '+re.escape(name)+r':',text,re.M)
++ assert text.count(section)==1
++ return text.replace(section,section+'\n'+line[0]+'\n',1)
++
++def apply(old_main,new_main,old_t,new_t,output,tools,run):
++ output=Path(output);output.mkdir(exist_ok=False);base=['java','-cp',tools/'apktool.jar']
++ jars={'old_main':old_main,'new_main':new_main,'old_t':old_t,'new_t':new_t}
++ for tag,p in jars.items():
++  assert digest(p)==EXPECTED[tag],tag
++  with zipfile.ZipFile(p) as z:
++   assert [n for n in z.namelist() if re.fullmatch(r'classes\d*\.dex',n)]==['classes.dex']
++   dex=z.read('classes.dex');assert dex[:8]==b'dex\n039\0';(output/(tag+'.dex')).write_bytes(dex)
++  run(base+['com.android.tools.smali.baksmali.Main','disassemble','-a','29','-l','-j','8','-o',output/tag,output/(tag+'.dex')])
++ main=output/'main';t=output/'t';shutil.copytree(output/'old_main',main);shutil.copytree(output/'old_t',t)
++ # Shared donor unit: live transport capture, generic matching, Parcel and v7/v8 disk IO.
++ for rel in FULL:shutil.copyfile(output/'new_t'/rel,t/rel)
++ # Preserve the legacy NetworkTemplate constructor, initializing its new bitset to zero.
++ rel=FULL[0];orig=methods((output/'old_t'/rel).read_text());ctor='<init>(I[Ljava/lang/String;[Ljava/lang/String;IIIII)V'
++ body=orig[ctor];assert '.locals 3' in body and body.count('return-void')==1
++ body=body.replace('    return-void','    const-wide/16 v0, 0x0\n\n    iput-wide v0, p0, Landroid/net/NetworkTemplate;->mTransportTypesBits:J\n\n    return-void')
++ p=t/rel;p.write_text(p.read_text()+'\n'+body+'\n')
++ # Legacy identity constructors deduce transports with the donor's actual conversion.
++ rel=FULL[2];orig_text=(output/'old_t'/rel).read_text();ctor='<init>(IILjava/lang/String;Ljava/lang/String;ZZZII)V';body=methods(orig_text)[ctor]
++ assert '.locals 0' in body and body.count('return-void')==1
++ body=body.replace('.locals 0','.locals 3').replace('    return-void','''    invoke-static {p1}, Landroid/net/connectivity/com/android/net/module/util/NetworkCapabilitiesUtils;->deduceTransportTypeForLegacyNetworkType(I)I
++    move-result v0
++    const/4 v1, -0x1
++    if-eq v0, v1, :compat_unknown_transport
++    filled-new-array {v0}, [I
++    move-result-object v0
++    invoke-static {v0}, Landroid/net/connectivity/com/android/net/module/util/BitUtils;->packBits([I)J
++    move-result-wide v1
++    goto :compat_store_transport
++    :compat_unknown_transport
++    const-wide/16 v1, 0x0
++    :compat_store_transport
++    iput-wide v1, p0, Landroid/net/NetworkIdentity;->mTransportTypesBits:J
++    return-void''')
++ p=t/rel;s=add_field(p.read_text(),orig_text,'TYPE_TEST','# static fields');p.write_text(s+'\n'+body+'\n')
++ # All old service callers still use writeToStream(DataOutput). Store real bits (v8).
++ p=t/FULL[4];p.write_text(p.read_text()+'''
++.method public blacklist writeToStream(Ljava/io/DataOutput;)V
++    .locals 1
++    .annotation system Ldalvik/annotation/Throws;
++        value = {
++            Ljava/io/IOException;
++        }
++    .end annotation
++    const/4 v0, 0x1
++    invoke-virtual {p0, p1, v0}, Landroid/net/connectivity/android/net/NetworkIdentitySet;->writeToStream(Ljava/io/DataOutput;Z)V
++    return-void
++.end method
++''')
++ # Retain S22 manager and ctor; its existing ctor calls setAugment(true).
++ # Donor setter preserves mFlags and also initializes/synchronizes the new boolean.
++ p=t/MANAGER;s=p.read_text();donor=(output/'new_t'/MANAGER).read_text();om=methods(s);dm=methods(donor)
++ assert not set(NEW_METHODS)&om.keys()
++ s=add_field(s,donor,'mAugmentWithSubscriptionPlan','# instance fields');s=add_field(s,donor,'MASK_REQUESTABLE_FLAGS','# static fields')
++ setter='setAugmentWithSubscriptionPlan(Z)V';s=s.replace(om[setter],dm[setter]);assert methods(s)[setter]==dm[setter]
++ for name in NEW_METHODS:s+='\n'+dm[name]+'\n'
++ p.write_text(s)
++ for rel,name in [(UTIL,'deduceTransportTypeForLegacyNetworkType(I)I'),(COLLECTION,'intArrayToSet([I)Ljava/util/Set;')]:
++  p=main/rel;s=p.read_text();assert name not in methods(s);p.write_text(s+'\n'+methods((output/'new_main'/rel).read_text())[name]+'\n')
++ targets={};roundtrip={};changed={}
++ for tag,work,oldjar in [('main',main,old_main),('t',t,old_t)]:
++  dex=output/(tag+'-classes.dex');assembly=run(base+['com.android.tools.smali.smali.Main','assemble','-a','29','-j','1','-o',dex]+sorted(work.rglob('*.smali'),key=str));(output/(tag+'-assemble.txt')).write_text(assembly);assert dex.is_file() and dex.read_bytes()[:8]==b'dex\n039\0',assembly
++  verify=output/(tag+'-verified');run(base+['com.android.tools.smali.baksmali.Main','disassemble','-a','29','-l','-j','8','-o',verify,dex])
++  rels={str(p.relative_to(work)) for p in work.rglob('*.smali')};assert rels=={str(p.relative_to(verify)) for p in verify.rglob('*.smali')}
++  oldroot=output/('old_main' if tag=='main' else 'old_t');changed[tag]=[]
++  for rel in sorted(rels):
++   want=canonical((work/rel).read_text());got=canonical((verify/rel).read_text());assert want==got,(tag,rel)
++   previous=canonical((oldroot/rel).read_text());assert previous['methods'].keys()<=got['methods'].keys(),(tag,rel,'old method lost')
++   oldfields={x.split(' = ')[0].split()[-1] for x in previous['fields']};newfields={x.split(' = ')[0].split()[-1] for x in got['fields']};assert oldfields<=newfields,(tag,rel,'old field/type lost')
++   for signature,body in previous['methods'].items():
++    assert (' static ' in body.splitlines()[0])==(' static ' in got['methods'][signature].splitlines()[0]),(tag,rel,signature,'static ABI changed')
++   if previous!=got:changed[tag].append(rel)
++  assert changed[tag]==sorted([UTIL,COLLECTION] if tag=='main' else FULL+[MANAGER]),changed
++  target=output/('framework-connectivity.jar' if tag=='main' else 'framework-connectivity-t.jar')
++  with zipfile.ZipFile(oldjar) as src,zipfile.ZipFile(target,'w') as dst:
++   for entry in src.infolist():dst.writestr(entry,dex.read_bytes() if entry.filename=='classes.dex' else src.read(entry))
++  with zipfile.ZipFile(oldjar) as src,zipfile.ZipFile(target) as dst:
++   assert src.namelist()==dst.namelist()
++   for n in src.namelist():
++    if n!='classes.dex':assert src.read(n)==dst.read(n)
++  targets[tag]=target;roundtrip[tag]=len(rels)
++ report={'result':'PASS','classes_verified':roundtrip,'changed_classes':changed,'all_old_method_and_field_names_retained':True,'stats_bodies':'exact donor query overloads, sanitizer and augment setter','donated_transport_unit':FULL,'compatibility_entry_points':['legacy template ctor zero bitset','legacy identity ctor donor transport deduction','legacy IdentitySet writer real v8 bitsets'],'output_sha256':{k:digest(v) for k,v in targets.items()},'runtime_acceptance':False}
++ (output/'report.json').write_text(json.dumps(report,indent=2)+'\n');return targets,report

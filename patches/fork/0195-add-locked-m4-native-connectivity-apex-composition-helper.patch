@@ -1,0 +1,111 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] add locked M4 native-connectivity diagnostic composition
+
+# Reason: real M4 log shows zygote/bootanimation cannot preload libandroid because S22 Tethering lacks AConnectivityNative_getNetworkBlockedReason. Preserve the actual BZI6 native provider instead of downgrading Android17 libraries or stubbing blocked state.
+# Affected: new diagnostic-only helper and independent lock in the existing vendor-restore module. Uses the fork native32 tool wrapper and existing ext4/AVB/signapk keys/tools; normal ROM profiles and runtime locks are not selected or changed by this addition.
+# Verify: fixed input/native/key/output hashes; only one DSO changes inside S22 payload, all other files/links and75 owner/mode/label records preserved; manifests/classpath/container metadata unchanged; AVB/v3/4KiB checks; three independent builds including this source helper produce the identical output. Real old/new native consumers audited; device result remains separate.
+# Rollback: remove this helper/lock and195 series/source-lock entry; a bounded phone trial restores original BZI6 APEX files, libui, full BOOT/VENDOR and removes added V6. No kernel, radio, EFS write or data format.
+
+--- /dev/null
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_network_native.py
+@@ -0,0 +1,71 @@
++"""Diagnostic APEX composition using the fork's existing native32 tooling.
++Reason: real BZI6 native provider supplies Android17's missing socket API.
++Scope: PC files only, one native DSO changed in locked S22 Tethering; no flash.
++Verify all original payload bytes/links/metadata, AVB, v3, 4KiB and deterministic output.
++"""
++from pathlib import Path
++import hashlib,importlib.util,subprocess,json,re,zipfile,os,shutil,struct,argparse
++F=Path(__file__).resolve().parents[4];ROOT=F.parent;T=F/'out/tools/bin';K=ROOT/'keys/m2-native32-apex'
++LOCK=json.loads(Path(__file__).with_suffix('.lock.json').read_text())
++module=F/'unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_native32.py'
++spec=importlib.util.spec_from_file_location('native32',module);native=importlib.util.module_from_spec(spec);spec.loader.exec_module(native)
++run=native.run;sha=native.digest
++P=argparse.ArgumentParser();P.add_argument('output',type=Path);a=P.parse_args();O=a.output.resolve();O.mkdir(parents=True,exist_ok=False)
++inputs={tag:(F/entry['path'],entry['sha256']) for tag,entry in LOCK['inputs'].items()}
++assert sha(K/'apex_pubkey')=='fedf8b2943754e4848f9d3edb25f228adec6a6e26d5b7fa8816851c0cd7155dd'
++assert sha(K/'container.x509.pem')=='ee98540809da3112f84e0e3ab1ae13b9108b5121dd5c2f0c7bea8851e2cf272a'
++for tag,(path,h) in inputs.items():
++ assert sha(path)==h
++ with zipfile.ZipFile(path) as z:apex=z.read('original_apex')
++ (O/(tag+'.apex')).write_bytes(apex)
++ with zipfile.ZipFile(O/(tag+'.apex')) as z:(O/(tag+'.img')).write_bytes(z.read('apex_payload.img'))
++ root=O/tag;root.mkdir();run(['debugfs','-R',f'rdump / "{root}"',O/(tag+'.img')])
++rel='lib64/libcom.android.tethering.connectivity_native.so'
++old=O/'s22'/rel;new=O/'bzi6'/rel
++assert sha(old)==LOCK['s22_native_sha256'] and sha(new)==LOCK['bzi6_native_sha256']
++merged=O/'merged';shutil.copytree(O/'s22',merged,symlinks=True);shutil.copyfile(new,merged/rel)
++config=[];contexts=[];metadata={}
++for i,p in enumerate([merged]+sorted(merged.rglob('*'))):
++ r=str(p.relative_to(merged));r='' if r=='.' else r
++ st=run(['debugfs','-R','stat /'+r,O/'s22.img']);mode=re.search(r'Mode:\s+0*(\d+)',st).group(1);uid,gid=re.search(r'User:\s+(\d+)\s+Group:\s+(\d+)',st).groups()
++ label=O/f'label{i}';run(['debugfs','-R',f'ea_get -f "{label}" /{r} security.selinux',O/'s22.img']);assert label.is_file() and label.stat().st_size,r
++ context=label.read_bytes().rstrip(b'\0').decode();config.append(f'{r or "/"} {uid} {gid} 0{mode}');contexts.append(re.escape('/'+r).replace(r'\-', '-')+' '+context);metadata[r]=(mode,uid,gid,context)
++(O/'fs_config').write_text('\n'.join(config)+'\n');(O/'file_contexts').write_text('\n'.join(contexts)+'\n')
++image=O/'composed.img';os.environ['MKE2FS_CONFIG']=str(T/'mke2fs.conf');os.environ['E2FSPROGS_FAKE_TIME']='1';uuid='b171b06f-3d8c-5a76-a035-835a00002717'
++run([T/'mke2fs','-O','^has_journal','-b','4096','-m','0','-t','ext4','-I','256','-N','512','-U',uuid,'-E','hash_seed='+uuid,image,'64M'])
++run([T/'e2fsdroid','-e','-f',merged,'-T','0','-S',O/'file_contexts','-C',O/'fs_config','-a','/',image])
++for field in ['uid','gid']:run(['debugfs','-w','-R',f'set_inode_field /lost+found {field} 0',image])
++for field in ['atime','mtime','ctime','crtime']:run(['debugfs','-w','-R',f'set_inode_field /lost+found {field} 0',image])
++run(['e2fsck','-fn',image])
++verified=O/'verified';verified.mkdir();run(['debugfs','-R',f'rdump / "{verified}"',image])
++assert {str(p.relative_to(merged)) for p in merged.rglob('*')}=={str(p.relative_to(verified)) for p in verified.rglob('*')}
++changed=[]
++for p in sorted((O/'s22').rglob('*')):
++ r=str(p.relative_to(O/'s22'));q=verified/r
++ if p.is_symlink():assert q.is_symlink() and os.readlink(p)==os.readlink(q),r
++ elif p.is_file():
++  if p.read_bytes()!=q.read_bytes():changed.append(r)
++assert changed==[rel],changed;assert (verified/rel).read_bytes()==new.read_bytes()
++for r,expected in metadata.items():
++ st=run(['debugfs','-R','stat /'+r,image]);mode=re.search(r'Mode:\s+0*(\d+)',st).group(1);uid,gid=re.search(r'User:\s+(\d+)\s+Group:\s+(\d+)',st).groups();label=O/'verify-label';label.unlink(missing_ok=True);run(['debugfs','-R',f'ea_get -f "{label}" /{r} security.selinux',image]);assert label.exists();found=(mode,uid,gid,label.read_bytes().rstrip(b'\0').decode());assert found==expected,(r,found,expected)
++salt=hashlib.sha256((O/'s22.img').read_bytes()+new.read_bytes()).hexdigest();run([T/'avbtool','add_hashtree_footer','--do_not_generate_fec','--algorithm','SHA256_RSA4096','--key',K/'payload.pem','--prop','apex.key:com.android.tethering','--image',image,'--salt',salt,'--hash_algorithm','sha256']);run([T/'avbtool','verify_image','--image',image,'--key',K/'payload.pem'])
++unsigned=O/'unsigned.apex';signed=O/'com.android.tethering.apex'
++with zipfile.ZipFile(O/'s22.apex') as src,zipfile.ZipFile(unsigned,'w',compression=zipfile.ZIP_STORED) as dst:
++ for entry in src.infolist():
++  if entry.filename.startswith('META-INF/') or entry.filename in ('apex_payload.img','apex_pubkey'):continue
++  dst.writestr(entry,src.read(entry))
++ dst.write(image,'apex_payload.img');dst.write(K/'apex_pubkey','apex_pubkey')
++run([T/'signapk','-a','4096','--align-file-size','--min-sdk-version','36',K/'container.x509.pem',K/'container.pk8',unsigned,signed])
++java=O/'VerifyApex.java';java.write_text('import java.io.File; import com.android.apksig.ApkVerifier; public class VerifyApex { public static void main(String[] a) throws Exception { var r=new ApkVerifier.Builder(new File(a[0])).build().verify(); System.out.println("verified="+r.isVerified()+" v3="+r.isVerifiedUsingV3Scheme()+" errors="+r.getErrors()); if(!r.isVerified() || !r.isVerifiedUsingV3Scheme()) System.exit(1); }}')
++verification=run(['java','--class-path',T/'signapk.jar',java,signed])
++with zipfile.ZipFile(signed) as z:
++ i=z.getinfo('apex_payload.img')
++ with signed.open('rb') as f:f.seek(i.header_offset+26);n,e=struct.unpack('<HH',f.read(4))
++ offset=i.header_offset+30+n+e;assert offset%4096==0 and i.compress_type==0
++ with zipfile.ZipFile(O/'s22.apex') as src:
++  for entry in src.infolist():
++   if not entry.filename.startswith('META-INF/') and entry.filename not in ('apex_payload.img','apex_pubkey'):assert z.read(entry.filename)==src.read(entry.filename),entry.filename
++if sha(signed)!=LOCK['output_sha256'] or signed.stat().st_size!=LOCK['output_bytes']:
++ raise RuntimeError('M4 native networking APEX reproducibility/hash gate failed')
++report={'result':'PASS','changed_payload_files':changed,'metadata_paths_verified':len(metadata),'old_native_sha256':sha(old),'new_native_sha256':sha(new),'output_sha256':sha(signed),'bytes':signed.stat().st_size,'payload_avb':'PASS','container_v3':verification.strip(),'payload_zip_offset':offset,'other_container_metadata_unchanged':True,'signing_identity':'explicit existing local native32 diagnostic keys; not Samsung original signing','phone_deployed':False,'network_acceptance':False}
++(O/'report.json').write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report,indent=2),flush=True)
+--- /dev/null
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_network_native.lock.json
+@@ -0,0 +1,26 @@
++{
++  "schema": 1,
++  "scope": "M4 BZI6/G965F diagnostic native connectivity composition; builder only, not selected by normal ROM profile",
++  "module": "com.android.tethering",
++  "module_version": 360743340,
++  "inputs": {
++    "s22": {
++      "path": "out/fw/SM-S901B_EUX/system/system/apex/com.google.android.tethering_compressed.apex",
++      "sha256": "601d6c2bb7a81e9d8938ac3681cc95887e49ce1aafe58d3632ba92c586187cbf"
++    },
++    "bzi6": {
++      "path": "out/fw/SM-A376B_XXV_A376BXXU5BZI6/system/system/apex/com.google.android.tethering_compressed.apex",
++      "sha256": "540ee27099939f2d1e698228ced265b2505dca1f82af2d785c43b37e0c2b652d"
++    }
++  },
++  "native_path": "lib64/libcom.android.tethering.connectivity_native.so",
++  "s22_native_sha256": "d0c794cedcd1cf6a8f7639a5ae044a9a7cea827e9aee32f4b8e6f15a353b792c",
++  "bzi6_native_sha256": "70399052a18d74bfb639242300a5141dfbc15e30f731b277bd1d4f87543b5264",
++  "output_sha256": "ca9e7b7c76f85baf306b37cdcbe74b4e03721bc2520e869a9ecd7d1e7a517916",
++  "output_bytes": 67911680,
++  "payload_public_key_sha256": "fedf8b2943754e4848f9d3edb25f228adec6a6e26d5b7fa8816851c0cd7155dd",
++  "container_certificate_sha256": "ee98540809da3112f84e0e3ab1ae13b9108b5121dd5c2f0c7bea8851e2cf272a",
++  "signing_identity": "existing local native32 diagnostic keys, not original Samsung/Google signing",
++  "normal_profile_unchanged": true,
++  "report": "docs/m4-bpf-runtime-audit.md"
++}

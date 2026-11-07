@@ -1,0 +1,228 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] port bzi6 play integrity fix and live settings
+
+# Reason: User requests prioritizing Play Integrity Fix. tail-attempt36/pif.txt:8 proves keystore moved DEX; actual services dry-run fails old label context. Adapt reviewed methods while retaining upstream PIF logic and donor fallback permission checks.
+# Affected: PIF customizer/new BZI6 helper, dispatcher, M4 Settings/defaults and compiled release gates
+# Verify: Actual BZI6 method preimages; upstream helper equality, DEX assembly, wrong donor/method negatives, compiled hook/control/property gates and clean full build. Device Integrity verdict needs runtime/network testing.
+# Rollback: Remove0171 to restore donor PIF omission and hidden controls; M1/M2 route and ADB rules unchanged.
+
+--- /dev/null
++++ b/unica/mods/pif/a376b_android17_pif.py
+@@ -0,0 +1,109 @@
++#!/usr/bin/env python3
++"""Port fork PIF call sites to reviewed BZI6 methods; keep upstream hook classes."""
++from pathlib import Path
++from hashlib import sha256
++import importlib.util
++import re
++import sys
++
++HERE = Path(__file__).resolve().parent
++SPEC = importlib.util.spec_from_file_location("bzi6_product", HERE.parent.parent / "patches/product_feature/a376b_android17_product.py")
++PRODUCT = importlib.util.module_from_spec(SPEC)
++SPEC.loader.exec_module(PRODUCT)
++KEYSTORE = "android/security/keystore2/AndroidKeyStoreSpi"
++ATMS = "com/android/server/wm/ActivityTaskManagerService"
++PIF = "io/mesalabs/unica/PlayIntegrityHooks"
++CERT = "engineGetCertificateChain(Ljava/lang/String;)[Ljava/security/cert/Certificate;"
++TASKS = {
++    "getFocusedRootTaskInfo()Landroid/app/ActivityTaskManager$RootTaskInfo;": "708af2e0f3829e272a1b1d55d4cc5ebfe01b7fbdce0bf63d3115c99aad5115ab",
++    "registerTaskStackListener(Landroid/app/ITaskStackListener;)V": "00fa51f9c1de9f4d56b4991af9f9d51a9107092a116e390963c13a773dd7ba8b",
++}
++
++def exact(root, descriptor):
++    paths = list(root.glob("smali*/" + descriptor + ".smali"))
++    if len(paths) != 1:
++        raise RuntimeError("Expected one BZI6 class: " + descriptor)
++    return paths[0]
++
++def rewrite(text, signature, digest, transform):
++    match = PRODUCT.method(text, signature)
++    if sha256(match.group().encode()).hexdigest() != digest:
++        raise RuntimeError("Unreviewed BZI6 PIF method preimage: " + signature)
++    body = transform(match.group())
++    return text[:match.start()] + body + text[match.end():]
++
++def stage(apktool):
++    PRODUCT.scope()
++    framework = apktool / "system/framework/framework.jar"
++    services = apktool / "system/framework/services.jar"
++    key = exact(framework, KEYSTORE)
++    task = exact(services, ATMS)
++    key_text = rewrite(key.read_text(), CERT,
++        "60d02668fe3d93762bcf04575d59b75129673eef3b94e095bd949dc431577285",
++        lambda body: body.replace("    .locals 4\n", "    .locals 4\n\n    invoke-static {}, L" + PIF + ";->onEngineGetCertificateChain()V\n", 1))
++    task_text = task.read_text()
++    for signature, digest in TASKS.items():
++        def inject(body):
++            marker = "    const-string/jumbo v0, \"" + signature.split("(")[0] + "()\""
++            enforce = "    invoke-static {v0}, L" + ATMS + ";->enforceTaskPermission(Ljava/lang/String;)V"
++            if body.count(marker) != 1 or body.count(enforce) != 1 or ":unica_pif_permission_ok" in body:
++                raise RuntimeError("BZI6 task permission shape differs")
++            pre = "    iget-object v0, p0, L" + ATMS + ";->mContext:Landroid/content/Context;\n\n" + \
++                "    invoke-static {v0}, L" + PIF + ";->shouldBypassTaskPermission(Landroid/content/Context;)Z\n\n" + \
++                "    move-result v0\n\n    if-nez v0, :unica_pif_permission_ok\n\n"
++            return body.replace(marker, pre + marker, 1).replace(enforce, enforce + "\n\n    :unica_pif_permission_ok", 1)
++        task_text = rewrite(task_text, signature, digest, inject)
++    # Only copy upstream added helper files; AndroidKeyStoreSpi is patched above
++    # in its actual BZI6 DEX location. Validate all outputs before writing any.
++    upstream = (HERE / "framework.jar/0001-Introduce-PlayIntegrityHooks.patch").read_text()
++    outputs = [(key, key_text), (task, task_text)]
++    for suffix in ("", "$1", "$$ExternalSyntheticLambda0"):
++        rel = "smali_classes6/" + PIF + suffix + ".smali"
++        chunk = upstream.split("diff --git a/" + rel + " b/" + rel + "\n", 1)[1].split("diff --git ", 1)[0]
++        text = "\n".join(line[1:] for line in chunk.splitlines() if line.startswith("+") and not line.startswith("+++")) + "\n"
++        path = framework / rel
++        if path.exists() or not text.startswith(".class "):
++            raise RuntimeError("Stale/malformed BZI6 PIF helper: " + rel)
++        outputs.append((path, text))
++    for path, text in outputs:
++        path.parent.mkdir(parents=True, exist_ok=True)
++        path.write_text(text)
++    print("PASS BZI6 PIF: moved keystore DEX, two preserved donor task flows, three upstream helpers")
++
++def verify(work, tools):
++    PRODUCT.scope()
++    framework = work / "system/system/framework/framework.jar"
++    services = work / "system/system/framework/services.jar"
++    key = PRODUCT.method(PRODUCT.compiled_class(framework, KEYSTORE, tools), CERT).group()
++    if key.count("L" + PIF + ";->onEngineGetCertificateChain()V") != 1:
++        raise RuntimeError("Compiled BZI6 keystore PIF hook missing/duplicated")
++    task = PRODUCT.compiled_class(services, ATMS, tools)
++    for signature in TASKS:
++        body = PRODUCT.method(task, signature).group()
++        if body.count("L" + PIF + ";->shouldBypassTaskPermission(Landroid/content/Context;)Z") != 1 or \
++                body.count("->enforceTaskPermission(Ljava/lang/String;)V") != 1:
++            raise RuntimeError("Compiled BZI6 task PIF hook/permission fallback mismatch")
++    instr = PRODUCT.compiled_class(framework, "android/app/Instrumentation", tools)
++    for sig in ("newApplication(Ljava/lang/Class;Landroid/content/Context;)Landroid/app/Application;",
++                "newApplication(Ljava/lang/ClassLoader;Ljava/lang/String;Landroid/content/Context;)Landroid/app/Application;"):
++        body = PRODUCT.method(instr, sig).group()
++        if body.count("L" + PIF + ";->setProps(Landroid/content/Context;)V") != 1:
++            raise RuntimeError("Compiled BZI6 application PIF hook missing/duplicated")
++    hook = PRODUCT.compiled_class(framework, PIF, tools)
++    for suffix in ("$1", "$$ExternalSyntheticLambda0"):
++        PRODUCT.compiled_class(framework, PIF + suffix, tools)
++    enabled = PRODUCT.method(hook, "isPIFEnabled()Z").group()
++    if '"persist.sys.unica.pif"' not in enabled or "->getBoolean(" not in enabled:
++        raise RuntimeError("Compiled BZI6 PIF does not honor Settings toggle")
++    blocked = PRODUCT.method(hook, "shouldBlockKeyAttestation()Z").group()
++    if "const/4 v0, 0x1" not in blocked or "return v0" not in blocked:
++        raise RuntimeError("BZI6 no-keybox PIF attestation fallback differs")
++    print("PASS compiled BZI6 PIF: application/keystore/task hooks, helpers and live property toggle")
++
++if __name__ == "__main__":
++    if len(sys.argv) == 3 and sys.argv[1] == "stage":
++        stage(Path(sys.argv[2]))
++    elif len(sys.argv) == 4 and sys.argv[1] == "verify":
++        verify(Path(sys.argv[2]), Path(sys.argv[3]))
++    else:
++        raise SystemExit("usage: a376b_android17_pif.py stage APKTOOL | verify WORK TOOLS")
+--- a/scripts/internal/apply_modules.sh
++++ b/scripts/internal/apply_modules.sh
+@@ -17,7 +17,7 @@
+     # fixture. Preserve complete donor behavior for the initial M4 boot build.
+     if [ "${ROM_SOURCE_CONFIG:-}" = essi_a376b_android17 ]; then
+         case "$MODPATH" in
+-            */mods/paradigm|*/mods/pif|*/mods/setupwizard|*/mods/tweaks)
++            */mods/paradigm|*/mods/setupwizard|*/mods/tweaks)
+         if [ "${ROM_MILESTONE:-}" != M4 ] || [ "${TARGET_CODENAME:-}" != star2lte ] || \
+                 [ "${STAR2LTE_BUILD_MODEL:-}" != SM-G965F ] || \
+                 [ "${SOURCE_PLATFORM_SDK_VERSION:-}" != 37 ] || \
+--- a/unica/mods/pif/customize.sh
++++ b/unica/mods/pif/customize.sh
+@@ -1,5 +1,11 @@
+-APPLY_PATCH "system" "system/framework/framework.jar" \
+-    "$MODPATH/framework.jar/0001-Introduce-PlayIntegrityHooks.patch"
++if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++    DECODE_APK system system/framework/framework.jar || return 1
++    DECODE_APK system system/framework/services.jar || return 1
++    python3 "$MODPATH/a376b_android17_pif.py" stage "$APKTOOL_DIR" || return 1
++else
++    APPLY_PATCH "system" "system/framework/framework.jar" \
++        "$MODPATH/framework.jar/0001-Introduce-PlayIntegrityHooks.patch" || return 1
++fi
+ SMALI_PATCH "system" "system/framework/framework.jar" \
+     "smali/android/app/Instrumentation.smali" "replace" \
+     'newApplication(Ljava/lang/Class;Landroid/content/Context;)Landroid/app/Application;' \
+@@ -12,8 +18,10 @@
+     'return-object p0' \
+     '    invoke-static {p3}, Lio/mesalabs/unica/PlayIntegrityHooks;->setProps(Landroid/content/Context;)V\n\n    return-object p0' \
+     > /dev/null
+-APPLY_PATCH "system" "system/framework/services.jar" \
+-    "$MODPATH/services.jar/0001-Introduce-PlayIntegrityHooks.patch"
++if [ "${ROM_SOURCE_CONFIG:-}" != "essi_a376b_android17" ]; then
++    APPLY_PATCH "system" "system/framework/services.jar" \
++        "$MODPATH/services.jar/0001-Introduce-PlayIntegrityHooks.patch" || return 1
++fi
+ 
+ if [ ! -f "$APKTOOL_DIR/system/framework/framework.jar/smali_classes6/io/mesalabs/unica/KeyboxImitationHooks.smali" ]; then
+     SMALI_PATCH "system" "system/framework/framework.jar" \
+--- a/unica/mods/settings/a376b_android17_boot_limits.py
++++ b/unica/mods/settings/a376b_android17_boot_limits.py
+@@ -21,7 +21,7 @@
+            "unica_ss_detection", "unica_gphotos", "unica_bixby_action", "unica_asks")
+ 
+ OMITTED_SPOOF = ("unica_keybox", "unica_keybox_load", "unica_keybox_clear",
+-                 "unica_pif", "unica_pif_update", "unica_pif_custom", "unica_hma")
++                 "unica_hma")
+ 
+ def scope():
+     PRODUCT.scope()
+@@ -71,11 +71,11 @@
+         for path in (work / partition).rglob("build.prop"):
+             lines = [line for line in path.read_text().splitlines()
+                      if not line.startswith(("persist.sys.unica.pif=", "persist.sys.unica.keybox="))]
+-            path.write_text("\n".join(lines + ["persist.sys.unica.pif=false", "persist.sys.unica.keybox=false"]) + "\n")
++            path.write_text("\n".join(lines + ["persist.sys.unica.pif=true", "persist.sys.unica.keybox=false"]) + "\n")
+             count += 1
+     if not count:
+         raise RuntimeError("Missing M4 build properties")
+-    print("PASS BZI6 omitted PIF/keybox defaults are false in " + str(count) + " property files")
++    print("PASS BZI6 PIF enabled / keybox disabled defaults in " + str(count) + " property files")
+ 
+ 
+ def intelligence(root):
+@@ -129,10 +129,14 @@
+                 if not re.fullmatch(r"classes\d*\.dex", name):
+                     continue
+                 data = archive.read(name)
+-                for desc in (b"Lio/mesalabs/unica/PlayIntegrityHooks;", b"Lio/mesalabs/unica/KeyboxImitationHooks;",
++                for desc in (b"Lio/mesalabs/unica/KeyboxImitationHooks;",
+                              b"Lio/mesalabs/unica/HideAppListUtils;", b"Lio/mesalabs/unica/KnoxPatchHooks;"):
+                     if desc in data:
+                         raise RuntimeError("Omitted M4 module hook present in compiled " + jar_name + ": " + desc.decode())
++    spec = importlib.util.spec_from_file_location("bzi6_pif", HERE.parent / "pif/a376b_android17_pif.py")
++    pif = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(pif)
++    pif.verify(work, tools)
+     print("PASS compiled BZI6 search and omitted module hook absence")
+ 
+ 
+--- a/scripts/internal/verify_exynos9810_release_defaults.py
++++ b/scripts/internal/verify_exynos9810_release_defaults.py
+@@ -79,7 +79,7 @@
+             if z.read("classes3.dex") != load_release_bridge():
+                 raise RuntimeError("Staged face bridge differs from verified source release")
+     props=(system/"build.prop").read_text().splitlines()
+-    required_props = (["persist.sys.unica.pif=false", "persist.sys.unica.keybox=false"]
++    required_props = (["persist.sys.unica.pif=true", "persist.sys.unica.keybox=false", "persist.sys.pif.version=20261011"]
+                       if os.environ.get("ROM_SOURCE_CONFIG") == "essi_a376b_android17"
+                       else ["persist.sys.unica.pif=true", "persist.sys.pif.version=20261011"])
+     if not face_disabled:
+@@ -113,10 +113,14 @@
+                      "unica_allow_sdkbypass", "unica_secure_ss", "unica_ss_detection", "unica_gphotos")
+             if selection == "M4":
+                 omitted += ("unica_asks", "unica_keybox", "unica_keybox_load", "unica_keybox_clear",
+-                            "unica_pif", "unica_pif_update", "unica_pif_custom", "unica_hma")
++                            "unica_hma")
+             for key in omitted:
+                 if any(contains(data,key) for data in compiled_xml):
+                     raise RuntimeError("Unsupported "+selection+" compiled control present: "+key)
++            if selection == "M4":
++                for key in ("unica_pif", "unica_pif_update", "unica_pif_custom"):
++                    if not any(contains(data, key) for data in compiled_xml):
++                        raise RuntimeError("Compiled M4 PIF control absent: " + key)
+             if not any(contains(data,"unica_games_spoof") for data in compiled_xml):
+                 raise RuntimeError("Compiled "+selection+" Extra Settings positive control absent")
+             import re

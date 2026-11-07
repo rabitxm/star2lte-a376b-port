@@ -1,0 +1,9 @@
+--- a/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
+@@ -7587,5 +7587,5 @@
+     # Concrete implementations and the normal onDestroy path remain active.
+     python3 "$SRC_DIR/unica/patches/exynos9810_device_stack/exynos9810_finalization/a376b_android17_facewidget_legacy.py" \
+         apply-work --systemui-dir "$APKTOOL_DIR/system_ext/priv-app/SystemUI/SystemUI.apk" \
+-        --aod-apk "$WORK_DIR/system/system/priv-app/AODService_v80/AODService_v80.apk" || return 1
++        --aod-apk "$SRC_DIR/unica/mods/s9_infinity_Wallpaper/payload/system/priv-app/AODService_v80/AODService_v80.apk" || return 1
+ fi

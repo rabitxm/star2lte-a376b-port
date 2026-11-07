@@ -1,0 +1,16 @@
+Reason: attempt0229 stage 8 initially failed in the TWRP tmpfs retry because an earlier partial extraction left a stale `LICENSE` entry under `/tmp/exynos9810/kernel`. The non-interactive unzip then printed `unzip: can't read standard input: Not a typewriter` and installer aborted with `E9810: Failed to extract kernel installer.` Clear only that temporary extraction directory before unpacking the pinned kernel ZIP.
+Affected: target/star2lte/installer/install-end.edify.
+Verify: ordered replay after 0226; inspect generated updater for `rm -rf` before `mkdir`/`unzip`; fixture with a pre-existing stale file confirms only the temp extraction directory is cleared and a clean unzip completes; rerun package/image/ZIP gates before any use.
+Rollback: reverse this patch and rebuild into a separate M4 run. No runtime partition payload changes.
+
+--- a/target/star2lte/installer/install-end.edify
++++ b/target/star2lte/installer/install-end.edify
+@@ -2,7 +2,9 @@
+ package_extract_file("exynos9810/ramdisk.img", "/dev/block/platform/11120000.ufs/by-name/BOOT");
+ ui_print("Installing Exynos9810 kernel zip...");
+ package_extract_file("exynos9810/kernel.zip", "/tmp/exynos9810/kernel.zip");
++run_program("/sbin/rm", "-rf", "/tmp/exynos9810/kernel") == 0 ||
++    abort("E9810: Failed to clear stale kernel installer.");
+ run_program("/sbin/mkdir", "-p", "/tmp/exynos9810/kernel") == 0 ||
+     abort("E9810: Failed to create kernel installer directory.");
+ run_program("/sbin/unzip", "/tmp/exynos9810/kernel.zip", "META-INF/com/google/android/*", "-d", "/tmp/exynos9810/kernel") == 0 ||

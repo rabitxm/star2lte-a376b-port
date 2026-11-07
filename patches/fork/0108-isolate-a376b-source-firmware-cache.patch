@@ -1,0 +1,691 @@
+From: Codex M4 donor cache isolation
+Subject: [PATCH] Isolate A376B donor builds by locked firmware cache suffix
+
+Reason: M2 AZH4 and M4 BZI6 share model/CSC, so the fork cache path can
+otherwise mix extracted donor files and reuse a work tree across Android versions.
+Files: source-cache resolver, profile/config serialization, download/extract/workdir/build-info callers and
+existing donor customizers that resolve source files.
+Verification: replay the fork series; prove M1/default cache unchanged, M2 uses
+SM-A376B_XXV, M4 uses SM-A376B_XXV_A376BXXU5BZI6, and reject unsafe suffixes.
+Rollback: remove this patch and SOURCE_FIRMWARE_CACHE_SUFFIX from M4; the original
+model/CSC cache behavior is restored.
+
+diff --git a/buildenv.sh b/buildenv.sh
+--- a/buildenv.sh
++++ b/buildenv.sh
+@@ -186,9 +186,9 @@
+ exec {CONFIG_LOCK_FD}>"$CONFIG_LOCK_FILE"
+ flock "$CONFIG_LOCK_FD"
+ # shellcheck disable=SC2046
+-# Preserve explicit profile logger opt-ins when regenerating an existing config.
+-# Production profiles reset both flags, so a previous diagnostic cannot leak.
+-[ -f "$OUT_DIR/config.sh" ] && unset $(sed "/Automatically/d; /^EXYNOS9810_ENABLE_INIT_DEBUG=/d; /^EXYNOS9810_ENABLE_SYSTEM_BOOT_DEBUG=/d" "$OUT_DIR/config.sh" | cut -d "=" -f 1)
++# Preserve explicit profile values while removing generated config values.
++# M1 resets the optional donor cache suffix; M4 profiles may pin one build.
++[ -f "$OUT_DIR/config.sh" ] && unset $(sed "/Automatically/d; /^EXYNOS9810_ENABLE_INIT_DEBUG=/d; /^EXYNOS9810_ENABLE_SYSTEM_BOOT_DEBUG=/d; /^SOURCE_FIRMWARE_CACHE_SUFFIX=/d" "$OUT_DIR/config.sh" | cut -d "=" -f 1)
+ if ! "$SRC_DIR/scripts/internal/gen_config_file.sh" "$SELECTED_TARGET"; then
+     flock -u "$CONFIG_LOCK_FD"
+     exec {CONFIG_LOCK_FD}>&-
+diff --git a/target/star2lte/profiles/m1-g965f-no-ksu.sh b/target/star2lte/profiles/m1-g965f-no-ksu.sh
+--- a/target/star2lte/profiles/m1-g965f-no-ksu.sh
++++ b/target/star2lte/profiles/m1-g965f-no-ksu.sh
+@@ -10,6 +10,7 @@
+ export STAR2LTE_M2_KEEP_DONOR_WIFI_UI="false"
+ export EXYNOS9810_M2_BOOTSTRAP_COMPAT="false"
+ export UN1CA_DONOR_CONFIG="essi"
++export SOURCE_FIRMWARE_CACHE_SUFFIX=""
+ export STAR2LTE_BUILD_MODEL="SM-G965F"
+ export EXYNOS9810_TARGET_OS_FILE_SYSTEM_TYPE="ext4"
+ export EXYNOS9810_BUILD_KERNELSU_RUNTIME="false"
+diff --git a/scripts/utils/common_utils.sh b/scripts/utils/common_utils.sh
+--- a/scripts/utils/common_utils.sh
++++ b/scripts/utils/common_utils.sh
+@@ -25,6 +25,40 @@
+     fi
+ 
+     return 0
++}
++
++# GET_FIRMWARE_CACHE_KEY <firmware> returns the existing model/CSC cache key,
++# with an optional locked source-build suffix. This keeps donor builds with the
++# same model/CSC in separate caches while leaving all existing profiles intact.
++GET_FIRMWARE_CACHE_KEY()
++{
++    _CHECK_NON_EMPTY_PARAM "FIRMWARE" "$1" || return 1
++
++    local MODEL_NAME="$(cut -d "/" -f 1 -s <<< "$1")"
++    local CSC_NAME="$(cut -d "/" -f 2 -s <<< "$1")"
++    [ "$MODEL_NAME" ] && [ "$CSC_NAME" ] || {
++        LOGE "Invalid firmware cache selector: $1"
++        return 1
++    }
++
++    local CACHE_SUFFIX=""
++    if [ "${SOURCE_FIRMWARE:-}" ]; then
++        local SOURCE_MODEL="$(cut -d "/" -f 1 -s <<< "$SOURCE_FIRMWARE")"
++        local SOURCE_CSC="$(cut -d "/" -f 2 -s <<< "$SOURCE_FIRMWARE")"
++        if [[ "$MODEL_NAME/$CSC_NAME" == "$SOURCE_MODEL/$SOURCE_CSC" ]]; then
++            CACHE_SUFFIX="${SOURCE_FIRMWARE_CACHE_SUFFIX:-}"
++        fi
++    fi
++
++    if [ "$CACHE_SUFFIX" ]; then
++        [[ "$CACHE_SUFFIX" =~ ^[A-Za-z0-9._-]+$ ]] || {
++            LOGE "Invalid SOURCE_FIRMWARE_CACHE_SUFFIX: $CACHE_SUFFIX"
++            return 1
++        }
++        printf '%s_%s_%s\n' "$MODEL_NAME" "$CSC_NAME" "$CACHE_SUFFIX"
++    else
++        printf '%s_%s\n' "$MODEL_NAME" "$CSC_NAME"
++    fi
+ }
+ 
+ _GET_PROP_FILES_PATH()
+@@ -211,7 +245,7 @@
+ 
+     if [ ! -d "$SOURCE" ]; then
+         if [ "$(cut -d "/" -f 2 -s <<< "$SOURCE")" ]; then
+-            SOURCE="$FW_DIR/$(cut -d "/" -f 1 <<< "$SOURCE")_$(cut -d "/" -f 2 <<< "$SOURCE")"
++            SOURCE="$FW_DIR/$(GET_FIRMWARE_CACHE_KEY "$SOURCE")" || return 1
+         else
+             SOURCE="$SRC_DIR/prebuilts/samsung/$SOURCE"
+         fi
+diff --git a/scripts/utils/firmware_utils.sh b/scripts/utils/firmware_utils.sh
+--- a/scripts/utils/firmware_utils.sh
++++ b/scripts/utils/firmware_utils.sh
+@@ -63,22 +63,22 @@
+         return 1
+     fi
+ 
+-    [ -f "$FW_DIR/${MODEL}_${CSC}/$FILE" ] && rm -rf "$FW_DIR/${MODEL}_${CSC}/$FILE"
+-    [ -f "$FW_DIR/${MODEL}_${CSC}/$FILE.ext4" ] && rm -rf "$FW_DIR/${MODEL}_${CSC}/$FILE.ext4"
+-    [ -f "$FW_DIR/${MODEL}_${CSC}/$FILE.lz4" ] && rm -rf "$FW_DIR/${MODEL}_${CSC}/$FILE.lz4"
++    [ -f "$FW_DIR/$FIRMWARE_CACHE_KEY/$FILE" ] && rm -rf "$FW_DIR/$FIRMWARE_CACHE_KEY/$FILE"
++    [ -f "$FW_DIR/$FIRMWARE_CACHE_KEY/$FILE.ext4" ] && rm -rf "$FW_DIR/$FIRMWARE_CACHE_KEY/$FILE.ext4"
++    [ -f "$FW_DIR/$FIRMWARE_CACHE_KEY/$FILE.lz4" ] && rm -rf "$FW_DIR/$FIRMWARE_CACHE_KEY/$FILE.lz4"
+ 
+     if FILE_EXISTS_IN_TAR "$TAR" "$FILE"; then
+         LOG "- Extracting $FILE..."
+-        EVAL "tar xf \"$TAR\" -C \"$FW_DIR/${MODEL}_${CSC}\" \"$FILE\"" || return 1
++        EVAL "tar xf \"$TAR\" -C \"$FW_DIR/$FIRMWARE_CACHE_KEY\" \"$FILE\"" || return 1
+     elif FILE_EXISTS_IN_TAR "$TAR" "$FILE.ext4"; then
+         LOG "- Extracting $FILE.ext4..."
+-        EVAL "tar xf \"$TAR\" -C \"$FW_DIR/${MODEL}_${CSC}\" \"$FILE.ext4\"" || return 1
+-        EVAL "mv -f \"$FW_DIR/${MODEL}_${CSC}/$FILE.ext4\" \"$FW_DIR/${MODEL}_${CSC}/$FILE\"" || return 1
++        EVAL "tar xf \"$TAR\" -C \"$FW_DIR/$FIRMWARE_CACHE_KEY\" \"$FILE.ext4\"" || return 1
++        EVAL "mv -f \"$FW_DIR/$FIRMWARE_CACHE_KEY/$FILE.ext4\" \"$FW_DIR/$FIRMWARE_CACHE_KEY/$FILE\"" || return 1
+     elif FILE_EXISTS_IN_TAR "$TAR" "$FILE.lz4"; then
+         LOG "- Extracting $FILE.lz4..."
+-        EVAL "tar xf \"$TAR\" -C \"$FW_DIR/${MODEL}_${CSC}\" \"$FILE.lz4\"" || return 1
++        EVAL "tar xf \"$TAR\" -C \"$FW_DIR/$FIRMWARE_CACHE_KEY\" \"$FILE.lz4\"" || return 1
+         LOG "- Decompressing $FILE.lz4..."
+-        EVAL "lz4 -d --rm \"$FW_DIR/${MODEL}_${CSC}/$FILE.lz4\" \"$FW_DIR/${MODEL}_${CSC}/$FILE\"" || return 1
++        EVAL "lz4 -d --rm \"$FW_DIR/$FIRMWARE_CACHE_KEY/$FILE.lz4\" \"$FW_DIR/$FIRMWARE_CACHE_KEY/$FILE\"" || return 1
+     fi
+ 
+     return 0
+@@ -134,6 +134,8 @@
+         LOGE "CSC not valid in \"$STRING\": $CSC"
+         return 1
+     fi
++
++    FIRMWARE_CACHE_KEY="$(GET_FIRMWARE_CACHE_KEY "$MODEL/$CSC")" || return 1
+ 
+     local THIRD
+     THIRD="$(cut -d "/" -f 3 -s <<< "$STRING")"
+diff --git a/scripts/internal/gen_config_file.sh b/scripts/internal/gen_config_file.sh
+--- a/scripts/internal/gen_config_file.sh
++++ b/scripts/internal/gen_config_file.sh
+@@ -454,6 +454,11 @@
+     GET_BUILD_VAR "ROM_BUILD_TIMESTAMP" "$(date +%s)"
+     GET_BUILD_VAR "ROM_SOURCE_CONFIG"
+     GET_BUILD_VAR "SOURCE_FIRMWARE"
++    if [ -n "${SOURCE_FIRMWARE_CACHE_SUFFIX:-}" ]; then
++        GET_BUILD_VAR "SOURCE_FIRMWARE_CACHE_SUFFIX"
++    else
++        echo 'SOURCE_FIRMWARE_CACHE_SUFFIX=""'
++    fi
+     if [ "${#SOURCE_EXTRA_FIRMWARES[@]}" -ge 1 ]; then
+         echo "SOURCE_EXTRA_FIRMWARES=\"$(IFS=":"; printf '%s' "${SOURCE_EXTRA_FIRMWARES[*]}")\""
+     else
+diff --git a/scripts/make_rom.sh b/scripts/make_rom.sh
+--- a/scripts/make_rom.sh
++++ b/scripts/make_rom.sh
+@@ -36,7 +36,7 @@
+ 
+ START_TIME="$(date +%s)"
+ 
+-SOURCE_FIRMWARE_PATH="$(cut -d "/" -f 1 -s <<< "$SOURCE_FIRMWARE")_$(cut -d "/" -f 2 -s <<< "$SOURCE_FIRMWARE")"
++SOURCE_FIRMWARE_PATH="$(GET_FIRMWARE_CACHE_KEY "$SOURCE_FIRMWARE")" || exit 1
+ TARGET_FIRMWARE_PATH="$(cut -d "/" -f 1 -s <<< "$TARGET_FIRMWARE")_$(cut -d "/" -f 2 -s <<< "$TARGET_FIRMWARE")"
+ 
+ GET_WORK_DIR_HASH()
+@@ -48,7 +48,7 @@
+     # Same checkout can select different donor profiles. Never reuse a work
+     # tree merely because the source files and output filesystem match.
+     DONOR_HASH="$(printf '%s\n' "${ROM_SOURCE_CONFIG:-$TARGET_OS_SINGLE_SYSTEM_IMAGE}" \
+-        "$SOURCE_FIRMWARE" "$SOURCE_PLATFORM_SDK_VERSION" \
++        "$SOURCE_FIRMWARE" "$SOURCE_PLATFORM_SDK_VERSION" "${SOURCE_FIRMWARE_CACHE_SUFFIX:-}" \
+         "$(cat "$FW_DIR/$SOURCE_FIRMWARE_PATH/.extracted" 2>/dev/null)" \
+         "runtime=${EXYNOS9810_M2_RUNTIME_COMPAT:-false}" \
+         "kernel=${EXYNOS9810_EXPECTED_KERNEL_SHA256:-default}" \
+diff --git a/scripts/internal/create_work_dir.sh b/scripts/internal/create_work_dir.sh
+--- a/scripts/internal/create_work_dir.sh
++++ b/scripts/internal/create_work_dir.sh
+@@ -5,7 +5,7 @@
+ # [
+ source "$SRC_DIR/scripts/utils/build_utils.sh" || exit 1
+ 
+-SOURCE_FIRMWARE_PATH="$(cut -d "/" -f 1 -s <<< "$SOURCE_FIRMWARE")_$(cut -d "/" -f 2 -s <<< "$SOURCE_FIRMWARE")"
++SOURCE_FIRMWARE_PATH="$(GET_FIRMWARE_CACHE_KEY "$SOURCE_FIRMWARE")" || exit 1
+ TARGET_FIRMWARE_PATH="$(cut -d "/" -f 1 -s <<< "$TARGET_FIRMWARE")_$(cut -d "/" -f 2 -s <<< "$TARGET_FIRMWARE")"
+ 
+ CLEAN_RSYNC_SYMLINK_CONFLICTS()
+diff --git a/scripts/internal/create_target_files_zip.sh b/scripts/internal/create_target_files_zip.sh
+--- a/scripts/internal/create_target_files_zip.sh
++++ b/scripts/internal/create_target_files_zip.sh
+@@ -60,7 +60,7 @@
+     local SOURCE_FINGERPRINT
+     local TARGET_FINGERPRINT
+ 
+-    SOURCE_FIRMWARE_PATH="$(cut -d "/" -f 1 -s <<< "$SOURCE_FIRMWARE")_$(cut -d "/" -f 2 -s <<< "$SOURCE_FIRMWARE")"
++    SOURCE_FIRMWARE_PATH="$(GET_FIRMWARE_CACHE_KEY "$SOURCE_FIRMWARE")" || exit 1
+     TARGET_FIRMWARE_PATH="$(cut -d "/" -f 1 -s <<< "$TARGET_FIRMWARE")_$(cut -d "/" -f 2 -s <<< "$TARGET_FIRMWARE")"
+ 
+     SOURCE_FINGERPRINT="$(GET_PROP "$FW_DIR/$SOURCE_FIRMWARE_PATH/system/system/build.prop" "ro.system.build.fingerprint")"
+diff --git a/scripts/download_fw.sh b/scripts/download_fw.sh
+--- a/scripts/download_fw.sh
++++ b/scripts/download_fw.sh
+@@ -104,7 +104,7 @@
+         fi
+ 
+         LOG_STEP_OUT
+-    done < <(find "$ODIN_DIR/${MODEL}_${CSC}" -type f -name "*.md5")
++    done < <(find "$ODIN_DIR/$FIRMWARE_CACHE_KEY" -type f -name "*.md5")
+ }
+ # ]
+ 
+@@ -114,7 +114,7 @@
+     PARSE_FIRMWARE_STRING "$i" || exit 1
+ 
+     if [ -z "$IMEI$SERIAL_NO" ]; then
+-        if [ -f "$ODIN_DIR/${MODEL}_${CSC}/.downloaded" ]; then
++        if [ -f "$ODIN_DIR/$FIRMWARE_CACHE_KEY/.downloaded" ]; then
+             LOG "- Using locally imported $MODEL/$CSC firmware; not contacting FUS"
+             continue
+         fi
+@@ -129,16 +129,16 @@
+     fi
+ 
+     LOG_STEP_IN "- Processing $MODEL firmware with $CSC CSC"
+-    LOG "- Downloaded firmware: $(cat "$ODIN_DIR/${MODEL}_${CSC}/.downloaded" 2> /dev/null)"
+-    LOG "- Extracted firmware: $(cat "$FW_DIR/${MODEL}_${CSC}/.extracted" 2> /dev/null)"
++    LOG "- Downloaded firmware: $(cat "$ODIN_DIR/$FIRMWARE_CACHE_KEY/.downloaded" 2> /dev/null)"
++    LOG "- Extracted firmware: $(cat "$FW_DIR/$FIRMWARE_CACHE_KEY/.extracted" 2> /dev/null)"
+     LOG "- Latest available firmware: $LATEST_FIRMWARE"
+ 
+     LOG_STEP_IN
+ 
+     if ! $FORCE; then
+         # Skip if firmware has been extracted and equal/newer than the one in FUS
+-        if [ -f "$FW_DIR/${MODEL}_${CSC}/.extracted" ]; then
+-            if COMPARE_SEC_BUILD_VERSION "$(cat "$FW_DIR/${MODEL}_${CSC}/.extracted")" "$LATEST_FIRMWARE"; then
++        if [ -f "$FW_DIR/$FIRMWARE_CACHE_KEY/.extracted" ]; then
++            if COMPARE_SEC_BUILD_VERSION "$(cat "$FW_DIR/$FIRMWARE_CACHE_KEY/.extracted")" "$LATEST_FIRMWARE"; then
+                 LOG "\033[0;33m! This firmware has already been extracted, skipping\033[0m"
+                 LOG_STEP_OUT; LOG_STEP_OUT
+                 continue
+@@ -146,8 +146,8 @@
+         fi
+ 
+         # Skip if firmware has already been downloaded
+-        if [ -f "$ODIN_DIR/${MODEL}_${CSC}/.downloaded" ]; then
+-            if ! COMPARE_SEC_BUILD_VERSION "$(cat "$ODIN_DIR/${MODEL}_${CSC}/.downloaded")" "$LATEST_FIRMWARE"; then
++        if [ -f "$ODIN_DIR/$FIRMWARE_CACHE_KEY/.downloaded" ]; then
++            if ! COMPARE_SEC_BUILD_VERSION "$(cat "$ODIN_DIR/$FIRMWARE_CACHE_KEY/.downloaded")" "$LATEST_FIRMWARE"; then
+                 LOG "\033[0;33m! A newer firmware is available for download, use --force flag if you want to overwrite it\033[0m"
+             else
+                 LOG "\033[0;33m! This firmware has already been downloaded\033[0m"
+@@ -158,27 +158,27 @@
+     fi
+ 
+     LOG "- Downloading firmware..."
+-    [ -f "$ODIN_DIR/${MODEL}_${CSC}/.downloaded" ] && rm -rf "$ODIN_DIR/${MODEL}_${CSC}"
+-    mkdir -p "$ODIN_DIR/${MODEL}_${CSC}"
++    [ -f "$ODIN_DIR/$FIRMWARE_CACHE_KEY/.downloaded" ] && rm -rf "$ODIN_DIR/$FIRMWARE_CACHE_KEY"
++    mkdir -p "$ODIN_DIR/$FIRMWARE_CACHE_KEY"
+     # shellcheck disable=SC2164
+     # Anan's samloader stores its logs in the current working directory, let's move into OUT_DIR just for this time
+     (
+     cd "$OUT_DIR"
+-    samloader -m "$MODEL" -r "$CSC" -i "$IMEI" -s "$SERIAL_NO" download -O "$ODIN_DIR/${MODEL}_${CSC}" 1> /dev/null || exit 1
++    samloader -m "$MODEL" -r "$CSC" -i "$IMEI" -s "$SERIAL_NO" download -O "$ODIN_DIR/$FIRMWARE_CACHE_KEY" 1> /dev/null || exit 1
+     )
+ 
+-    ZIP_FILE="$(find "$ODIN_DIR/${MODEL}_${CSC}" -name "*.zip" | sort -r | head -n 1)"
++    ZIP_FILE="$(find "$ODIN_DIR/$FIRMWARE_CACHE_KEY" -name "*.zip" | sort -r | head -n 1)"
+     if [ ! "$ZIP_FILE" ] || [ ! -f "$ZIP_FILE" ]; then
+         LOG "\033[0;31m! Download failed\033[0m"
+         exit 1
+     fi
+ 
+     LOG "- Extracting $(basename "$ZIP_FILE")..."
+-    EVAL "unzip -o \"$ZIP_FILE\" -d \"$ODIN_DIR/${MODEL}_${CSC}\" && rm -rf \"$ZIP_FILE\"" || exit 1
++    EVAL "unzip -o \"$ZIP_FILE\" -d \"$ODIN_DIR/$FIRMWARE_CACHE_KEY\" && rm -rf \"$ZIP_FILE\"" || exit 1
+ 
+     VERIFY_ODIN_PACKAGES
+ 
+-    echo -n "$LATEST_FIRMWARE" > "$ODIN_DIR/${MODEL}_${CSC}/.downloaded"
++    echo -n "$LATEST_FIRMWARE" > "$ODIN_DIR/$FIRMWARE_CACHE_KEY/.downloaded"
+ 
+     LOG_STEP_OUT; LOG_STEP_OUT
+ done
+diff --git a/scripts/extract_fw.sh b/scripts/extract_fw.sh
+--- a/scripts/extract_fw.sh
++++ b/scripts/extract_fw.sh
+@@ -22,16 +22,16 @@
+     if FILE_EXISTS_IN_TAR "$BL_TAR" "vbmeta.img" || FILE_EXISTS_IN_TAR "$BL_TAR" "vbmeta.img.lz4"; then
+         LOG_STEP_IN "- Extracting AVB binaries"
+ 
+-        mkdir -p "$FW_DIR/${MODEL}_${CSC}/avb"
++        mkdir -p "$FW_DIR/$FIRMWARE_CACHE_KEY/avb"
+ 
+         EXTRACT_FILE_FROM_TAR "$BL_TAR" "vbmeta.img" || exit 1
+-        mv -f "$FW_DIR/${MODEL}_${CSC}/vbmeta.img" "$FW_DIR/${MODEL}_${CSC}/avb/vbmeta.img"
+-
+-        [ -f "$FW_DIR/${MODEL}_${CSC}/avb/vbmeta_patched.img" ] && rm -rf "$FW_DIR/${MODEL}_${CSC}/avb/vbmeta_patched.img"
++        mv -f "$FW_DIR/$FIRMWARE_CACHE_KEY/vbmeta.img" "$FW_DIR/$FIRMWARE_CACHE_KEY/avb/vbmeta.img"
++
++        [ -f "$FW_DIR/$FIRMWARE_CACHE_KEY/avb/vbmeta_patched.img" ] && rm -rf "$FW_DIR/$FIRMWARE_CACHE_KEY/avb/vbmeta_patched.img"
+         LOG "- Creating vbmeta_patched.img..."
+-        EVAL "cp -a \"$FW_DIR/${MODEL}_${CSC}/avb/vbmeta.img\" \"$FW_DIR/${MODEL}_${CSC}/avb/vbmeta_patched.img\"" || exit 1
++        EVAL "cp -a \"$FW_DIR/$FIRMWARE_CACHE_KEY/avb/vbmeta.img\" \"$FW_DIR/$FIRMWARE_CACHE_KEY/avb/vbmeta_patched.img\"" || exit 1
+         # https://android.googlesource.com/platform/system/core/+/refs/tags/android-15.0.0_r1/fastboot/fastboot.cpp#1129
+-        EVAL "printf \"\x03\" | dd of=\"$FW_DIR/${MODEL}_${CSC}/avb/vbmeta_patched.img\" bs=1 seek=123 count=1 conv=notrunc" || exit 1
++        EVAL "printf \"\x03\" | dd of=\"$FW_DIR/$FIRMWARE_CACHE_KEY/avb/vbmeta_patched.img\" bs=1 seek=123 count=1 conv=notrunc" || exit 1
+ 
+         LOG_STEP_OUT
+     fi
+@@ -43,15 +43,15 @@
+ 
+     LOG_STEP_IN "- Extracting kernel binaries"
+ 
+-    mkdir -p "$FW_DIR/${MODEL}_${CSC}/kernel"
++    mkdir -p "$FW_DIR/$FIRMWARE_CACHE_KEY/kernel"
+     for f in $FILES; do
+-        [ -f "$FW_DIR/${MODEL}_${CSC}/${f}_metadata.txt" ] && rm -f "$FW_DIR/${MODEL}_${CSC}/${f}_metadata.txt"
++        [ -f "$FW_DIR/$FIRMWARE_CACHE_KEY/${f}_metadata.txt" ] && rm -f "$FW_DIR/$FIRMWARE_CACHE_KEY/${f}_metadata.txt"
+ 
+         EXTRACT_FILE_FROM_TAR "$AP_TAR" "$f" || exit 1
+-        [ -f "$FW_DIR/${MODEL}_${CSC}/$f" ] || continue
+-        mv -f "$FW_DIR/${MODEL}_${CSC}/$f" "$FW_DIR/${MODEL}_${CSC}/kernel/$f"
+-
+-        STORE_KERNEL_IMAGE_METADATA "$FW_DIR/${MODEL}_${CSC}/kernel/$f"
++        [ -f "$FW_DIR/$FIRMWARE_CACHE_KEY/$f" ] || continue
++        mv -f "$FW_DIR/$FIRMWARE_CACHE_KEY/$f" "$FW_DIR/$FIRMWARE_CACHE_KEY/kernel/$f"
++
++        STORE_KERNEL_IMAGE_METADATA "$FW_DIR/$FIRMWARE_CACHE_KEY/kernel/$f"
+     done
+ 
+     LOG_STEP_OUT
+@@ -64,34 +64,34 @@
+ 
+     LOG_STEP_IN "- Extracting OS partitions"
+ 
+-    [ -f "$FW_DIR/${MODEL}_${CSC}/os_partitions_metadata.txt" ] && rm -f "$FW_DIR/${MODEL}_${CSC}/os_partitions_metadata.txt"
++    [ -f "$FW_DIR/$FIRMWARE_CACHE_KEY/os_partitions_metadata.txt" ] && rm -f "$FW_DIR/$FIRMWARE_CACHE_KEY/os_partitions_metadata.txt"
+ 
+     if FILE_EXISTS_IN_TAR "$AP_TAR" "super.img" || FILE_EXISTS_IN_TAR "$AP_TAR" "super.img.lz4"; then
+         EXTRACT_FILE_FROM_TAR "$AP_TAR" "super.img" || exit 1
+-        UNSPARSE_IMAGE "$FW_DIR/${MODEL}_${CSC}/super.img" || exit 1
++        UNSPARSE_IMAGE "$FW_DIR/$FIRMWARE_CACHE_KEY/super.img" || exit 1
+ 
+         LOG "- Unpacking super.img..."
+ 
+-        STORE_OS_PARTITION_METADATA "$FW_DIR/${MODEL}_${CSC}/super.img"
++        STORE_OS_PARTITION_METADATA "$FW_DIR/$FIRMWARE_CACHE_KEY/super.img"
+ 
+         # shellcheck disable=SC2013
+-        for p in $(grep "partition_list" "$FW_DIR/${MODEL}_${CSC}/os_partitions_metadata.txt" | cut -d "=" -f 2 -s); do
+-            if grep -q "virtual_ab" "$FW_DIR/${MODEL}_${CSC}/os_partitions_metadata.txt"; then
++        for p in $(grep "partition_list" "$FW_DIR/$FIRMWARE_CACHE_KEY/os_partitions_metadata.txt" | cut -d "=" -f 2 -s); do
++            if grep -q "virtual_ab" "$FW_DIR/$FIRMWARE_CACHE_KEY/os_partitions_metadata.txt"; then
+                 # In Virtual A/B devices only the A slot is filled
+-                EVAL "lpunpack -p \"${p}_a\" \"$FW_DIR/${MODEL}_${CSC}/super.img\" \"$FW_DIR/${MODEL}_${CSC}\"" || exit 1
+-                mv -f "$FW_DIR/${MODEL}_${CSC}/${p}_a.img" "$FW_DIR/${MODEL}_${CSC}/${p}.img"
++                EVAL "lpunpack -p \"${p}_a\" \"$FW_DIR/$FIRMWARE_CACHE_KEY/super.img\" \"$FW_DIR/$FIRMWARE_CACHE_KEY\"" || exit 1
++                mv -f "$FW_DIR/$FIRMWARE_CACHE_KEY/${p}_a.img" "$FW_DIR/$FIRMWARE_CACHE_KEY/${p}.img"
+             else
+-                EVAL "lpunpack -p \"${p}\" \"$FW_DIR/${MODEL}_${CSC}/super.img\" \"$FW_DIR/${MODEL}_${CSC}\"" || exit 1
++                EVAL "lpunpack -p \"${p}\" \"$FW_DIR/$FIRMWARE_CACHE_KEY/super.img\" \"$FW_DIR/$FIRMWARE_CACHE_KEY\"" || exit 1
+             fi
+         done
+ 
+-        rm -f "$FW_DIR/${MODEL}_${CSC}/super.img"
++        rm -f "$FW_DIR/$FIRMWARE_CACHE_KEY/super.img"
+     else
+         for f in $FILES; do
+             EXTRACT_FILE_FROM_TAR "$AP_TAR" "$f" || exit 1
+-            [ -f "$FW_DIR/${MODEL}_${CSC}/$f" ] || continue
+-            UNSPARSE_IMAGE "$FW_DIR/${MODEL}_${CSC}/$f" || exit 1
+-            STORE_OS_PARTITION_METADATA "$FW_DIR/${MODEL}_${CSC}/$f"
++            [ -f "$FW_DIR/$FIRMWARE_CACHE_KEY/$f" ] || continue
++            UNSPARSE_IMAGE "$FW_DIR/$FIRMWARE_CACHE_KEY/$f" || exit 1
++            STORE_OS_PARTITION_METADATA "$FW_DIR/$FIRMWARE_CACHE_KEY/$f"
+         done
+     fi
+ 
+@@ -99,17 +99,17 @@
+     for f in $FILES; do
+         PARTITION="${f%.img}"
+ 
+-        [ -f "$FW_DIR/${MODEL}_${CSC}/$f" ] || continue
+-
+-        if [[ "$(GET_IMAGE_FILE_SYSTEM "$FW_DIR/${MODEL}_${CSC}/$f")" == "f2fs" ]]; then
++        [ -f "$FW_DIR/$FIRMWARE_CACHE_KEY/$f" ] || continue
++
++        if [[ "$(GET_IMAGE_FILE_SYSTEM "$FW_DIR/$FIRMWARE_CACHE_KEY/$f")" == "f2fs" ]]; then
+             if [ ! -x "$TOOLS_DIR/bin/f2fs_unpack" ]; then
+                 LOGE "Missing source-built f2fs_unpack; run scripts/build_dependencies.sh"
+                 exit 1
+             fi
+             LOG "- Unpacking $(basename "$f") using f2fs_unpack..."
+-            "$TOOLS_DIR/bin/f2fs_unpack" "$FW_DIR/${MODEL}_${CSC}/$f" \
+-                "$FW_DIR/${MODEL}_${CSC}/$PARTITION" "$PARTITION" || exit 1
+-            rm -f "$FW_DIR/${MODEL}_${CSC}/$f"
++            "$TOOLS_DIR/bin/f2fs_unpack" "$FW_DIR/$FIRMWARE_CACHE_KEY/$f" \
++                "$FW_DIR/$FIRMWARE_CACHE_KEY/$PARTITION" "$PARTITION" || exit 1
++            rm -f "$FW_DIR/$FIRMWARE_CACHE_KEY/$f"
+             continue
+         fi
+ 
+@@ -123,44 +123,44 @@
+ 
+         LOG "- Unpacking $(basename "$f")..."
+ 
+-        mkdir -p "$FW_DIR/${MODEL}_${CSC}/$PARTITION"
+-        sudo umount "$FW_DIR/${MODEL}_${CSC}/$f" &> /dev/null
+-        if [[ "$(GET_IMAGE_FILE_SYSTEM "$FW_DIR/${MODEL}_${CSC}/$f")" == "erofs" ]]; then
+-            EVAL "sudo env \"PATH=$PATH\" fuse.erofs \"$FW_DIR/${MODEL}_${CSC}/$f\" \"$TMP_DIR\"" || exit 1
++        mkdir -p "$FW_DIR/$FIRMWARE_CACHE_KEY/$PARTITION"
++        sudo umount "$FW_DIR/$FIRMWARE_CACHE_KEY/$f" &> /dev/null
++        if [[ "$(GET_IMAGE_FILE_SYSTEM "$FW_DIR/$FIRMWARE_CACHE_KEY/$f")" == "erofs" ]]; then
++            EVAL "sudo env \"PATH=$PATH\" fuse.erofs \"$FW_DIR/$FIRMWARE_CACHE_KEY/$f\" \"$TMP_DIR\"" || exit 1
+         else
+-            EVAL "sudo mount -o ro \"$FW_DIR/${MODEL}_${CSC}/$f\" \"$TMP_DIR\"" || exit 1
+-        fi
+-        EVAL "sudo cp -a -T \"$TMP_DIR\" \"$FW_DIR/${MODEL}_${CSC}/$PARTITION\"" || exit 1
+-        sudo chown -hR "$(whoami):$(whoami)" "$FW_DIR/${MODEL}_${CSC}/$PARTITION"
+-        [ -d "$FW_DIR/${MODEL}_${CSC}/$PARTITION/lost+found" ] && rm -rf "$FW_DIR/${MODEL}_${CSC}/$PARTITION/lost+found"
++            EVAL "sudo mount -o ro \"$FW_DIR/$FIRMWARE_CACHE_KEY/$f\" \"$TMP_DIR\"" || exit 1
++        fi
++        EVAL "sudo cp -a -T \"$TMP_DIR\" \"$FW_DIR/$FIRMWARE_CACHE_KEY/$PARTITION\"" || exit 1
++        sudo chown -hR "$(whoami):$(whoami)" "$FW_DIR/$FIRMWARE_CACHE_KEY/$PARTITION"
++        [ -d "$FW_DIR/$FIRMWARE_CACHE_KEY/$PARTITION/lost+found" ] && rm -rf "$FW_DIR/$FIRMWARE_CACHE_KEY/$PARTITION/lost+found"
+ 
+         LOG "- Generating fs_config/file_context for $(basename "$f")..."
+ 
+-        EVAL "sudo find \"$TMP_DIR\" | sudo xargs -I \"{}\" -P \"$(nproc)\" stat -c \"%n %u %g %a capabilities=0x0\" \"{}\" > \"$FW_DIR/${MODEL}_${CSC}/fs_config-$PARTITION\"" || exit 1
+-        EVAL "sudo find \"$TMP_DIR\" | sudo xargs -I \"{}\" -P \"$(nproc)\" sh -c 'echo \"\$1 \$(getfattr -n security.selinux --only-values -h --absolute-names \"\$1\")\"' \"sh\" \"{}\" > \"$FW_DIR/${MODEL}_${CSC}/file_context-$PARTITION\"" || exit 1
+-        sort -o "$FW_DIR/${MODEL}_${CSC}/fs_config-$PARTITION" "$FW_DIR/${MODEL}_${CSC}/fs_config-$PARTITION"
+-        sort -o "$FW_DIR/${MODEL}_${CSC}/file_context-$PARTITION" "$FW_DIR/${MODEL}_${CSC}/file_context-$PARTITION"
++        EVAL "sudo find \"$TMP_DIR\" | sudo xargs -I \"{}\" -P \"$(nproc)\" stat -c \"%n %u %g %a capabilities=0x0\" \"{}\" > \"$FW_DIR/$FIRMWARE_CACHE_KEY/fs_config-$PARTITION\"" || exit 1
++        EVAL "sudo find \"$TMP_DIR\" | sudo xargs -I \"{}\" -P \"$(nproc)\" sh -c 'echo \"\$1 \$(getfattr -n security.selinux --only-values -h --absolute-names \"\$1\")\"' \"sh\" \"{}\" > \"$FW_DIR/$FIRMWARE_CACHE_KEY/file_context-$PARTITION\"" || exit 1
++        sort -o "$FW_DIR/$FIRMWARE_CACHE_KEY/fs_config-$PARTITION" "$FW_DIR/$FIRMWARE_CACHE_KEY/fs_config-$PARTITION"
++        sort -o "$FW_DIR/$FIRMWARE_CACHE_KEY/file_context-$PARTITION" "$FW_DIR/$FIRMWARE_CACHE_KEY/file_context-$PARTITION"
+         # https://source.android.com/docs/core/architecture/partitions/system-as-root
+-        if [[ "$PARTITION" == "system" ]] && [ -d "$FW_DIR/${MODEL}_${CSC}/system/system" ]; then
+-            sed -i -e "s|$TMP_DIR |/ |g" -e "s|$TMP_DIR||g" "$FW_DIR/${MODEL}_${CSC}/file_context-$PARTITION"
+-            sed -i -e "s|$TMP_DIR | |g" -e "s|$TMP_DIR/||g" "$FW_DIR/${MODEL}_${CSC}/fs_config-$PARTITION"
++        if [[ "$PARTITION" == "system" ]] && [ -d "$FW_DIR/$FIRMWARE_CACHE_KEY/system/system" ]; then
++            sed -i -e "s|$TMP_DIR |/ |g" -e "s|$TMP_DIR||g" "$FW_DIR/$FIRMWARE_CACHE_KEY/file_context-$PARTITION"
++            sed -i -e "s|$TMP_DIR | |g" -e "s|$TMP_DIR/||g" "$FW_DIR/$FIRMWARE_CACHE_KEY/fs_config-$PARTITION"
+         else
+-            sed -i "s|$TMP_DIR|/$PARTITION|g" "$FW_DIR/${MODEL}_${CSC}/file_context-$PARTITION"
+-            sed -i -e "s|$TMP_DIR | |g" -e "s|$TMP_DIR|$PARTITION|g" "$FW_DIR/${MODEL}_${CSC}/fs_config-$PARTITION"
++            sed -i "s|$TMP_DIR|/$PARTITION|g" "$FW_DIR/$FIRMWARE_CACHE_KEY/file_context-$PARTITION"
++            sed -i -e "s|$TMP_DIR | |g" -e "s|$TMP_DIR|$PARTITION|g" "$FW_DIR/$FIRMWARE_CACHE_KEY/fs_config-$PARTITION"
+         fi
+         sed -i -e "s|\.|\\\.|g" -e "s|\+|\\\+|g" -e "s|\[|\\\[|g" \
+-            -e "s|\]|\\\]|g" -e "s|\*|\\\*|g" "$FW_DIR/${MODEL}_${CSC}/file_context-$PARTITION"
++            -e "s|\]|\\\]|g" -e "s|\*|\\\*|g" "$FW_DIR/$FIRMWARE_CACHE_KEY/file_context-$PARTITION"
+ 
+         # TODO a way to determine file capabilities has yet to be found, for now let's set it for the only known files
+-        if [ -f "$FW_DIR/${MODEL}_${CSC}/fs_config-system" ]; then
+-            grep -q "run-as" "$FW_DIR/${MODEL}_${CSC}/fs_config-system" && \
+-                sed -i "$(sed -n "/run-as/=" "$FW_DIR/${MODEL}_${CSC}/fs_config-system") s/0x0/0xc0/g" "$FW_DIR/${MODEL}_${CSC}/fs_config-system"
+-            grep -q "simpleperf_app_runner" "$FW_DIR/${MODEL}_${CSC}/fs_config-system" && \
+-                sed -i "$(sed -n "/simpleperf_app_runner/=" "$FW_DIR/${MODEL}_${CSC}/fs_config-system") s/0x0/0xc0/g" "$FW_DIR/${MODEL}_${CSC}/fs_config-system"
++        if [ -f "$FW_DIR/$FIRMWARE_CACHE_KEY/fs_config-system" ]; then
++            grep -q "run-as" "$FW_DIR/$FIRMWARE_CACHE_KEY/fs_config-system" && \
++                sed -i "$(sed -n "/run-as/=" "$FW_DIR/$FIRMWARE_CACHE_KEY/fs_config-system") s/0x0/0xc0/g" "$FW_DIR/$FIRMWARE_CACHE_KEY/fs_config-system"
++            grep -q "simpleperf_app_runner" "$FW_DIR/$FIRMWARE_CACHE_KEY/fs_config-system" && \
++                sed -i "$(sed -n "/simpleperf_app_runner/=" "$FW_DIR/$FIRMWARE_CACHE_KEY/fs_config-system") s/0x0/0xc0/g" "$FW_DIR/$FIRMWARE_CACHE_KEY/fs_config-system"
+         fi
+ 
+         EVAL "sudo umount \"$TMP_DIR\"" || exit 1
+-        rm -f "$FW_DIR/${MODEL}_${CSC}/$f"
++        rm -f "$FW_DIR/$FIRMWARE_CACHE_KEY/$f"
+     done
+ 
+     LOG_STEP_OUT
+@@ -238,7 +238,7 @@
+ STORE_KERNEL_IMAGE_METADATA()
+ {
+     local FILE="$1"
+-    local METADATA="$FW_DIR/${MODEL}_${CSC}/${f}_metadata.txt"
++    local METADATA="$FW_DIR/$FIRMWARE_CACHE_KEY/${f}_metadata.txt"
+ 
+     if [ ! -f "$FILE" ]; then
+         LOGE "File not found: ${TAR//$SRC_DIR\//}"
+@@ -251,11 +251,11 @@
+ 
+     if [[ "$f" == *"boot.img" ]] || [[ "$f" == "recovery.img" ]]; then
+         local INFO
+-        INFO="$(unpack_bootimg --boot_img "$FW_DIR/${MODEL}_${CSC}/kernel/$f" --out "$TMP_DIR" 2>&1)"
++        INFO="$(unpack_bootimg --boot_img "$FW_DIR/$FIRMWARE_CACHE_KEY/kernel/$f" --out "$TMP_DIR" 2>&1)"
+         # shellcheck disable=SC2181
+         if [ $? -ne 0 ]; then
+             local FILE_INFO
+-            LOGW "Failed to parse ${MODEL}_${CSC}/kernel/$f with unpack_bootimg, using legacy bootimg metadata fallback"
++            LOGW "Failed to parse $FIRMWARE_CACHE_KEY/kernel/$f with unpack_bootimg, using legacy bootimg metadata fallback"
+             FILE_INFO="$(LC_ALL=C file -b "$FILE")"
+             if [[ "$FILE_INFO" == *"cmdline ("* ]]; then
+                 echo "cmdline=$(sed -n "s/.*cmdline (\(.*\)).*/\1/p" <<< "$FILE_INFO")" >> "$METADATA"
+@@ -364,9 +364,9 @@
+             grep -F "Maximum size: " <<< "$LPDUMP" | tr -d " " | cut -d ":" -f 2 | sed "s/bytes//" | sort -n -r | head -n 1
+             echo -n "super_${GROUP_NAME}_partition_list="
+             grep -F "Name: " <<< "$LPDUMP" | tr -d " " | cut -d ":" -f 2 | sed -e "s/_a$//" -e "s/_b$//" -e "/default/d" -e "/$GROUP_NAME/d" | awk '!visited[$0]++' | tr "\n" " " | xargs
+-        } > "$FW_DIR/${MODEL}_${CSC}/os_partitions_metadata.txt"
++        } > "$FW_DIR/$FIRMWARE_CACHE_KEY/os_partitions_metadata.txt"
+     else
+-        echo "$(basename "${FILE%.img}")_size=$PARTITION_SIZE" >> "$FW_DIR/${MODEL}_${CSC}/os_partitions_metadata.txt"
++        echo "$(basename "${FILE%.img}")_size=$PARTITION_SIZE" >> "$FW_DIR/$FIRMWARE_CACHE_KEY/os_partitions_metadata.txt"
+     fi
+ }
+ # ]
+@@ -378,8 +378,8 @@
+ 
+     LATEST_FIRMWARE="$(GET_LATEST_FIRMWARE "$MODEL" "$CSC")"
+     if [ ! "$LATEST_FIRMWARE" ]; then
+-        if [ -f "$ODIN_DIR/${MODEL}_${CSC}/.downloaded" ]; then
+-            LATEST_FIRMWARE="$(cat "$ODIN_DIR/${MODEL}_${CSC}/.downloaded")"
++        if [ -f "$ODIN_DIR/$FIRMWARE_CACHE_KEY/.downloaded" ]; then
++            LATEST_FIRMWARE="$(cat "$ODIN_DIR/$FIRMWARE_CACHE_KEY/.downloaded")"
+         else
+             LOGE "Latest available firmware could not be fetched"
+             exit 1
+@@ -387,18 +387,18 @@
+     fi
+ 
+     LOG_STEP_IN "- Processing $MODEL firmware with $CSC CSC"
+-    LOG "- Downloaded firmware: $(cat "$ODIN_DIR/${MODEL}_${CSC}/.downloaded" 2> /dev/null)"
+-    LOG "- Extracted firmware: $(cat "$FW_DIR/${MODEL}_${CSC}/.extracted" 2> /dev/null)"
++    LOG "- Downloaded firmware: $(cat "$ODIN_DIR/$FIRMWARE_CACHE_KEY/.downloaded" 2> /dev/null)"
++    LOG "- Extracted firmware: $(cat "$FW_DIR/$FIRMWARE_CACHE_KEY/.extracted" 2> /dev/null)"
+     LOG "- Latest available firmware: $LATEST_FIRMWARE"
+ 
+     LOG_STEP_IN
+ 
+     if ! $FORCE; then
+         # Skip if firmware has been extracted
+-        if [ -f "$FW_DIR/${MODEL}_${CSC}/.extracted" ]; then
+-            if ! COMPARE_SEC_BUILD_VERSION "$(cat "$FW_DIR/${MODEL}_${CSC}/.extracted")" "$LATEST_FIRMWARE"; then
+-                if [ -f "$ODIN_DIR/${MODEL}_${CSC}/.downloaded" ] && \
+-                        ! COMPARE_SEC_BUILD_VERSION "$(cat "$FW_DIR/${MODEL}_${CSC}/.extracted")" "$(cat "$ODIN_DIR/${MODEL}_${CSC}/.downloaded")"; then
++        if [ -f "$FW_DIR/$FIRMWARE_CACHE_KEY/.extracted" ]; then
++            if ! COMPARE_SEC_BUILD_VERSION "$(cat "$FW_DIR/$FIRMWARE_CACHE_KEY/.extracted")" "$LATEST_FIRMWARE"; then
++                if [ -f "$ODIN_DIR/$FIRMWARE_CACHE_KEY/.downloaded" ] && \
++                        ! COMPARE_SEC_BUILD_VERSION "$(cat "$FW_DIR/$FIRMWARE_CACHE_KEY/.extracted")" "$(cat "$ODIN_DIR/$FIRMWARE_CACHE_KEY/.downloaded")"; then
+                     LOG "\033[0;33m! A newer firmware has been downloaded, use --force flag if you want to overwrite it\033[0m"
+                 else
+                     LOG "\033[0;33m! A newer firmware is available for download\033[0m"
+@@ -413,18 +413,18 @@
+     fi
+ 
+     # Abort if firmware has not been downloaded
+-    if [ ! -f "$ODIN_DIR/${MODEL}_${CSC}/.downloaded" ]; then
++    if [ ! -f "$ODIN_DIR/$FIRMWARE_CACHE_KEY/.downloaded" ]; then
+         LOG "\033[0;31m! The firmware has not been downloaded\033[0m"
+         exit 1
+     fi
+ 
+-    [ -f "$FW_DIR/${MODEL}_${CSC}/.extracted" ] && rm -rf "$FW_DIR/${MODEL}_${CSC}"
+-    mkdir -p "$FW_DIR/${MODEL}_${CSC}"
+-
+-    DOWNLOADED_FIRMWARE="$(cat "$ODIN_DIR/${MODEL}_${CSC}/.downloaded")"
+-
+-    BL_TAR="$(find "$ODIN_DIR/${MODEL}_${CSC}" -name "BL_$(cut -d "/" -f 1 -s <<< "$DOWNLOADED_FIRMWARE")*.md5" | sort -r | head -n 1)"
+-    AP_TAR="$(find "$ODIN_DIR/${MODEL}_${CSC}" -name "AP_$(cut -d "/" -f 1 -s <<< "$DOWNLOADED_FIRMWARE")*.md5" | sort -r | head -n 1)"
++    [ -f "$FW_DIR/$FIRMWARE_CACHE_KEY/.extracted" ] && rm -rf "$FW_DIR/$FIRMWARE_CACHE_KEY"
++    mkdir -p "$FW_DIR/$FIRMWARE_CACHE_KEY"
++
++    DOWNLOADED_FIRMWARE="$(cat "$ODIN_DIR/$FIRMWARE_CACHE_KEY/.downloaded")"
++
++    BL_TAR="$(find "$ODIN_DIR/$FIRMWARE_CACHE_KEY" -name "BL_$(cut -d "/" -f 1 -s <<< "$DOWNLOADED_FIRMWARE")*.md5" | sort -r | head -n 1)"
++    AP_TAR="$(find "$ODIN_DIR/$FIRMWARE_CACHE_KEY" -name "AP_$(cut -d "/" -f 1 -s <<< "$DOWNLOADED_FIRMWARE")*.md5" | sort -r | head -n 1)"
+ 
+     if [ ! "$BL_TAR" ]; then
+         LOG "\033[0;31m! No BL tar found\033[0m"
+@@ -438,10 +438,10 @@
+     EXTRACT_OS_PARTITIONS
+     EXTRACT_AVB_BINARIES
+ 
+-    echo -n "$DOWNLOADED_FIRMWARE" > "$FW_DIR/${MODEL}_${CSC}/.extracted"
++    echo -n "$DOWNLOADED_FIRMWARE" > "$FW_DIR/$FIRMWARE_CACHE_KEY/.extracted"
+ 
+     if [ -n "$GITHUB_ACTIONS" ]; then
+-        rm -rf "$ODIN_DIR/${MODEL}_${CSC}"
++        rm -rf "$ODIN_DIR/$FIRMWARE_CACHE_KEY"
+     fi
+ 
+     LOG_STEP_OUT; LOG_STEP_OUT
+diff --git a/scripts/internal/update_prebuilt_blobs.sh b/scripts/internal/update_prebuilt_blobs.sh
+--- a/scripts/internal/update_prebuilt_blobs.sh
++++ b/scripts/internal/update_prebuilt_blobs.sh
+@@ -45,23 +45,23 @@
+         fi
+         FILE_PATH="$PREBUILTS_DIR/${i//system\/system\//system/}"
+ 
+-        if [ ! -f "$FW_DIR/${MODEL}_${CSC}/$i" ]; then
+-            LOGE "File not found: ${FW_DIR//$SRC_DIR\//}/${MODEL}_${CSC}/$i"
++        if [ ! -f "$FW_DIR/$FIRMWARE_CACHE_KEY/$i" ]; then
++            LOGE "File not found: ${FW_DIR//$SRC_DIR\//}/$FIRMWARE_CACHE_KEY/$i"
+             exit 1
+         fi
+ 
+         LOG "- Updating prebuilts/samsung/$DEVICE/$i"
+ 
+-        if [ ! -L "$FW_DIR/${MODEL}_${CSC}/$i" ] && \
+-                [ "$(wc -c "$FW_DIR/${MODEL}_${CSC}/$i" | cut -d " " -f 1)" -gt "52428800" ]; then
++        if [ ! -L "$FW_DIR/$FIRMWARE_CACHE_KEY/$i" ] && \
++                [ "$(wc -c "$FW_DIR/$FIRMWARE_CACHE_KEY/$i" | cut -d " " -f 1)" -gt "52428800" ]; then
+             EVAL "rm \"$FILE_PATH.\"*" || exit 1
+-            EVAL "split -d -b 52428800 \"$FW_DIR/${MODEL}_${CSC}/$i\" \"$FILE_PATH.\"" || exit 1
++            EVAL "split -d -b 52428800 \"$FW_DIR/$FIRMWARE_CACHE_KEY/$i\" \"$FILE_PATH.\"" || exit 1
+         else
+-            EVAL "cp -a \"$FW_DIR/${MODEL}_${CSC}/$i\" \"$FILE_PATH\"" || exit 1
++            EVAL "cp -a \"$FW_DIR/$FIRMWARE_CACHE_KEY/$i\" \"$FILE_PATH\"" || exit 1
+         fi
+     done
+ 
+-    EVAL "cp -a \"$FW_DIR/${MODEL}_${CSC}/.extracted\" \"$PREBUILTS_DIR/.current\"" || exit 1
++    EVAL "cp -a \"$FW_DIR/$FIRMWARE_CACHE_KEY/.extracted\" \"$PREBUILTS_DIR/.current\"" || exit 1
+ }
+ # ]
+ 
+diff --git a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/customize.sh b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/customize.sh
+--- a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/customize.sh
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/customize.sh
+@@ -1981,7 +1981,7 @@
+ if [ "${EXYNOS9810_M2_RUNTIME_COMPAT:-false}" = "true" ]; then
+     python3 "$MODPATH/a376b_runtime_compat.py" apply --work-dir "$WORK_DIR" \
+         --compat-root "$FW_DIR/SM-S901B_EUX/system/system" \
+-        --account-vendor-root "$FW_DIR/SM-A376B_XXV/vendor" || return 1
++        --account-vendor-root "$FW_DIR/$SOURCE_FIRMWARE_PATH/vendor" || return 1
+     _EXYNOS9810_SET_METADATA_SAFE vendor vendor/etc/passwd 0 0 644 "u:object_r:vendor_configs_file:s0"
+     _EXYNOS9810_SET_METADATA_SAFE vendor vendor/etc/group 0 0 644 "u:object_r:vendor_configs_file:s0"
+     _EXYNOS9810_SET_METADATA_SAFE system system/apex/com.google.android.tethering_compressed.apex \
+diff --git a/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh b/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
+--- a/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
+@@ -2921,7 +2921,7 @@
+         }
+         CAMERASERVER_SRC="$WORK_DIR/tmp/a376b-cameraserver"
+         python3 "$SRC/patches/a376b_cameraserver.py" \
+-            "$FW_DIR/SM-A376B_XXV/system/system/bin/cameraserver" \
++            "$FW_DIR/$SOURCE_FIRMWARE_PATH/system/system/bin/cameraserver" \
+             "$CAMERASERVER_SRC" || return 1
+         CAMERASERVER_SHA="73cba451858345a2860966cb0a7e7faff64abb4f4946193956571476e0ddad7b"
+     fi
+diff --git a/unica/patches/uwb/customize.sh b/unica/patches/uwb/customize.sh
+--- a/unica/patches/uwb/customize.sh
++++ b/unica/patches/uwb/customize.sh
+@@ -1,4 +1,4 @@
+-SOURCE_FIRMWARE_PATH="$(cut -d "/" -f 1 -s <<< "$SOURCE_FIRMWARE")_$(cut -d "/" -f 2 -s <<< "$SOURCE_FIRMWARE")"
++SOURCE_FIRMWARE_PATH="$(GET_FIRMWARE_CACHE_KEY "$SOURCE_FIRMWARE")" || return 1
+ TARGET_FIRMWARE_PATH="$(cut -d "/" -f 1 -s <<< "$TARGET_FIRMWARE")_$(cut -d "/" -f 2 -s <<< "$TARGET_FIRMWARE")"
+ 
+ SOURCE_HAS_UWB="$(test -f "$FW_DIR/$SOURCE_FIRMWARE_PATH/vendor/etc/permissions/android.hardware.uwb.xml" && echo "true" || echo "false")"
+diff --git a/unica/patches/saiv/customize.sh b/unica/patches/saiv/customize.sh
+--- a/unica/patches/saiv/customize.sh
++++ b/unica/patches/saiv/customize.sh
+@@ -1,4 +1,4 @@
+-SOURCE_FIRMWARE_PATH="$(cut -d "/" -f 1 -s <<< "$SOURCE_FIRMWARE")_$(cut -d "/" -f 2 -s <<< "$SOURCE_FIRMWARE")"
++SOURCE_FIRMWARE_PATH="$(GET_FIRMWARE_CACHE_KEY "$SOURCE_FIRMWARE")" || return 1
+ TARGET_FIRMWARE_PATH="$(cut -d "/" -f 1 -s <<< "$TARGET_FIRMWARE")_$(cut -d "/" -f 2 -s <<< "$TARGET_FIRMWARE")"
+ 
+ TARGET_FLOATING_FEATURE_FILE="$FW_DIR/$TARGET_FIRMWARE_PATH/system/system/etc/floating_feature.xml"
+diff --git a/unica/patches/camera/customize.sh b/unica/patches/camera/customize.sh
+--- a/unica/patches/camera/customize.sh
++++ b/unica/patches/camera/customize.sh
+@@ -13,7 +13,7 @@
+ }
+ # ]
+ 
+-SOURCE_FIRMWARE_PATH="$(cut -d "/" -f 1 -s <<< "$SOURCE_FIRMWARE")_$(cut -d "/" -f 2 -s <<< "$SOURCE_FIRMWARE")"
++SOURCE_FIRMWARE_PATH="$(GET_FIRMWARE_CACHE_KEY "$SOURCE_FIRMWARE")" || return 1
+ TARGET_FIRMWARE_PATH="$(cut -d "/" -f 1 -s <<< "$TARGET_FIRMWARE")_$(cut -d "/" -f 2 -s <<< "$TARGET_FIRMWARE")"
+ 
+ if [ -d "$FW_DIR/$TARGET_FIRMWARE_PATH/system/system/cameradata/portrait_data" ]; then
+diff --git a/unica/patches/spen/customize.sh b/unica/patches/spen/customize.sh
+--- a/unica/patches/spen/customize.sh
++++ b/unica/patches/spen/customize.sh
+@@ -1,4 +1,4 @@
+-SOURCE_FIRMWARE_PATH="$(cut -d "/" -f 1 -s <<< "$SOURCE_FIRMWARE")_$(cut -d "/" -f 2 -s <<< "$SOURCE_FIRMWARE")"
++SOURCE_FIRMWARE_PATH="$(GET_FIRMWARE_CACHE_KEY "$SOURCE_FIRMWARE")" || return 1
+ TARGET_FIRMWARE_PATH="$(cut -d "/" -f 1 -s <<< "$TARGET_FIRMWARE")_$(cut -d "/" -f 2 -s <<< "$TARGET_FIRMWARE")"
+ 
+ SOURCE_HAS_SPEN="$(test -n "$(find "$FW_DIR/$SOURCE_FIRMWARE_PATH/system/system/etc/permissions" -type f -name "com.sec.feature.spen_usp*.xml")" && echo "true" || echo "false")"
+diff --git a/unica/patches/bluetooth/customize.sh b/unica/patches/bluetooth/customize.sh
+--- a/unica/patches/bluetooth/customize.sh
++++ b/unica/patches/bluetooth/customize.sh
+@@ -3,7 +3,7 @@
+ 
+     BT_APEX="$WORK_DIR/system/system/apex/com.android.bt.apex"
+     if [ ! -f "$BT_APEX" ]; then
+-        SOURCE_FIRMWARE_PATH="$(cut -d "/" -f 1 -s <<< "$SOURCE_FIRMWARE")_$(cut -d "/" -f 2 -s <<< "$SOURCE_FIRMWARE")"
++        SOURCE_FIRMWARE_PATH="$(GET_FIRMWARE_CACHE_KEY "$SOURCE_FIRMWARE")" || return 1
+         BT_APEX="$FW_DIR/$SOURCE_FIRMWARE_PATH/system/system/apex/com.android.bt.apex"
+     fi
+     if [ ! -f "$BT_APEX" ]; then

@@ -1,0 +1,45 @@
+diff --git a/scripts/utils/smali_utils.sh b/scripts/utils/smali_utils.sh
+--- a/scripts/utils/smali_utils.sh
++++ b/scripts/utils/smali_utils.sh
+@@ -27,6 +27,16 @@
+     local SMALI="$3"
+     local OPERATION="$4"
+ 
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++        if [ "${ROM_MILESTONE:-}" != M4 ] || [ "${TARGET_CODENAME:-}" != star2lte ] || \
++                [ "${STAR2LTE_BUILD_MODEL:-}" != SM-G965F ] || \
++                [ "${SOURCE_PLATFORM_SDK_VERSION:-}" != 37 ] || \
++                [ "${SOURCE_FIRMWARE_CACHE_SUFFIX:-}" != A376BXXU5BZI6 ]; then
++            LOGE "Unreviewed BZI6 Smali dispatch scope"
++            return 1
++        fi
++    fi
++
+     if ! IS_VALID_PARTITION_NAME "$PARTITION"; then
+         LOGE "\"$PARTITION\" is not a valid partition name"
+         return 1
+@@ -72,10 +82,11 @@
+ 
+     local FILE_PATH="$APKTOOL_DIR/$PARTITION/${FILE//system\//}"
+ 
+-    # AZH4 redistributed unchanged class descriptors across DEX files. Resolve
++    # AZH4/BZI6 redistribute unchanged class descriptors across DEX files. Resolve
+     # only the same fully-qualified class, never a basename or synthetic ID.
+-    if [ ! -f "$FILE_PATH/$SMALI" ] && \
+-            [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++    if { [ ! -f "$FILE_PATH/$SMALI" ] && \
++            [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; } || \
++            [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
+         local CLASS_PATH="${SMALI#*/}"
+         local CANDIDATE
+         local MATCHED=()
+@@ -91,6 +102,9 @@
+         elif [ "${#MATCHED[@]}" -eq 1 ]; then
+             SMALI="${MATCHED[0]#"$FILE_PATH/"}"
+             LOG "- Resolved A376B DEX class location: $SMALI"
++        elif [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++            LOGE "Missing BZI6 class descriptor: $CLASS_PATH"
++            return 1
+         fi
+     fi
+ 

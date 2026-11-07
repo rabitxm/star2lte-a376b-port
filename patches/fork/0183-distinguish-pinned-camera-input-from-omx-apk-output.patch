@@ -1,0 +1,140 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] distinguish pinned camera input from omx apk output
+
+# Reason: m4-package-attempt37-0182.txt rejects stock camera EncoderFilter: raw camera retention conflicts with already-reviewed OMX application patch. Camera must rebuild only its known legacy encoder change. Keep strict raw input/runtime binary hashes; add explicit post-build camera mode with full encoder-method equality, unchanged embedded native libraries, Jar signature/build-certificate verification, and real ext4 byte/metadata audit. Six unrelated donor APKs retain Samsung signatures.
+# Affected: apktool BUILD guard; native-app all selection; M4 runtime input/output verification; OMX camera output verifier; release and ext4 image gates
+# Verify: Source donor EncoderFilter SHA0ae136... and exact patched SHA5dad71... established. Rebuild Camera through fork, verify method/signature/native bytes and original-camera negative, then rerun full compiled/policy/image gates and source replay.
+# Rollback: Remove0183; raw input checks remain baseline defaults. No kernel/vendor/radio change.
+
+--- a/scripts/apktool.sh
++++ b/scripts/apktool.sh
+@@ -32,8 +32,6 @@
+     # for inspection must not platform-sign them in the global rebuild pass.
+     if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
+         case "$PARTITION/$FILE" in
+-            system/priv-app/SamsungCamera/SamsungCamera.apk|\
+-            system/system/priv-app/SamsungCamera/SamsungCamera.apk|\
+             system/priv-app/DressRoom/DressRoom.apk|\
+             system/system/priv-app/DressRoom/DressRoom.apk|\
+             system/priv-app/IPService/IPService.apk|\
+--- a/unica/patches/exynos9810_device_stack/exynos9810_finalization/verify_bzi6_final_apps.py
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/verify_bzi6_final_apps.py
+@@ -21,4 +21,4 @@
+     print("PASS locked native BZI6 apps: " + ", ".join(names))
+ 
+ if __name__ == "__main__":
+-    verify(Path(sys.argv[1]), list(LOCKS) if sys.argv[2:] == ["--all"] else sys.argv[2:])
++    verify(Path(sys.argv[1]), [name for name in LOCKS if name != "SamsungCamera"] if sys.argv[2:] == ["--all"] else sys.argv[2:])
+--- a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_runtime_compat.py
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_runtime_compat.py
+@@ -207,13 +207,22 @@
+     print("PASS staged donor-native M4 camera/audio/V7/Tethering, vendor_kg and empty vendor aconfig v2")
+ 
+ 
+-def verify(work, donor):
++def verify(work, donor, compiled_camera=False):
+     scope()
+     donor = source_root(donor)
+     verify_source(donor)
+     work = Path(work)
+     for rel, expected in manifest()["files"].items():
+         path = work / rel
++        if compiled_camera and rel == "system/system/priv-app/SamsungCamera/SamsungCamera.apk":
++            if not path.is_file() or path.is_symlink():
++                raise ValueError("Compiled M4 camera APK missing or symlinked")
++            media_path = HERE.parent.parent / "legacy/a376b_android17_media.py"
++            spec = importlib.util.spec_from_file_location("bzi6_media", media_path)
++            media = importlib.util.module_from_spec(spec)
++            spec.loader.exec_module(media)
++            media.verify_camera_apk(work, donor, HERE.parents[3] / "out/tools")
++            continue
+         if not path.is_file() or path.is_symlink() or digest(path) != expected:
+             raise ValueError("Final M4 runtime input mismatch: " + rel)
+     verify_vendor_account(work)
+@@ -308,11 +317,12 @@
+     parser.add_argument("mode", choices=("apply", "verify", "self-test"))
+     parser.add_argument("--work-dir", type=Path, required=True)
+     parser.add_argument("--donor-root", type=Path, required=True)
++    parser.add_argument("--compiled-camera", action="store_true", help="Verify reviewed OMX camera rebuild after APK compilation")
+     args = parser.parse_args()
+     if args.mode == "apply":
+         apply(args.work_dir, args.donor_root)
+     elif args.mode == "verify":
+-        verify(args.work_dir, args.donor_root)
++        verify(args.work_dir, args.donor_root, args.compiled_camera)
+     else:
+         scope()
+         self_test(args.donor_root)
+--- a/unica/patches/legacy/a376b_android17_media.py
++++ b/unica/patches/legacy/a376b_android17_media.py
+@@ -173,6 +173,48 @@
+     print("PASS compiled BZI6 OMX: native output hash and four actual DEX encoder defaults")
+ 
+ 
++def verify_camera_apk(work, donor, tools):
++    """Keep raw donor inputs pinned; prove the one-method camera OMX rebuild."""
++    scope()
++    import importlib.util
++    root = Path(__file__).resolve().parents[3]
++    spec = importlib.util.spec_from_file_location("bzi6_product", root / "unica/patches/product_feature/a376b_android17_product.py")
++    product = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(product)
++    rel = "system/system/priv-app/SamsungCamera/SamsungCamera.apk"
++    original = donor / rel
++    output = work / rel
++    if sha256(original.read_bytes()).hexdigest() != "21a830e6d2f4d73456f6837a73edf8170ddc84222ff710b71fb1318ae7fc61c1":
++        raise RuntimeError("BZI6 camera rebuild donor input changed")
++    donor_body = method(product.compiled_class(original, DESCRIPTOR, tools)).group()
++    if sha256(donor_body.encode()).hexdigest() != APKS["system/priv-app/SamsungCamera/SamsungCamera.apk"][0]:
++        raise RuntimeError("BZI6 camera rebuild encoder source changed")
++    expected = donor_body.replace(format_default(donor_body, "v4", "0x7f420888"), "    const v4, 0x7f000789", 1)
++    actual = method(product.compiled_class(output, DESCRIPTOR, tools)).group()
++    if sha256(actual.encode()).hexdigest() != sha256(expected.encode()).hexdigest():
++        raise RuntimeError("BZI6 camera compiled method differs from exact reviewed OMX edit")
++    with zipfile.ZipFile(original) as source_zip, zipfile.ZipFile(output) as compiled_zip:
++        if compiled_zip.testzip() is not None:
++            raise RuntimeError("Corrupt rebuilt BZI6 camera APK")
++        libs = {name for name in source_zip.namelist() if name.startswith("lib/") and not name.endswith("/")}
++        output_libs = {name for name in compiled_zip.namelist() if name.startswith("lib/") and not name.endswith("/")}
++        if libs != output_libs or any(source_zip.read(name) != compiled_zip.read(name) for name in libs):
++            raise RuntimeError("BZI6 camera embedded native libraries differ from donor")
++        signature = compiled_zip.read("META-INF/CERT.RSA")
++    # Validate both archive signatures and the actual build certificate.
++    subprocess.run(["jarsigner", "-verify", str(output)], check=True, capture_output=True)
++    with tempfile.TemporaryDirectory(prefix="bzi6-camera-cert-") as directory:
++        cert = Path(directory) / "CERT.RSA"
++        cert.write_bytes(signature)
++        pem = subprocess.run(["openssl", "pkcs7", "-inform", "DER", "-in", str(cert), "-print_certs"], check=True, capture_output=True).stdout
++        actual_cert = subprocess.run(["openssl", "x509", "-outform", "DER"], input=pem, check=True, capture_output=True).stdout
++        prefix = "unica" if os.environ.get("ROM_IS_OFFICIAL", "false") == "true" else "aosp"
++        expected_cert = subprocess.run(["openssl", "x509", "-in", str(root / "security" / (prefix + "_platform.x509.pem")), "-outform", "DER"], check=True, capture_output=True).stdout
++        if actual_cert != expected_cert:
++            raise RuntimeError("BZI6 camera signed by an unexpected certificate")
++    print("PASS rebuilt BZI6 camera: pinned donor, exact OMX method, unchanged native libraries and verified build signature")
++
++
+ if __name__ == "__main__":
+     if len(sys.argv) == 4 and sys.argv[1] == "adapt":
+         adapt(Path(sys.argv[2]), Path(sys.argv[3]))
+--- a/scripts/internal/verify_m4_runtime_image.py
++++ b/scripts/internal/verify_m4_runtime_image.py
+@@ -96,7 +96,7 @@
+     spec = importlib.util.spec_from_file_location("m4_runtime", HELPER)
+     runtime = importlib.util.module_from_spec(spec)
+     spec.loader.exec_module(runtime)
+-    runtime.verify(work, donor)
++    runtime.verify(work, donor, compiled_camera=True)
+     if partition == "system":
+         paths = [rel.removeprefix("system/") for rel in runtime.manifest()["files"]
+                  if rel.startswith("system/system/")]
+--- a/scripts/internal/verify_exynos9810_release_defaults.py
++++ b/scripts/internal/verify_exynos9810_release_defaults.py
+@@ -53,7 +53,7 @@
+         subprocess.run([sys.executable,str(native32),"verify","--work-dir",str(work)],check=True)
+         runtime=ROOT/"unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_runtime_compat.py"
+         donor=ROOT/"out/fw/SM-A376B_XXV_A376BXXU5BZI6"
+-        subprocess.run([sys.executable,str(runtime),"verify","--work-dir",str(work),"--donor-root",str(donor)],check=True)
++        subprocess.run([sys.executable,str(runtime),"verify","--compiled-camera","--work-dir",str(work),"--donor-root",str(donor)],check=True)
+         donor_apps=ROOT/"unica/patches/exynos9810_device_stack/exynos9810_finalization/verify_bzi6_final_apps.py"
+         subprocess.run([sys.executable,str(donor_apps),str(work),"--all"],check=True)
+     if os.environ.get("ROM_SOURCE_CONFIG") == "essi_a376b_android16":

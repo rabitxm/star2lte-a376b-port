@@ -1,0 +1,57 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] add explicit M4 runtime kernel and CACHE logger diagnostic profile
+
+# Reason: M4 original-kernel probe stops before useful init output while the calibrated WIPEONFORK kernel reaches crypto self-test success and post-fs-data. Keep future diagnostics on the proven package with real-image logger checks.
+# Affected: new M4 diagnostic profile and M4 runtime real-ext4 verifier; normal M1/M4 production profiles and M2 stay unchanged.
+# Verify: shell syntax, exact existing kernel ZIP hash/no KernelSU, M4-to-production/M1 flag reset tests, full source replay; require logger bytes/UID/GID/mode/SELinux in real images when selected.
+# Rollback: select existing production profile or reverse this patch. No kernel rebuild or diagnostic image publication.
+
+--- /dev/null
++++ b/target/star2lte/profiles/m4-g965f-a376b-android17-runtime-init-debug.sh
+@@ -0,0 +1,16 @@
++#!/usr/bin/env bash
++# M4 runtime diagnosis: preserve the already calibrated WIPEONFORK package and
++# CACHE logger. Evidence/scope/rollback: docs/m4-init-runtime-fix.md in project.
++# This selects an existing verified package; it does not build another kernel.
++source "$(dirname -- "${BASH_SOURCE[0]}")/m4-g965f-a376b-android17-no-ksu.sh" || return 1
++_M4_RUNTIME_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)"
++export EXYNOS9810_KERNEL_NAME="DS-ACK V1.12 G965F WIPEONFORK diagnostic (no KernelSU)"
++export EXYNOS9810_KERNEL_ZIP="$_M4_RUNTIME_ROOT/../inputs/kernels/DS-ACK-V1.12-G965F-WIPEONFORK-DIAGNOSTIC-Enforcing.zip"
++export EXYNOS9810_EXPECTED_KERNEL_SHA256="4cea63f84d5add494bfcc2f9fff105848806a930a24aca975dc261bf6720e20a"
++export EXYNOS9810_ENABLE_INIT_DEBUG="true"
++[ -f "$EXYNOS9810_KERNEL_ZIP" ] && \
++    [ "$(sha256sum "$EXYNOS9810_KERNEL_ZIP" | cut -d ' ' -f1)" = "$EXYNOS9810_EXPECTED_KERNEL_SHA256" ] || {
++    printf 'Missing/unreviewed G965F WIPEONFORK diagnostic archive; no fallback.\n' >&2
++    return 1
++}
++unset _M4_RUNTIME_ROOT
+--- a/scripts/internal/verify_m4_runtime_image.py
++++ b/scripts/internal/verify_m4_runtime_image.py
+@@ -44,6 +44,10 @@
+         return 0o444, (0, 0), "vendor_aconfig_storage_file"
+     if rel in ("etc/passwd", "etc/group", "etc/ueventd.rc"):
+         return 0o644, (0, 0), "vendor_configs_file"
++    if rel == "etc/init/init.debug.rc":
++        return 0o644, (0, 0), "vendor_configs_file"
++    if rel == "bin/init_debug_log.sh":
++        return 0o755, (0, 2000), "vendor_file"
+     if rel in ("etc/init/hw/init.samsungexynos9810.rc", "etc/init/init.samsungexynos9810.rc"):
+         return 0o644, (0, 0), None
+     raise ValueError("Unreviewed M4 image path: " + partition + "/" + rel)
+@@ -105,6 +109,16 @@
+         paths = ["etc/passwd", "etc/group", "etc/ueventd.rc", "etc/init/hw/init.samsungexynos9810.rc",
+                  "etc/init/init.samsungexynos9810.rc", "etc/aconfig"]
+         paths += ["etc/aconfig/" + name for name in ("package.map", "flag.map", "flag.val", "flag.info")]
++        if os.environ.get("EXYNOS9810_ENABLE_INIT_DEBUG", "false") == "true":
++            paths += ["etc/init/init.debug.rc", "bin/init_debug_log.sh"]
++            rc = (work / "vendor/etc/init/init.debug.rc").read_text()
++            logger = (work / "vendor/bin/init_debug_log.sh").read_text()
++            for marker in ("on post-fs\n", "write /cache/unica/init_debug_post_fs.txt",
++                           "service unica9810_init_debug /vendor/bin/init_debug_log.sh"):
++                if marker not in rc:
++                    raise ValueError("Missing M4 CACHE logger trigger/service: " + marker)
++            if "OUT=/cache/unica" not in logger:
++                raise ValueError("M4 CACHE logger output changed")
+     else:
+         return
+     checks = []

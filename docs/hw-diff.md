@@ -1,5 +1,24 @@
 # Phần cứng và các khác biệt cần kiểm chứng
 
+Checkpoint0120: rear fingerprint adaptation keeps S9+ rear/capacitive enums,
+the existing HAL and pinned compatibility BiometricSetting client. BZI6 service
+and SystemUI optical/display flags are adapted with method pins; unrelated
+true flags remain. OMX uses the reviewed target opaque-format fallback, now
+ported to four BZI6 encoders including present vexfwk_service. One HEVC
+assertion-path branch is adjusted with exact ELF/hash evidence. These are
+source/assembly changes only; enrollment/unlock, camera/video/MotionPhoto/HEVC
+and separate F/N hardware acceptance require runtime tests. No kernel or
+vendor/HAL/radio binary changes are included.
+
+Checkpoint M4 source0118, 25/10/2026: target WLAN policy is kept at the fork's
+star2lte baseline (custom backoff none, booster000, driver capability queries),
+with only the A37 custom table removed. No RF/antenna capability is inferred
+from donor values. BZI6 lights requires an API bridge preserving LogicalLight,
+split HAL writes and mute/cache state; its extended SehLights int is forwarded
+to the existing HAL. Source/DEX fixtures pass. Actual RF/coexistence,
+brightness/auto-brightness/AOD/LED and mute tests on M4 remain unverified;
+F/N hardware acceptance is separate. Kernel/vendor/radio binaries are unchanged.
+
 SM-G965N là máy đích chính; SM-G965F thử trước. Cả hai đang recovery,
 `uname -r` là 4.9.118-g36e6ddff22b9, TWRP 3.7.0_9-0.
 Đây là kernel recovery, không phải kết quả chạy DS-ACK/ROM port.
@@ -100,3 +119,75 @@ M2 G965F static adaptation: Samsung framework FP REAR=3/CAPACITANCE=1 maps throu
 
 
 M2 UI decision: temporary donor Wi-Fi scan labels/icons retained under0049; S9+ Wi-Fi5 HAL/blob unchanged. Scanned Wi-Fi6 labels cannot be used as evidence of hardware AX support. Full UI correction deferred until after boot test.
+
+
+## 26/10/2026 — BZI6 display source decisions
+
+A37 source ships with API36, auto-brightness5, HFR mode2/default120/list60,120;
+star2lte compiled hardware compatibility uses shipping26 and brightness3,
+HFR mode0/default60 without adaptive-rate advertising. Framework SDK remains37.
+The BZI6 Settings Rune now discovers physical sensors rather than reading the
+old initializer SPF string5. TYPE_LIGHT=5 and camera fallback0x10044 remain
+unchanged; they are sensor types, not configuration levels. Both full HDR
+controllers exist but availability is compiled unsupported3; only that return
+is enabled for the target mDNIe path. M4's initial fixed-resolution selection
+keeps native1440x2960/density560, separate from M2 flags, with no switcher.
+Source/DEX fixtures pass; actual M4 HDR, brightness, refresh rate and sensor
+behavior remain untested. This step changes no HAL/blob, radio or kernel.
+See docs/m4-product-display.md.
+
+## 26/10/2026 — Initial M4 UI/eSE scope
+
+The new BZI6 registry separates source SDK37/shipping36/board34 from target
+vendor33/shipping26 and keeps dynamic SIM-tray detection. Target eSE COS/vendor
+remain none, matching the current M2 target policy; source SKU/country/feature
+checks and OMAPI UICC/NFC code remain. This does not establish working eSE.
+Initial M4 retains donor scan UI under a separate selection; target11ax/6GHz
+remain false. Face/remap Bixby and five unsupported optional UN1CA behaviors
+stay omitted with matching hidden controls; key703 remains WINK. FaceManager's
+feature XML remains for SystemUI while Face HAL/init declarations are omitted.
+Settings Intelligence's new Buds key and all other35 donor keys are retained.
+Source/DEX/config fixtures pass, including actual AZH4 control comparison.
+No hardware/radio blob, kernel or phone partition changed. M4 hardware/runtime
+acceptance remains open; see docs/m4-source-selection.md.
+
+## 26/10/2026 — M4 legacy native32 slice, checkpoint0129
+
+BZI6 keeps every original runtime64 payload file while adding the pinned S22
+native32 runtime paths and48 platform32 libraries for legacy hardware users.
+Application ABI remains64-bit with zygote64; no app_process32/ART32 is added.
+The Hybrid Vendor VNDK33, F hardware blob and locked radio baseline are retained.
+This checkpoint edits no vendor/HAL/radio/kernel binary. Actual M2 apply output
+remains byte-identical; actual M4 restore and a real ext4 slice pass byte/
+metadata checks. Legacy HAL/namespace operation on Android17 and N remain
+unverified. Static audit finds two S22 cameraserver AudioSystem imports absent
+from BZI6 libaudioclient; the A17 camera server must be adapted separately.
+No complete M4 ROM/profile/boot result exists. See docs/m4-native32-runtime.md.
+
+
+## 26/10/2026 — BZI6 camera/audio/graphics runtime set, checkpoint0130
+
+Static dynsym and hash audit keeps the A37 cameraserver, SamsungCamera,
+libaudiobase/libaudioclient and graphics-common V7 together. The server's
+AudioSystem providers are present in the pinned A37 libaudiobase; this avoids
+the S22 server imports missing from the A37 libaudioclient. M4 retains donor
+Tethering CAPEX and does not inherit the M2 S22 graphics V6/Tethering exceptions.
+This is static ABI/source evidence only: no camera, audio, graphics, BPF or
+Android17 runtime test has passed. Hardware behavior and F/N acceptance remain
+open; Hybrid Vendor VNDK33 and locked radio policy are unchanged.
+
+
+
+28/10 M4 F-only source0198 runtime: Android17 reports boot_completed1 with
+Enforcing after optional GPU-map error handling. The JNI reports unsupported
+GPU memory(-1); real pin open in root/su returns ENOENT. This does not certify
+GPU memory accounting or any N parity. SystemUI/AOD, SDHMS thermal-policy enum
+and NFC dependency closure still fail; hardware acceptance is not passed.
+See docs/m4-post-boot-blockers.md. No G965N test or radio/kernel change.
+
+29/10 M4 G965F Bluetooth evidence: the installed build repeatedly waits for
+optional BZI6 HCI opcode `0xfdf1` and restarts Bluetooth. Disassembly identifies
+the donor callsite; patch0220 skips only that optional command on the locked
+G965F profile. This does not change the S9+ controller firmware, vendor HAL,
+Hybrid Vendor, radio bridge or kernel, and it does not establish pairing/audio
+support until tested. G965N remains untested and outside this patch.

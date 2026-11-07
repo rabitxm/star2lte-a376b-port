@@ -1,0 +1,26 @@
+--- a/unica/patches/exynos9810_device_stack/customize.sh
++++ b/unica/patches/exynos9810_device_stack/customize.sh
+@@ -1274,6 +1274,23 @@
+ {
+     local APK="system/priv-app/SamsungCamera/SamsungCamera.apk"
+     local SMALI
++
++    # This legacy adapter targets the One UI 8 camera's unobfuscated
++    # PackageUtil/Camera classes. M4 ships the pinned BZI6 Android 17 camera
++    # APK and its matching runtime libraries; finalization verifies and keeps
++    # that donor app/server pair. Do not decode or mutate the newer donor app.
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++        [ "${ROM_MILESTONE:-}" = "M4" ] && \
++            [ "${TARGET_CODENAME:-}" = "star2lte" ] && \
++            [ "${STAR2LTE_BUILD_MODEL:-}" = "SM-G965F" ] && \
++            [ "${SOURCE_PLATFORM_SDK_VERSION:-}" = "37" ] && \
++            [ "${EXYNOS9810_M4_RUNTIME_COMPAT:-false}" = "true" ] || {
++            LOGE "Android 17 SamsungCamera retention is restricted to the reviewed M4 G965F profile"
++            return 1
++        }
++        LOG "- Keeping locked BZI6 Android 17 SamsungCamera; skipping legacy One UI 8 app patches"
++        return 0
++    fi
+ 
+     [ -f "$WORK_DIR/system/$APK" ] || return 0
+ 

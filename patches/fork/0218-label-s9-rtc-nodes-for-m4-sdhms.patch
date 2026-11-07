@@ -1,0 +1,178 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] label S9+ RTC metadata nodes for M4 SDHMS
+
+# Reason: On M4-0218 with SELinux Enforcing, SDHMS reports `fstat failed: EACCES` for the exact S9+ RTC date/time/since_epoch nodes at logcat lines 180708, 180710 and 180711. All three remain generic `sysfs`; the existing `sysfs_rtc` type already has system_app file/dir read/getattr/open permissions. A live `chcon` trial returned `Permission denied`, and its trap plus readback confirmed all labels stayed generic.
+# Affected: extend the existing M4 vendor-restore policy helper and lock with three exact RTC genfscon rules alongside the two existing backlight rules. Record patch series/hash and docs outside this diff. No allow rule, threshold, brightness scale, kernel, vendor blob, radio or protected partition changes.
+# Verify: helper idempotence and all-node duplicate/conflict/missing-permission negatives; stage a copy of the actual vendor CIL and prove exactly three genfscon-only additions; compile the complete split policy with secilc; clean ordered patch replay; final ext4 image readback and fresh Enforcing runtime labels/SDHMS logs.
+# Rollback: remove 0218 from series/source lock and rebuild the previous M4-0218 package; remove only the three RTC rules from the helper lock/source.
+
+--- a/rom/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_thermal.py
++++ b/rom/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_thermal.py
+@@ -1,10 +1,13 @@
+ #!/usr/bin/env python3
+-"""Stage exact S9+ backlight sysfs labels needed by M4 SDHMS.
++"""Stage exact S9+ backlight and RTC sysfs labels needed by M4 SDHMS.
+ 
+ Reason: BZI6 labels the Exynos9810 panel_drv@001 backlight nodes as generic
+ sysfs, which lacks the getattr permission SDHMS needs for fstat. The existing
+ sysfs_ski_display_writable type already has the reviewed display permissions.
+-Files: two exact vendor CIL genfscon rules, pinned by the adjacent lock.
++The physical RTC date/time/since_epoch nodes are generic sysfs, while the
++existing sysfs_rtc type has system_app read/getattr/open permissions. Add only
++five exact vendor CIL genfscon rules; add no allow rules or thermal thresholds.
++Node paths, labels and existing permissions are pinned by the adjacent lock.
+ Verify exact scope, required existing policy permissions, idempotence and
+ conflict rejection before the vendor image gate.
+ """
+@@ -35,7 +38,7 @@
+     rules = lock()["policy"]
+     for required in rules["required_existing_rules"]:
+         if required not in data:
+-            raise ValueError("M4 backlight policy lost an existing permission: " + required)
++            raise ValueError("M4 backlight/RTC policy lost an existing permission: " + required)
+     lines = data.splitlines()
+     missing = []
+     for node in rules["nodes"]:
+@@ -44,10 +47,10 @@
+                      if line.lstrip().startswith('(genfscon sysfs ') and
+                      node["path"] in line and line.strip() != rule]
+         if conflicts:
+-            raise ValueError("Conflicting M4 backlight genfscon: " + conflicts[0])
++            raise ValueError("Conflicting M4 backlight/RTC genfscon: " + conflicts[0])
+         occurrences = lines.count(rule)
+         if occurrences > 1:
+-            raise ValueError("Duplicate M4 backlight genfscon: " + node["path"])
++            raise ValueError("Duplicate M4 backlight/RTC genfscon: " + node["path"])
+         if occurrences == 0:
+             missing.append(rule)
+     if missing:
+@@ -73,7 +76,7 @@
+     data = path.read_text(errors="strict")
+     for node in lock()["policy"]["nodes"]:
+         if data.splitlines().count(node["genfscon"]) != 1:
+-            raise ValueError("Exact M4 backlight genfscon is missing or duplicated: " + node["path"])
++            raise ValueError("Exact M4 backlight/RTC genfscon is missing or duplicated: " + node["path"])
+     # Validate all pre-existing rules without changing the compiled policy.
+     policy_text(data)
+     return {"path": str(path),
+@@ -94,36 +97,35 @@
+         apply(root)
+         if target.read_bytes() != staged:
+             raise ValueError("M4 backlight genfscon staging is not idempotent")
+-        first = rules["nodes"][0]["genfscon"]
+-        second = rules["nodes"][1]["genfscon"]
+-        bad = seed + first + "\n" + second + "\n" + second + "\n"
+-        target.write_text(bad)
+-        try:
+-            verify(root)
+-        except ValueError as error:
+-            if "missing or duplicated" not in str(error):
+-                raise
+-        else:
+-            raise ValueError("Duplicate M4 backlight genfscon was accepted")
+-        target.write_text(seed + rules["nodes"][1]["conflicting_genfscon"] + "\n")
+-        try:
+-            apply(root)
+-        except ValueError as error:
+-            if "Conflicting M4 backlight" not in str(error):
+-                raise
+-        else:
+-            raise ValueError("Conflicting M4 backlight genfscon was accepted")
+-        target.write_text(seed)
+-        target.write_text(target.read_text().replace(
+-            rules["required_existing_rules"][0], "(type sysfs_ski_display_writable_missing)"))
+-        try:
+-            apply(root)
+-        except ValueError as error:
+-            if "lost an existing permission" not in str(error):
+-                raise
+-        else:
+-            raise ValueError("Missing existing SDHMS policy permission was accepted")
+-    print("PASS M4 backlight exact policy scope, required permissions, idempotence and negative fixtures")
++        expected = [node["genfscon"] for node in rules["nodes"]]
++        for index, node in enumerate(rules["nodes"]):
++            target.write_text(seed + "\n".join(expected) + "\n" + expected[index] + "\n")
++            try:
++                verify(root)
++            except ValueError as error:
++                if "missing or duplicated" not in str(error):
++                    raise
++            else:
++                raise ValueError("Duplicate M4 backlight/RTC genfscon was accepted: " + node["path"])
++        for node in rules["nodes"]:
++            target.write_text(seed + node["conflicting_genfscon"] + "\n")
++            try:
++                apply(root)
++            except ValueError as error:
++                if "Conflicting M4 backlight/RTC" not in str(error):
++                    raise
++            else:
++                raise ValueError("Conflicting M4 backlight/RTC genfscon was accepted: " + node["path"])
++        for missing in rules["required_existing_rules"]:
++            target.write_text(seed.replace(missing, "(removed existing SDHMS permission)"))
++            try:
++                apply(root)
++            except ValueError as error:
++                if "lost an existing permission" not in str(error):
++                    raise
++            else:
++                raise ValueError("Missing existing SDHMS policy permission was accepted: " + missing)
++    print("PASS M4 backlight/RTC exact policy scope, existing permissions, idempotence and negative fixtures")
+ 
+ 
+ def main():
+@@ -139,7 +141,7 @@
+         self_test()
+     elif args.command == "apply":
+         apply(args.work_dir)
+-        print("PASS staged exact M4 S9+ backlight genfscon")
++        print("PASS staged exact M4 S9+ backlight/RTC genfscon")
+     else:
+         print(json.dumps({"result": "PASS", **verify(args.work_dir)}))
+ 
+--- a/rom/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_thermal.lock.json
++++ b/rom/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_thermal.lock.json
+@@ -1,7 +1,7 @@
+ {
+   "schema": 1,
+-  "scope": "M4 BZI6 Android17 G965F star2lte SDHMS backlight metadata reads",
+-  "reason": "SDHMS fstat on the real panel_drv@001 brightness and max_brightness nodes fails with EACCES under generic sysfs. The existing display type grants system_app getattr/read and is already used for the neighboring legacy panel backlight path.",
++  "scope": "M4 BZI6 Android17 G965F star2lte SDHMS backlight metadata and RTC reads",
++  "reason": "BZI6 labels the Exynos9810 panel backlight and the S9+ S2MPS18 RTC date/time/since_epoch nodes as generic sysfs. SDHMS fstat fails on these nodes. The existing display type grants backlight access and the existing sysfs_rtc type has system_app read/getattr/open permissions; add only exact genfscon mappings and no allow rules.",
+   "files": [
+     "vendor/etc/selinux/vendor_sepolicy.cil"
+   ],
+@@ -16,12 +16,31 @@
+         "path": "/devices/platform/panel_drv@001/backlight/panel/max_brightness",
+         "genfscon": "(genfscon sysfs \"/devices/platform/panel_drv@001/backlight/panel/max_brightness\" (u object_r sysfs_ski_display_writable ((s0) (s0))))",
+         "conflicting_genfscon": "(genfscon sysfs \"/devices/platform/panel_drv@001/backlight/panel/max_brightness\" (u object_r sysfs_ski_display_readable ((s0) (s0))))"
++      },
++      {
++        "path": "/devices/platform/141c0000.speedy/i2c-17/17-0000/s2mps18-rtc/rtc/rtc0/date",
++        "genfscon": "(genfscon sysfs \"/devices/platform/141c0000.speedy/i2c-17/17-0000/s2mps18-rtc/rtc/rtc0/date\" (u object_r sysfs_rtc ((s0) (s0))))",
++        "conflicting_genfscon": "(genfscon sysfs \"/devices/platform/141c0000.speedy/i2c-17/17-0000/s2mps18-rtc/rtc/rtc0/date\" (u object_r sysfs ((s0) (s0))))"
++      },
++      {
++        "path": "/devices/platform/141c0000.speedy/i2c-17/17-0000/s2mps18-rtc/rtc/rtc0/time",
++        "genfscon": "(genfscon sysfs \"/devices/platform/141c0000.speedy/i2c-17/17-0000/s2mps18-rtc/rtc/rtc0/time\" (u object_r sysfs_rtc ((s0) (s0))))",
++        "conflicting_genfscon": "(genfscon sysfs \"/devices/platform/141c0000.speedy/i2c-17/17-0000/s2mps18-rtc/rtc/rtc0/time\" (u object_r sysfs ((s0) (s0))))"
++      },
++      {
++        "path": "/devices/platform/141c0000.speedy/i2c-17/17-0000/s2mps18-rtc/rtc/rtc0/since_epoch",
++        "genfscon": "(genfscon sysfs \"/devices/platform/141c0000.speedy/i2c-17/17-0000/s2mps18-rtc/rtc/rtc0/since_epoch\" (u object_r sysfs_rtc ((s0) (s0))))",
++        "conflicting_genfscon": "(genfscon sysfs \"/devices/platform/141c0000.speedy/i2c-17/17-0000/s2mps18-rtc/rtc/rtc0/since_epoch\" (u object_r sysfs ((s0) (s0))))"
+       }
+     ],
+     "required_existing_rules": [
+       "(type sysfs_ski_display_writable)",
+-      "(allow system_app_33_0 sysfs_ski_display_writable (file (ioctl read write getattr lock append map open watch watch_reads)))"
++      "(allow system_app_33_0 sysfs_ski_display_writable (file (ioctl read write getattr lock append map open watch watch_reads)))",
++      "(allow system_app_33_0 sysfs_rtc_33_0 (dir (ioctl read getattr lock open watch watch_reads search)))",
++      "(allow system_app_33_0 sysfs_rtc_33_0 (file (ioctl read getattr lock map open watch watch_reads)))"
+     ]
+   },
+-  "verification": "both exact CIL genfscon rules and existing system_app display permission are present in the final vendor ext4 image; device restorecon/reboot and SDHMS fstat must pass while Enforcing"
++  "verification": "all five exact CIL genfscon rules and the existing system_app display/RTC permissions are present in the final vendor ext4 image; compiled vendor policy succeeds; after fresh boot while Enforcing the three RTC nodes use sysfs_rtc and SDHMS no longer reports RTC fstat EACCES. No thermal thresholds or allow rules are changed.",
++  "baseline_label": "u:object_r:sysfs:s0",
++  "rtc_label": "u:object_r:sysfs_rtc:s0"
+ }

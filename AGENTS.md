@@ -21,11 +21,27 @@ Phần này thay thế các mục xung đột bên dưới theo chỉ thị tr�
   mặc định khi tạo data/settings mới; không có vòng lặp/boot script ép lại lựa chọn.
   Build phải kiểm mặc định và compiled code; donor Android mới khác cấu trúc
   phải dừng để rà soát, không âm thầm bỏ qua rule. Kernel vẫn giữ gói đã chốt.
+- Quyết định 31/10/2026: người dùng yêu cầu tên/model công khai của M4 là
+  Samsung Galaxy A37 5G / SM-A376B; mục tiêu nhận diện S9+ của patch0225 đã bị
+  thay thế. Vẫn chọn phần cứng, blob, installer/assert, kernel và radio theo
+  star2lte/G965F thực; không đổi biến STAR2LTE_BUILD_MODEL thành donor.
+  Shopee/TikTok/app đang dùng hiện vẫn tải và chạy bình thường theo người dùng.
+  Không port tiếp NFC RF hoặc Bixby voice/remap trong phạm vi hiện tại, nhưng
+  phải giữ khai báo hỗ trợ, shared library, service và package tương thích;
+  không gỡ/tắt toàn bộ hoặc khai báo unsupported để che lỗi. Chức năng chưa
+  kiểm/không hoạt động vẫn ghi giới hạn riêng. Ưu tiên PIF/keystore và nhận diện
+  theo `docs/m4-identity-integrity-plan-0232.md`; công tắc PIF không là verdict.
 - Ngày 21/10/2026: giữ ROM hoàn chỉnh M1/M2/M4/M5, không ghi đè/xóa khi build
   lại. Mỗi lượt package có thư mục riêng, hash/manifest; M1 đã archive độc lập.
   Xem `docs/release-retention.md`. Được chuẩn bị/build M2 trên PC khi có donor
   A37 Android16 đã xác minh. A376BXXS5AZH4 đã nhập/trích, payload thực
   SDK36.1/OneUI80500; profile M2 song song, cache phải khóa donor/version.
+- Cập nhật lưu trữ 26/10/2026 theo chỉ thị trực tiếp mới nhất: chỉ giữ bản ROM
+  hoàn chỉnh cuối cùng của từng mốc M1/M2/M4, xóa các bản cũ/trùng và scratch
+  build lỗi sau khi giữ log. Quy tắc này thay phần giữ mọi candidate/archive
+  ngày21/10. Vẫn package vào run riêng, không ghi đè bản đang giữ; chỉ thay bản
+  giữ lại sau khi gói mới hoàn chỉnh và kiểm hash/manifest. Chi tiết:
+  `docs/release-retention.md`, `docs/storage-cleanup-20261026.md`.
 - Quyền hiện hành 22/10/2026: người dùng nói “ok cài đi update agents.md cho mày
   toàn quyền flash”. Codex được tự thực hiện các lượt flash, fresh-format,
   repartition theo installer đã audit, reboot, thu log và rollback cần thiết
@@ -97,6 +113,17 @@ Cập nhật `README.md` mỗi khi hoàn thành một mốc.
   existing evidence-first exception for a diagnostic kernel build. A three
   patch upstream-semantics backport was isolated, calibrated on M1 with actual
   nested-fork/KEEPONFORK checks and exact linker loading, then returned M1 to
-  baseline. It is being tested only as a diagnostic BOOT on authorized G965F
-  M2; this does not replace the selected production kernel package or authorize
-  G965N. Keep full build/image provenance in docs/m2-runtime-kernel-fix.md.
+  baseline. It remains diagnostic-only and does not replace the selected
+  production kernel package or authorize G965N. Keep provenance in
+  docs/m2-runtime-kernel-fix.md.
+- 31/10/2026: M4 r3 used the already-built DS-ACK V1.12 G965F WIPEONFORK
+  diagnostic package for the authorized G965F M4 boot check, based on the
+  earlier `MADV_WIPEONFORK` runtime evidence; no new kernel was compiled. Full
+  flashable SHA256 is
+  `45d34b63ee275b0123fd7fca6c9e868a7a4d12c6bd8069f9c80dcb7356d33daf` at
+  `rom/out/releases/M4/star2lte-1793426231-65eoO4/`. It booted to Setup Wizard
+  with public `SM-A376B` / Galaxy A37 5G, hardware `SM-G965F`/`star2lte`, ADB
+  keyless, NFC compatibility declarations intact, and protected partition
+  hashes unchanged. M4 remains under test: Play Integrity runtime/Google server
+  verdict and keystore/RKP fallback are not yet verified; Setup Wizard is not
+  complete. Detailed record: `docs/m4-identity-integrity-implementation-0232.md`.

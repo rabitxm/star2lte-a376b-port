@@ -1,0 +1,125 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] retain same-build resolver TLS dependency closure in M4 APEX
+
+# Reason: attempt0209 logcat_live.txt:54555 reports netd cannot load libcrypto.so from the tethering namespace; libnetd_resolv also requires libssl.so. Both are private DSOs present in the same hash-pinned BZI6 APEX but absent in the S22 base.
+# Affected: diagnostic M4 network APEX composition helper and output/input lock. Add only BZI6 lib64/libcrypto.so and lib64/libssl.so beside its resolver; preserve namespace exports and both matching manifests.
+# Verify: pin all three resolver DSO hashes; recursively require DT_NEEDED to resolve inside the APEX or through an explicit manifest import; check payload file allowlist, UID/GID/mode/SELinux, ext4 roundtrip, AVB, v3, alignment and repeatable output. Static resolver symbol/version closure covers 23 DSOs; device runtime remains a separate gate.
+# Rollback: restore the byte-verified attempt0209 APEX backup and reverse0210; no kernel/vendor/radio/protected-partition change.
+
+--- a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_network_native.py
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_network_native.py
+@@ -1,6 +1,6 @@
+ """Diagnostic APEX composition using the fork's existing native32 tooling.
+-Reason: real BZI6 native provider supplies Android17's missing socket API.
+-Scope: PC files only; default changes one native DSO, optional L4S adds real donor API; no flash.
++Reason: retain real BZI6 socket/resolver APIs and same-build private TLS closure.
++Scope: PC-only APEX composition with an explicit native/manifest allowlist and optional Java API adapters.
+ Verify all original payload bytes/links/metadata, AVB, v3, 4KiB and deterministic output.
+ """
+ from pathlib import Path
+@@ -26,6 +26,10 @@
+ resolv_rel='lib64/libnetd_resolv.so'
+ resolv=O/'bzi6'/resolv_rel
+ assert sha(resolv)==LOCK['stats_compat']['libnetd_resolv_sha256']
++resolver_members=LOCK['resolver_closure']
++assert resolver_members[resolv_rel]==LOCK['stats_compat']['libnetd_resolv_sha256']
++for member,digest in resolver_members.items():
++ assert sha(O/'bzi6'/member)==digest,member
+ manifest_rel='apex_manifest.pb'
+ s22_manifest=O/'s22'/manifest_rel
+ bzi6_manifest=O/'bzi6'/manifest_rel
+@@ -66,13 +70,25 @@
+ assert 'libnetd_resolv.so' not in protobuf_strings(s22_manifest_bytes,7)
+ assert 'libnetd_resolv.so' in protobuf_strings(bzi6_manifest_bytes,7)
+ merged=O/'merged';shutil.copytree(O/'s22',merged,symlinks=True);shutil.copyfile(new,merged/rel)
+-shutil.copyfile(resolv,merged/resolv_rel)
++# Keep the resolver with its same-build private TLS providers inside this namespace.
++for member in resolver_members:shutil.copyfile(O/'bzi6'/member,merged/member)
+ # APEX manifest field 7 is provideNativeLibs. Publish the added DSO in the
+ # existing Tethering APEX namespace so linkerconfig can resolve netd's DT_NEEDED.
+ resolv_name=b'libnetd_resolv.so'
+ merged_manifest=s22_manifest_bytes+b'\x3a'+encode_varint(len(resolv_name))+resolv_name
+ (merged/manifest_rel).write_bytes(merged_manifest)
+ assert protobuf_strings(merged_manifest,7)==protobuf_strings(s22_manifest_bytes,7)+['libnetd_resolv.so']
++# Every transitive DT_NEEDED must resolve internally or be an explicit APEX import.
++required=set(protobuf_strings(merged_manifest,8));closure={};pending=list(resolver_members)
++while pending:
++ member=pending.pop()
++ if member in closure:continue
++ needed=re.findall(r'\(NEEDED\).*?\[(.*?)\]',run(['readelf','-d',merged/member]))
++ closure[member]=needed
++ for dep in needed:
++  internal='lib64/'+dep
++  if (merged/internal).is_file():pending.append(internal)
++  else:assert dep in required,(member,'undeclared or missing APEX dependency',dep)
+ java_report=None
+ if a.l4s_compat:
+  spec=importlib.util.spec_from_file_location('network_l4s',Path(__file__).with_name('a376b_android17_network_l4s.py'));java_mod=importlib.util.module_from_spec(spec);spec.loader.exec_module(java_mod)
+@@ -89,7 +105,7 @@
+ config=[];contexts=[];metadata={} 
+ for i,p in enumerate([merged]+sorted(merged.rglob('*'))):
+  r=str(p.relative_to(merged));r='' if r=='.' else r
+- source_img=O/'bzi6.img' if r==resolv_rel else O/'s22.img'
++ source_img=O/'bzi6.img' if r in resolver_members else O/'s22.img'
+  st=run(['debugfs','-R','stat /'+r,source_img]);mode=re.search(r'Mode:\s+0*(\d+)',st).group(1);uid,gid=re.search(r'User:\s+(\d+)\s+Group:\s+(\d+)',st).groups()
+  label=O/f'label{i}';run(['debugfs','-R',f'ea_get -f \"{label}\" /{r} security.selinux',source_img]);assert label.is_file() and label.stat().st_size,r
+  context=label.read_bytes().rstrip(b'\0').decode();config.append(f'{r or "/"} {uid} {gid} 0{mode}');contexts.append(re.escape('/'+r).replace(r'\-', '-')+' '+context);metadata[r]=(mode,uid,gid,context)
+@@ -109,10 +125,11 @@
+  elif p.is_file():
+   if p.read_bytes()!=q.read_bytes():changed.append(r)
+  elif not p.exists() and q.exists():changed.append(r)
+-assert changed==sorted([rel,resolv_rel,manifest_rel]+(['javalib/framework-connectivity.jar'] if a.l4s_compat else [])+(['javalib/framework-connectivity-t.jar'] if a.stats_compat else [])),changed;assert (verified/rel).read_bytes()==new.read_bytes();assert sha(verified/resolv_rel)==LOCK['stats_compat']['libnetd_resolv_sha256'];assert protobuf_strings((verified/manifest_rel).read_bytes(),7)==protobuf_strings(s22_manifest_bytes,7)+['libnetd_resolv.so']
++assert changed==sorted([rel,manifest_rel]+list(resolver_members)+(['javalib/framework-connectivity.jar'] if a.l4s_compat else [])+(['javalib/framework-connectivity-t.jar'] if a.stats_compat else [])),changed;assert (verified/rel).read_bytes()==new.read_bytes();assert sha(verified/resolv_rel)==LOCK['stats_compat']['libnetd_resolv_sha256'];assert protobuf_strings((verified/manifest_rel).read_bytes(),7)==protobuf_strings(s22_manifest_bytes,7)+['libnetd_resolv.so']
++for member,digest in resolver_members.items():assert sha(verified/member)==digest,member
+ for r,expected in metadata.items():
+  st=run(['debugfs','-R','stat /'+r,image]);mode=re.search(r'Mode:\s+0*(\d+)',st).group(1);uid,gid=re.search(r'User:\s+(\d+)\s+Group:\s+(\d+)',st).groups();label=O/'verify-label';label.unlink(missing_ok=True);run(['debugfs','-R',f'ea_get -f "{label}" /{r} security.selinux',image]);assert label.exists();found=(mode,uid,gid,label.read_bytes().rstrip(b'\0').decode());assert found==expected,(r,found,expected)
+-salt=hashlib.sha256((O/'s22.img').read_bytes()+new.read_bytes()+resolv.read_bytes()+merged_manifest+((merged/'javalib/framework-connectivity.jar').read_bytes() if a.l4s_compat else b'')+((merged/'javalib/framework-connectivity-t.jar').read_bytes() if a.stats_compat else b'')).hexdigest();run([T/'avbtool','add_hashtree_footer','--do_not_generate_fec','--algorithm','SHA256_RSA4096','--key',K/'payload.pem','--prop','apex.key:com.android.tethering','--image',image,'--salt',salt,'--hash_algorithm','sha256']);run([T/'avbtool','verify_image','--image',image,'--key',K/'payload.pem'])
++salt=hashlib.sha256((O/'s22.img').read_bytes()+new.read_bytes()+b''.join((merged/member).read_bytes() for member in sorted(resolver_members))+merged_manifest+((merged/'javalib/framework-connectivity.jar').read_bytes() if a.l4s_compat else b'')+((merged/'javalib/framework-connectivity-t.jar').read_bytes() if a.stats_compat else b'')).hexdigest();run([T/'avbtool','add_hashtree_footer','--do_not_generate_fec','--algorithm','SHA256_RSA4096','--key',K/'payload.pem','--prop','apex.key:com.android.tethering','--image',image,'--salt',salt,'--hash_algorithm','sha256']);run([T/'avbtool','verify_image','--image',image,'--key',K/'payload.pem'])
+ unsigned=O/'unsigned.apex';signed=O/'com.android.tethering.apex'
+ with zipfile.ZipFile(O/'s22.apex') as src,zipfile.ZipFile(unsigned,'w',compression=zipfile.ZIP_STORED) as dst:
+  for entry in src.infolist():
+@@ -135,5 +152,5 @@
+ expected=LOCK['stats_compat'] if a.stats_compat else LOCK['l4s_compat'] if a.l4s_compat else LOCK
+ if sha(signed)!=expected['output_sha256'] or signed.stat().st_size!=expected['output_bytes']:
+  raise RuntimeError('M4 native networking APEX reproducibility/hash gate failed')
+-report={'java_stats':stats_report,'java_l4s':java_report,'result':'PASS','changed_payload_files':changed,'metadata_paths_verified':len(metadata),'old_native_sha256':sha(old),'new_native_sha256':sha(new),'libnetd_resolv_sha256':sha(verified/resolv_rel),'apex_manifest_provided_libs':protobuf_strings((verified/manifest_rel).read_bytes(),7),'container_manifest_matches_payload':'PASS','output_sha256':sha(signed),'bytes':signed.stat().st_size,'payload_avb':'PASS','container_v3':verification.strip(),'payload_zip_offset':offset,'other_container_metadata_unchanged':True,'signing_identity':'explicit existing local native32 diagnostic keys; not Samsung original signing','phone_deployed':False,'network_acceptance':False}
++report={'java_stats':stats_report,'java_l4s':java_report,'result':'PASS','changed_payload_files':changed,'resolver_members':{member:sha(verified/member) for member in resolver_members},'resolver_dependency_closure':closure,'resolver_dependency_gate':'PASS','metadata_paths_verified':len(metadata),'old_native_sha256':sha(old),'new_native_sha256':sha(new),'libnetd_resolv_sha256':sha(verified/resolv_rel),'apex_manifest_provided_libs':protobuf_strings((verified/manifest_rel).read_bytes(),7),'container_manifest_matches_payload':'PASS','output_sha256':sha(signed),'bytes':signed.stat().st_size,'payload_avb':'PASS','container_v3':verification.strip(),'payload_zip_offset':offset,'other_container_metadata_unchanged':True,'signing_identity':'explicit existing local native32 diagnostic keys; not Samsung original signing','phone_deployed':False,'network_acceptance':False}
+ (O/'report.json').write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report,indent=2),flush=True)
+--- a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_network_native.lock.json
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_network_native.lock.json
+@@ -16,7 +16,7 @@
+   "native_path": "lib64/libcom.android.tethering.connectivity_native.so",
+   "s22_native_sha256": "d0c794cedcd1cf6a8f7639a5ae044a9a7cea827e9aee32f4b8e6f15a353b792c",
+   "bzi6_native_sha256": "70399052a18d74bfb639242300a5141dfbc15e30f731b277bd1d4f87543b5264",
+-  "output_sha256": "ca9e7b7c76f85baf306b37cdcbe74b4e03721bc2520e869a9ecd7d1e7a517916",
++  "output_sha256": "7867ff91a7148cc048bda30227e3328605ef0bf35ebb3221388d1e4665a70fb7",
+   "output_bytes": 67911680,
+   "payload_public_key_sha256": "fedf8b2943754e4848f9d3edb25f228adec6a6e26d5b7fa8816851c0cd7155dd",
+   "container_certificate_sha256": "ee98540809da3112f84e0e3ab1ae13b9108b5121dd5c2f0c7bea8851e2cf272a",
+@@ -24,19 +24,24 @@
+   "normal_profile_unchanged": true,
+   "report": "docs/m4-bpf-runtime-audit.md",
+   "l4s_compat": {
+-    "output_sha256": "5639fb701cd90455fad7b7925097229bde36fe314cf968976353f764a12e0b7d",
++    "output_sha256": "069a3d6da299fa0d92c846d2131a65e46f60c419e8ece2e8e614363e2d33d941",
+     "output_bytes": 67911680,
+     "scope": "diagnostic only; add exact BZI6 L4S getter/setter and actual Settings semantics; no API success stub",
+     "java_jar_sha256": "91e443b8a6705ac3f20d986b70b449ceee604a821a43cbdb80ed07a2c4b4b4c7"
+   },
+   "stats_compat": {
+     "scope": "diagnostic; donor stats overloads and complete shared transport/template/identity persistence unit; legacy entry points retained; adds BZI6 libnetd_resolv.so and APEX provideNativeLibs entry required by A37 netd",
+-    "output_sha256": "0698d84c1d8306a0dbc30871fccd37505d43ab5a5de397d65319a117065f6853",
++    "output_sha256": "bd17e835c1140b20f18145ff9e42f2068f950d23d3ceec3de14c582aa30af848",
+     "output_bytes": 67911680,
+     "java_jar_sha256": {
+       "main": "cb000f867b4a969954b157f50a1c07920fc047a3232ee51086dc0fb0ace541f3",
+       "t": "bd65d527e221beec24f329ff0cb980a52c8a024075fb004121062bb1314bb7e8"
+     },
+     "libnetd_resolv_sha256": "ccfa0d2f6c1d296daf7f5ce3d9087d70243d795c8dce508eafac1cf46fcfb849"
++  },
++  "resolver_closure": {
++    "lib64/libnetd_resolv.so": "ccfa0d2f6c1d296daf7f5ce3d9087d70243d795c8dce508eafac1cf46fcfb849",
++    "lib64/libcrypto.so": "2104e13a52b6188843f9d261430e0ba990bb3662b5fa94d7546ee4623aecaef6",
++    "lib64/libssl.so": "e09adfa93abbbbccbf5c0bda0f3d8c6418e71dfca1aa0109e93e19f33bfa79e8"
+   }
+ }

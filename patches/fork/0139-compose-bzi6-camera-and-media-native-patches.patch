@@ -1,0 +1,30 @@
+--- a/unica/patches/legacy/a376b_android17_media.py
++++ b/unica/patches/legacy/a376b_android17_media.py
+@@ -13,8 +13,11 @@
+ 
+ DESCRIPTOR = "com/samsung/android/sum/core/filter/EncoderFilter"
+ METHOD = "configCodec(Lcom/samsung/android/sum/core/message/Message;)V"
+-NATIVE_BEFORE = "f8ad6ae22b71d6ba4c7f5ba58e4d1223dfbfaf16e95435a195a9cd0dd886f517"
+-NATIVE_AFTER = "4f36b1c04855ac6fac952a17f350cef93fc83974176f9173ec19790230a5ba58"
++NATIVE_SOURCE = "f8ad6ae22b71d6ba4c7f5ba58e4d1223dfbfaf16e95435a195a9cd0dd886f517"
++NATIVE_CAMERA_PATCHED = "005a887d8432a140804e5c6c783bbef9e303219e388884807c9cf785900f7372"
++NATIVE_AFTER = "5f59107464897883db56189605bf4290da62ee4ac88f723afb8008911aaf2210"
++MODEL_PROPERTY_OLD = bytes.fromhex("726f2e70726f647563742e6d6f64656c00")
++MODEL_PROPERTY_NEW = bytes.fromhex("726f2e626f6f742e656d2e6d6f64656c00")
+ BRANCH_VA = 0xEBDBC
+ BRANCH_TARGET = 0xEC69C
+ CONTEXT = bytes.fromhex("a80c00b0e00319aa083d44f9010140f936f5059400470034e8af40b9")
+@@ -86,8 +89,11 @@
+     scope()
+     native = native_path(work)
+     data = native.read_bytes()
+-    if sha256(data).hexdigest() != NATIVE_BEFORE:
+-        raise RuntimeError("Unreviewed BZI6 libstagefright preimage")
++    if sha256(data).hexdigest() != NATIVE_CAMERA_PATCHED:
++        raise RuntimeError("Unreviewed BZI6 libstagefright preimage after camera metadata patch")
++    if data.count(MODEL_PROPERTY_NEW) != 1 or data.count(MODEL_PROPERTY_OLD) != 0 or \
++            sha256(data.replace(MODEL_PROPERTY_NEW, MODEL_PROPERTY_OLD, 1)).hexdigest() != NATIVE_SOURCE:
++        raise RuntimeError("BZI6 libstagefright camera metadata patch provenance mismatch")
+     offset = branch_offset(data)
+     if data[offset - 20:offset + 8] != CONTEXT or data.count(CONTEXT) != 1:
+         raise RuntimeError("BZI6 HEVC comparison context changed")

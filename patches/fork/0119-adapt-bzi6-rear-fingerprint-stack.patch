@@ -1,0 +1,137 @@
+diff --git a/unica/patches/product_feature/fingerprint/a376b_rear.py b/unica/patches/product_feature/fingerprint/a376b_rear.py
+--- a/unica/patches/product_feature/fingerprint/a376b_rear.py
++++ b/unica/patches/product_feature/fingerprint/a376b_rear.py
+@@ -1,15 +1,28 @@
+ #!/usr/bin/env python3
+-"""Adapt reviewed AZH4 optical constants to the star2lte rear capacitive HAL.
++"""Adapt reviewed AZH4/BZI6 constants to the star2lte rear capacitive HAL.
+ 
+ Only decoded Smali is edited. The fork performs all decoding and assembly.
+ Validate every edit before writing; a changed donor must be reviewed again.
+ """
+ from pathlib import Path
++from hashlib import sha256
++import os
+ import re
+ import sys
+ 
+ 
+ def adapt(root: Path) -> None:
++    a17 = os.environ.get("ROM_SOURCE_CONFIG") == "essi_a376b_android17"
++    if a17:
++        for key, value in {
++            "ROM_MILESTONE": "M4", "TARGET_CODENAME": "star2lte",
++            "STAR2LTE_BUILD_MODEL": "SM-G965F", "SOURCE_PLATFORM_SDK_VERSION": "37",
++            "SOURCE_FIRMWARE_CACHE_SUFFIX": "A376BXXU5BZI6",
++            "SOURCE_FINGERPRINT_CONFIG_SENSOR": "google_touch_display_optical,settings=3",
++            "TARGET_FINGERPRINT_CONFIG_SENSOR": "google_touch_rear,settings=3,navi=1",
++        }.items():
++            if os.environ.get(key) != value:
++                raise RuntimeError("Unreviewed BZI6 fingerprint scope: " + key)
+     pending = {}
+ 
+     def locate(artifact, descriptor):
+@@ -32,6 +45,11 @@
+         m = matches[0]
+         pending[p] = text[:m.start()] + m.group().replace(old, new, 1) + text[m.end():]
+ 
++    def pin(p, name, digest):
++        body = re.findall(r"(?ms)^\.method[^\n]* " + re.escape(name) + r"\n.*?^\.end method$", pending[p])
++        if len(body) != 1 or sha256(body[0].encode()).hexdigest() != digest:
++            raise RuntimeError("Unreviewed BZI6 fingerprint method: " + p.name + " " + name)
++
+     framework = "system/framework/framework.jar"
+     chars = locate(framework, "com/samsung/android/bio/fingerprint/SemFingerprintManager$Characteristics")
+     for enum in ("SENSOR_POSITION_REAR:I = 0x3", "SENSOR_TYPE_CAPACITANCE:I = 0x1"):
+@@ -41,10 +59,15 @@
+     if "TYPE_REAR:I = 0x1" not in pending[props]:
+         raise RuntimeError("Android rear fingerprint type changed")
+     manager = locate(framework, "android/hardware/fingerprint/FingerprintManager")
++    if a17:
++        pin(manager, "semGetSensorPosition()I", "d118f2692b0be8dd0b630c545969eab6b883a02a1abc8cccb43367b298ec8ce6")
++        pin(chars, "getSensorType()I", "4a1e4dc7e7ccd8ab20a1875cbbbc19d67c0d757b1010544cb2f91951349fc872")
+     edit(manager, "semGetSensorPosition()I", "const/4 v0, 0x2", "const/4 v0, 0x3")
+     edit(chars, "getSensorType()I", "const/4 p0, 0x2", "const/4 p0, 0x1")
+ 
+     feature = locate("system/framework/services.jar", "com/android/server/biometrics/SemBiometricFeature")
++    if a17:
++        pin(feature, "<clinit>()V", "73b225f1ebf9bcd519f4638b7a70b9ad6801564543e2fc84fed6f73bfd23389f")
+     if "const/4 v3, 0x0" not in pending[feature]:
+         raise RuntimeError("AZH4 SemBiometricFeature false register changed")
+     for name in ("FP_FEATURE_SENSOR_IS_IN_DISPLAY_TYPE", "FP_FEATURE_SENSOR_IS_OPTICAL"):
+@@ -52,18 +75,23 @@
+         edit(feature, "<clinit>()V", "sput-boolean v2" + suffix, "sput-boolean v3" + suffix)
+ 
+     rune = locate("system_ext/priv-app/SystemUI/SystemUI.apk", "com/android/systemui/LsRune")
+-    old = ("    sput-boolean v16, Lcom/android/systemui/LsRune;->SECURITY_FINGERPRINT_IN_DISPLAY:Z\n\n"
+-           "    sput-boolean v16, Lcom/android/systemui/LsRune;->SECURITY_FINGERPRINT_IN_DISPLAY_OPTICAL:Z")
++    if a17:
++        pin(rune, "<clinit>()V", "0c24fc57162f5e0a787837b0371948c3b93e6913c29e50738caddcb56ca7e16a")
++    true_register = "v3" if a17 else "v16"
++    old = (f"    sput-boolean {true_register}, Lcom/android/systemui/LsRune;->SECURITY_FINGERPRINT_IN_DISPLAY:Z\n\n"
++           f"    sput-boolean {true_register}, Lcom/android/systemui/LsRune;->SECURITY_FINGERPRINT_IN_DISPLAY_OPTICAL:Z")
+     new = ("    const/4 v0, 0x0\n\n"
+            "    sput-boolean v0, Lcom/android/systemui/LsRune;->SECURITY_FINGERPRINT_IN_DISPLAY:Z\n\n"
+            "    sput-boolean v0, Lcom/android/systemui/LsRune;->SECURITY_FINGERPRINT_IN_DISPLAY_OPTICAL:Z")
+-    # v0 is immediately redefined by the following const-string; keep v16
+-    # unchanged because the remainder of this initializer still uses it.
++    # v0 is immediately redefined by the following const-string. Preserve
++    # the donor's true register, which the rest of this initializer still uses.
+     following = '\n\n    const-string v0, "SEC_FLOATING_FEATURE_BIOAUTH_CONFIG_FINGERPRINT_FEATURES"'
+     edit(rune, "<clinit>()V", old + following, new + following)
+ 
+     config = locate("system/priv-app/BiometricSetting/BiometricSetting.apk",
+                     "com/samsung/android/biometrics/app/setting/Utils$Config")
++    if a17:
++        pin(config, "<clinit>()V", "71c91ea4cd460059704dec8312d9896f70678f8a1c99923e3600ec593835f74d")
+     # The device-stack overlay supplies its pinned compatibility APK, rather
+     # than AZH4's APK. Display/optical/rear are feature-driven in this version;
+     # only SIDE is compiled true. Preserve those feature-driven branches.
+@@ -76,6 +104,13 @@
+     edit(config, "<clinit>()V", "sput-boolean v2" + suffix, "sput-boolean v3" + suffix)
+     display = locate("system/priv-app/BiometricSetting/BiometricSetting.apk",
+                      "com/samsung/android/biometrics/app/setting/DisplayStateManager")
++    if a17:
++        pin(display, "<init>(Landroid/content/Context;)V", "10829129db9382faed264c203e1e4ef990572998be170d6f3308de3dadfab0c7")
++        settings = locate("system/priv-app/SecSettings/SecSettings.apk",
++                          "com/samsung/android/settings/biometrics/fingerprint/FingerprintSettingsUtils")
++        # The generic SPF replacement runs immediately before this adapter.
++        if sha256(pending[settings].encode()).hexdigest() != "5b6ca2db5e91b2427bc9713ca3dfa8e3c737cdb178bc95849175f6ef68841ec0":
++            raise RuntimeError("BZI6 Settings rear-sensor substitution missing or changed")
+     if "google_touch_display_optical,settings=3" in pending[display] or \
+             ".method public constructor <init>(Landroid/content/Context;)V" not in pending[display]:
+         raise RuntimeError("Pinned DisplayStateManager constructor changed")
+@@ -85,7 +120,7 @@
+         if p.read_text() != text:
+             p.write_text(text)
+             changed += 1
+-    print(f"PASS AZH4 rear capacitive fingerprint constants: {changed} classes; native HAL untouched")
++    print(f"PASS {'BZI6' if a17 else 'AZH4'} rear capacitive fingerprint constants: {changed} classes; native HAL untouched")
+ 
+ 
+ if __name__ == "__main__":
+diff --git a/unica/patches/product_feature/customize.sh b/unica/patches/product_feature/customize.sh
+--- a/unica/patches/product_feature/customize.sh
++++ b/unica/patches/product_feature/customize.sh
+@@ -333,7 +333,9 @@
+         "$SOURCE_FINGERPRINT_CONFIG_SENSOR" \
+         "$TARGET_FINGERPRINT_CONFIG_SENSOR"
+ 
+-    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] && \
++    if { [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] || \
++            { [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ] && \
++              [ "${ROM_MILESTONE:-}" = M4 ] && [ "$SOURCE_PLATFORM_SDK_VERSION" = 37 ]; }; } && \
+             [ "$TARGET_CODENAME" = "star2lte" ] && [[ "$TARGET_FINGERPRINT_CONFIG_SENSOR" == google_touch_rear,* ]]; then
+         DECODE_APK "system" "system/priv-app/BiometricSetting/BiometricSetting.apk" || return 1
+         DECODE_APK "system_ext" "priv-app/SystemUI/SystemUI.apk" || return 1
+@@ -466,7 +468,9 @@
+         fi
+     fi
+ 
+-    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] && \
++    if { [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] || \
++            { [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ] && \
++              [ "${ROM_MILESTONE:-}" = M4 ] && [ "$SOURCE_PLATFORM_SDK_VERSION" = 37 ]; }; } && \
+             [ "$TARGET_CODENAME" = "star2lte" ] && [[ "$TARGET_FINGERPRINT_CONFIG_SENSOR" == google_touch_rear,* ]]; then
+         LOG "- Pinned BiometricSetting reads rear/display/optical from floating features; constructor checked by a376b_rear.py"
+     elif [[ "$SOURCE_FINGERPRINT_CONFIG_SENSOR" != "$TARGET_FINGERPRINT_CONFIG_SENSOR" ]]; then

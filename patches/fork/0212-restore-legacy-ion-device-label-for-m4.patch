@@ -1,0 +1,138 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] restore exact legacy ION node label for M4 Hybrid Vendor graphics
+
+# Reason: G965F M4 reaches boot_completed, but SetupWizard/SystemUI gralloc logs ion_open Permission denied. /dev/ion has generic device label because BZI6 removed its pathname. Live exact relabel to ion_device immediately renders Welcome while SELinux remains Enforcing.
+# Affected: existing M4 runtime helper/lock and real ext4 image gate. Append one exact /dev/ion rule to platform file contexts; retain every policy permission, ueventd mode, kernel and vendor/radio byte.
+# Verify: pinned donor contexts; exact single rule, idempotence and missing/wrong/duplicate/symlink rejection; existing runtime self-test; device-context fixture and real-ext4 metadata gate coverage; live screenshot before/after. Persistent reboot is a separate gate.
+# Rollback: restore original plat_file_contexts; diagnostic live node can be relabeled device again. No BOOT, DATA, EFS or modem write.
+
+--- a/scripts/internal/verify_m4_runtime_image.py
++++ b/scripts/internal/verify_m4_runtime_image.py
+@@ -38,6 +38,7 @@
+             "system/lib64/libmeminfo.so": (0o644, (0, 0), "system_lib_file"),
+             "system/lib64/libnetd_resolv.so": (0o644, (0, 0), "system_lib_file"),
+             "system/etc/linker.config.pb": (0o644, (0, 0), "system_file"),
++            "system/etc/selinux/plat_file_contexts": (0o644, (0, 0), "file_contexts_file"),
+             "system/priv-app/SamsungDeviceHealthManagerService/SamsungDeviceHealthManagerService.apk": (0o644, (0, 0), "system_file"),
+             "system_ext/priv-app/SystemUI/SystemUI.apk": (0o644, (0, 0), "system_file"),
+             "system/apex/com.android.nfcservices.capex": (0o644, (0, 0), "system_file"),
+@@ -141,6 +142,7 @@
+         paths.extend(rel.removeprefix("system/") for rel in runtime.manifest()["compatibility_files"])
+         paths.extend(rel.removeprefix("system/") for rel in runtime.manifest()["runtime_patches"])
+         paths.extend(verify_nfc_apex(work, donor))
++        paths.append(runtime.manifest()["legacy_ion_context"]["path"].removeprefix("system/"))
+         if diagnostic:
+             spec = importlib.util.spec_from_file_location("m4_postboot_diag", POSTBOOT_HELPER)
+             postboot = importlib.util.module_from_spec(spec)
+--- a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_runtime_compat.lock.json
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_runtime_compat.lock.json
+@@ -92,5 +92,11 @@
+         }
+       ]
+     }
++  },
++  "legacy_ion_context": {
++    "path": "system/system/etc/selinux/plat_file_contexts",
++    "donor_sha256": "5a8648bf340c742a8507a1937e02ec1e6a22baa0bc457ef39a1db90c7ad52902",
++    "rule": "/dev/ion    u:object_r:ion_device:s0",
++    "reason": "Device trial: generic device label denies gralloc ion_open; restoring ion_device yields rendered Welcome while Enforcing, with no policy allow change"
+   }
+ }
+--- a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_runtime_compat.py
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_runtime_compat.py
+@@ -3,7 +3,7 @@
+ 
+ Reason: keep BZI6 camera/audio/graphics/Tethering ABI paired at Android 17 while
+ adding the reviewed vendor_kg, empty vendor aconfig v2 and additive graphics V6.
+-Files: exact files in the M4 lock, vendor passwd/group and vendor/etc/aconfig.
++Files: exact M4 lock paths, vendor accounts/aconfig and exact legacy ION node label.
+ Verify source marker/hashes, aconfig v2 provenance, final work tree and scope.
+ """
+ from pathlib import Path
+@@ -37,6 +37,30 @@
+         target.chmod(0o644)
+     else:
+         raise ValueError("M4 imported vendor ueventd configuration missing")
++
++
++
++def ion_file_context(work, donor, stage=False):
++    # BZI6 removed the /dev/ion pathname while the Hybrid Vendor gralloc
++    # still opens that legacy node inside app processes. Restore only the
++    # exact node label; existing policy permissions and Enforcing stay intact.
++    entry = manifest()["legacy_ion_context"]
++    source = Path(donor) / entry["path"]
++    if source.is_symlink() or not source.is_file() or digest(source) != entry["donor_sha256"]:
++        raise ValueError("Unreviewed BZI6 platform file contexts source")
++    target = Path(work) / entry["path"]
++    if target.is_symlink() or not target.is_file():
++        raise ValueError("M4 platform file contexts missing or symlinked")
++    data = target.read_text()
++    rows = [line for line in data.splitlines()
++            if line.split() and line.split()[0] == "/dev/ion"]
++    if rows == [entry["rule"]]:
++        return
++    if rows:
++        raise ValueError("Conflicting or duplicated M4 /dev/ion file context")
++    if not stage:
++        raise ValueError("M4 /dev/ion file context missing")
++    target.write_text(data.rstrip("\n") + "\n" + entry["rule"] + "\n")
+ 
+ 
+ def manifest():
+@@ -299,6 +323,7 @@
+     verify_vendor_account(work)
+     stage_vendor_flags(work)
+     vendor_ueventd(work, stage=True)
++    ion_file_context(work, donor, stage=True)
+     print("PASS staged M4 camera/audio/V7/Tethering plus pinned graphics V6, vendor_kg and empty vendor aconfig v2")
+ 
+ 
+@@ -326,6 +351,7 @@
+     graphics_compat(work, donor)
+     verify_vendor_account(work)
+     vendor_ueventd(work)
++    ion_file_context(work, donor)
+     flags = empty_vendor_flags()
+     directory = work / "vendor/etc/aconfig"
+     if not directory.is_dir() or {p.name for p in directory.iterdir()} != set(flags):
+@@ -440,6 +466,30 @@
+         else:
+             raise ValueError("Unreviewed imported ueventd rules accepted")
+         ueventd.write_bytes(original_ueventd)
++        contexts_original = contexts.read_bytes()
++        ion_rule = manifest()["legacy_ion_context"]["rule"]
++        for invalid in (contexts_original.replace((ion_rule + "\n").encode(), b""),
++                        contexts_original + (ion_rule + "\n").encode(),
++                        contexts_original.replace(b"/dev/ion    u:object_r:ion_device:s0", b"/dev/ion    u:object_r:device:s0")):
++            contexts.write_bytes(invalid)
++            try:
++                ion_file_context(root, donor)
++            except ValueError:
++                pass
++            else:
++                raise ValueError("Missing/conflicting/duplicate ion context accepted")
++            if contexts.read_bytes() != invalid:
++                raise ValueError("Rejected ion contexts were modified")
++        contexts.unlink()
++        contexts.symlink_to(donor / "system/system/etc/selinux/plat_file_contexts")
++        try:
++            ion_file_context(root, donor, stage=True)
++        except ValueError:
++            pass
++        else:
++            raise ValueError("Symlinked ion contexts accepted")
++        contexts.unlink()
++        contexts.write_bytes(contexts_original)
+         bad = root / "system/system/bin/cameraserver"
+         bad.write_bytes(b"unreviewed camera server")
+         try:
+@@ -465,7 +515,7 @@
+             pass
+         else:
+             raise ValueError("Unknown vendor aconfig input accepted")
+-    print("PASS M4 apply/verify idempotence, graphics overwrite/symlink rejection, camera replacement, account collision and unknown-table rejection")
++    print("PASS M4 apply/verify idempotence, graphics overwrite/symlink rejection, camera replacement, account collision, unknown-table and ION context rejection")
+ 
+ 
+ if __name__ == "__main__":

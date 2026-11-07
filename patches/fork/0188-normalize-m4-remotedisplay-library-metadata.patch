@@ -1,0 +1,23 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] normalize m4 remotedisplay library metadata
+
+# Reason: Actual attempt37 SYSTEM audit rejected retained common-V2 mode0664 copied from host checkout; require deterministic0644 for M4 overlay libraries without changing bytes or radio ABI.
+# Affected: unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
+# Verify: bash -n; compare overlay file hashes before/after staged metadata normalization; replay full series; existing compiled, SELinux and real ext4 image audits must pass.
+# Rollback: Revert this patch and rebuild M4; preserve retained M1/M2 releases.
+
+--- a/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
+@@ -1601,6 +1601,12 @@
+                     ;;
+                 system:lib/*|system:lib64/*|system:framework/*)
+                     LABEL="u:object_r:system_lib_file:s0"
++                    # Host checkout permissions are not Android image metadata.
++                    # M4 native32's actual ext4 audit requires root-owned 0644
++                    # libraries, including the retained common-V2 radio bridge.
++                    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++                        MODE=644
++                    fi
+                     ;;
+                 vendor:bin/vendor.samsung.hardware.security.hdcp.wifidisplay-service)
+                     GROUP=2000

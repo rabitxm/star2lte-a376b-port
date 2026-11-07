@@ -1,0 +1,64 @@
+# Reason: Attempt17 found the generic Strongbox return-false patch fails because the exact BZI6 donor method already returns false. Pin and retain that no-op only for M4/G965F/BZI6; fail closed if the scope or class changes.
+# Affected: unica/patches/product_feature/customize.sh and unica/patches/product_feature/a376b_android17_strongbox.sh.
+# Verify: exact class hash positive; changed class and profile-scope negatives; bash syntax; full source-series replay; clean M4 build.
+# Rollback: remove this patch from patches/fork/series and sources.lock.json.
+
+--- a/unica/patches/product_feature/customize.sh
++++ b/unica/patches/product_feature/customize.sh
+@@ -865,10 +865,15 @@
+ TARGET_FIRMWARE_PATH="$(cut -d "/" -f 1 -s <<< "$TARGET_FIRMWARE")_$(cut -d "/" -f 2 -s <<< "$TARGET_FIRMWARE")"
+ 
+ if [ ! -f "$FW_DIR/$TARGET_FIRMWARE_PATH/vendor/etc/permissions/android.hardware.strongbox_keystore.xml" ]; then
+-    SMALI_PATCH "system" "system/framework/framework.jar" \
+-        "smali_classes6/com/samsung/android/service/DeviceIDProvisionService/DeviceIDProvisionManager\$DeviceIDProvisionWorker.smali" "return" \
+-        "isSupportStrongboxDeviceID()Z" \
+-        "false"
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++        source "$MODPATH/a376b_android17_strongbox.sh" || return 1
++        A376B17_STRONGBOX_DEVICEID_ALREADY_DISABLED "$APKTOOL_DIR" || return 1
++    else
++        SMALI_PATCH "system" "system/framework/framework.jar" \
++            "smali_classes6/com/samsung/android/service/DeviceIDProvisionService/DeviceIDProvisionManager\$DeviceIDProvisionWorker.smali" "return" \
++            "isSupportStrongboxDeviceID()Z" \
++            "false"
++    fi
+ fi
+ 
+ # SEC_PRODUCT_FEATURE_WLAN_CONFIG_CPU_CSTATE_DISABLE_THRESHOLD
+--- /dev/null
++++ b/unica/patches/product_feature/a376b_android17_strongbox.sh
+@@ -0,0 +1,34 @@
++# Verify the exact BZI6 no-Strongbox DeviceID method before treating the
++# legacy return-false patch as an already-satisfied no-op.
++A376B17_STRONGBOX_DEVICEID_ALREADY_DISABLED()
++{
++    local APKTOOL_ROOT="$1"
++    local CLASS_FILE
++    local ACTUAL_SHA256
++
++    if [ "${ROM_SOURCE_CONFIG:-}" != "essi_a376b_android17" ] || \
++            [ "${ROM_MILESTONE:-}" != "M4" ] || \
++            [ "${TARGET_CODENAME:-}" != "star2lte" ] || \
++            [ "${STAR2LTE_BUILD_MODEL:-}" != "SM-G965F" ] || \
++            [ "${SOURCE_PLATFORM_SDK_VERSION:-}" != "37" ] || \
++            [ "${TARGET_PLATFORM_SDK_VERSION:-}" != "31" ] || \
++            [ "${TARGET_BOARD_API_LEVEL:-}" != "33" ] || \
++            [ "${SOURCE_FIRMWARE_CACHE_SUFFIX:-}" != "A376BXXU5BZI6" ]; then
++        LOGE "Unreviewed BZI6 Strongbox DeviceID dispatch scope"
++        return 1
++    fi
++
++    CLASS_FILE="$APKTOOL_ROOT/system/framework/framework.jar/smali_classes6/com/samsung/android/service/DeviceIDProvisionService/DeviceIDProvisionManager\$DeviceIDProvisionWorker.smali"
++    if [ ! -f "$CLASS_FILE" ]; then
++        LOGE "Missing pinned BZI6 DeviceIDProvisionWorker class"
++        return 1
++    fi
++
++    ACTUAL_SHA256="$(sha256sum "$CLASS_FILE" | cut -d ' ' -f 1)"
++    if [ "$ACTUAL_SHA256" != "2d4eda789aa30c266fa9a3c66a2abec140d18004157ae1d9fd72080928578e5e" ]; then
++        LOGE "Unreviewed BZI6 DeviceIDProvisionWorker class SHA256: $ACTUAL_SHA256"
++        return 1
++    fi
++
++    LOG "BZI6 DeviceIDProvisionWorker hash is pinned and already returns false for Strongbox DeviceID; retaining donor method"
++}

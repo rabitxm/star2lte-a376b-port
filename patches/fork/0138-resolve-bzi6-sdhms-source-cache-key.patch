@@ -1,0 +1,12 @@
+--- a/unica/patches/dvfs/customize.sh
++++ b/unica/patches/dvfs/customize.sh
+@@ -79,7 +79,8 @@
+             LOGE "Unreviewed BZI6 SDHMS SSRM policy transition"
+             return 1
+         }
+-        _SDHMS_SOURCE_APK="$FW_DIR/$SOURCE_FIRMWARE_PATH/system/system/priv-app/SamsungDeviceHealthManagerService/SamsungDeviceHealthManagerService.apk"
++        _SDHMS_SOURCE_CACHE_KEY="$(GET_FIRMWARE_CACHE_KEY "$SOURCE_FIRMWARE")" || return 1
++        _SDHMS_SOURCE_APK="$FW_DIR/$_SDHMS_SOURCE_CACHE_KEY/system/system/priv-app/SamsungDeviceHealthManagerService/SamsungDeviceHealthManagerService.apk"
+         [ -f "$_SDHMS_SOURCE_APK" ] || {
+             LOGE "BZI6 SamsungDeviceHealthManagerService.apk is missing"
+             return 1

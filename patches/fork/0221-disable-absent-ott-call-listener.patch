@@ -1,0 +1,211 @@
+# Reason: prevent Telecom from creating an absent optional OTT slicing InCallService in system_server.
+# Files: finalization/customize.sh, call-listener helper/lock, verify_m4_runtime_image.py.
+# Verify: exact BZI6/G965F/backend pins, single-attribute manifest diff, negative fixtures, compiled/image checks, runtime component probe and stability.
+# Rollback: previous framework-res APK; no kernel/vendor/RIL/EFS writes.
+--- a/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
+@@ -7599,6 +7599,13 @@
+         0 0 644 "u:object_r:system_file:s0"
+     python3 "$SRC_DIR/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_postboot_diagnostic.py" \
+         verify --work-dir "$WORK_DIR" --donor-root "$FW_DIR/$EXYNOS9810_SOURCE_CACHE_KEY" || return 1
++    # The diagnostic network backend reports OTT slicing off and lacks BZI6's
++    # listener class. Advertising that optional InCallService makes Telecom
++    # instantiate it inside system_server and triggers ClassNotFoundException.
++    DECODE_APK "system" "system/framework/framework-res.apk" || return 1
++    python3 "$SRC_DIR/unica/patches/exynos9810_device_stack/exynos9810_finalization/a376b_android17_call_listener.py" \
++        apply --manifest "$APKTOOL_DIR/system/framework/framework-res.apk/AndroidManifest.xml" \
++        --work-dir "$WORK_DIR" --donor-root "$FW_DIR/$EXYNOS9810_SOURCE_CACHE_KEY" || return 1
+     # The PHN JNI's Java contract differs from the BZI6 NativeNfcManager.
+     # Reapply after all donor restores so only the matching JNI inside the
+     # pinned NFC APEX remains available; the S9 SLSI HAL stack stays intact.
+--- a/scripts/internal/verify_m4_runtime_image.py
++++ b/scripts/internal/verify_m4_runtime_image.py
+@@ -23,6 +23,7 @@
+ POSTBOOT_HELPER = ROOT / "unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_postboot_diagnostic.py"
+ THERMAL_HELPER = ROOT / "unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_thermal.py"
+ FACEWIDGET_HELPER = ROOT / "unica/patches/exynos9810_device_stack/exynos9810_finalization/a376b_android17_facewidget_thread.py"
++CALL_LISTENER_HELPER = ROOT / "unica/patches/exynos9810_device_stack/exynos9810_finalization/a376b_android17_call_listener.py"
+ KG30_HELPER = ROOT / "unica/patches/exynos9810_device_stack/exynos9810_finalization/a376b_android17_kg30_nonblocking.py"
+ BT_BACKEND_HELPER = ROOT / "unica/patches/bluetooth/a376b_android17_native_backend.py"
+ BT_FDF1_HELPER = ROOT / "unica/patches/bluetooth/a376b_android17_fdf1_skip.py"
+@@ -213,6 +214,14 @@
+             run(["python3", str(FACEWIDGET_HELPER), "verify-apk", "--apk", str(systemui_apk),
+                  "--apktool", str(apktool), "--temp-root", tempfile.gettempdir()])
+             paths.append(systemui_rel)
++            # Verify the compiled component declaration and then compare the
++            # same framework-res bytes/metadata inside the real SYSTEM image.
++            framework_res_rel = "system/framework/framework-res.apk"
++            run(["python3", str(CALL_LISTENER_HELPER), "verify-apk",
++                 "--apk", str(work / "system" / framework_res_rel),
++                 "--apktool", str(apktool), "--work-dir", str(work),
++                 "--donor-root", str(donor)])
++            paths.append(framework_res_rel)
+     elif partition == "vendor":
+         if os.environ.get("EXYNOS9810_M4_RUNTIME_COMPAT") == "true":
+             run(["python3", str(THERMAL_HELPER), "verify", "--work-dir", str(work)])
+--- /dev/null
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/a376b_android17_call_listener.py
+@@ -0,0 +1,150 @@
++#!/usr/bin/env python3
++"""Align the BZI6 optional OTT InCallService declaration with the diagnostic backend.
++
++Reason: the S22-based compatibility APEX lacks ConnectivityCallListenerService;
++Telecom binding the donor declaration kills system_server with ClassNotFoundException.
++Its actual feature mask is 0x3, so BZI6's OTT slicing bit 0x4 is disabled already.
++Files: only that service's enabled attribute in framework-res AndroidManifest.xml.
++Verify: scope/input pins, exact source block, unchanged surrounding manifest,
++negative fixtures, compiled manifest, image byte/metadata and runtime gates.
++Rollback: original framework-res APK; no radio/kernel/policy/key-store changes.
++"""
++from pathlib import Path
++import argparse
++import hashlib
++import json
++import os
++import re
++import subprocess
++import tempfile
++import xml.etree.ElementTree as ET
++
++HERE = Path(__file__).resolve().parent
++LOCK = json.loads(HERE.joinpath('a376b_android17_call_listener.lock.json').read_text())
++ANDROID = '{http://schemas.android.com/apk/res/android}'
++NAME = 'android.net.ConnectivityCallListenerService'
++BLOCK = '''        <service android:exported="true" android:name="android.net.ConnectivityCallListenerService" android:permission="android.permission.BIND_INCALL_SERVICE">
++            <meta-data android:name="android.telecom.INCLUDE_SELF_MANAGED_CALLS" android:value="true"/>
++            <intent-filter>
++                <action android:name="android.telecom.InCallService"/>
++            </intent-filter>
++        </service>'''
++PATCHED = BLOCK.replace('<service android:exported=', '<service android:enabled="false" android:exported=', 1)
++
++
++def digest(path):
++    with Path(path).open('rb') as stream:
++        return hashlib.file_digest(stream, 'sha256').hexdigest()
++
++
++def scope(env=None):
++    env = os.environ if env is None else env
++    required = {'ROM_SOURCE_CONFIG': 'essi_a376b_android17', 'ROM_MILESTONE': 'M4',
++                'TARGET_CODENAME': 'star2lte', 'STAR2LTE_BUILD_MODEL': 'SM-G965F',
++                'SOURCE_PLATFORM_SDK_VERSION': '37', 'EXYNOS9810_M4_POSTBOOT_DIAGNOSTIC': 'true'}
++    if any(env.get(key) != value for key, value in required.items()):
++        raise ValueError('OTT service adapter requires the exact BZI6/G965F diagnostic network profile')
++
++
++def inputs(work, donor):
++    for path, expected in (
++        (Path(donor) / 'system/system/framework/framework-res.apk', LOCK['donor_framework_res_sha256']),
++        (Path(work) / 'system/system/apex/com.google.android.tethering_compressed.apex', LOCK['network_apex_sha256']),
++    ):
++        if path.is_symlink() or not path.is_file() or digest(path) != expected:
++            raise ValueError('OTT service adapter donor/backend hash mismatch: ' + str(path))
++
++
++def rewrite(text):
++    if hashlib.sha256(BLOCK.encode()).hexdigest() != LOCK['source_block_sha256']:
++        raise ValueError('Internal OTT service source block differs from lock')
++    matches = re.findall(r'^ *<service\b[^>]*android:name="' + re.escape(NAME)
++                         + r'"[^>]*>.*?^ *</service>', text, re.M | re.S)
++    if len(matches) != 1 or matches[0] not in (BLOCK, PATCHED):
++        raise ValueError('OTT service declaration is changed, duplicated or missing')
++    before = matches[0]
++    result = text.replace(before, PATCHED, 1)
++    if result.replace(PATCHED, BLOCK, 1) != text.replace(before, BLOCK, 1):
++        raise ValueError('OTT service adapter changed unrelated manifest bytes')
++    verify_manifest(result)
++    return result
++
++
++def verify_manifest(text):
++    root = ET.fromstring(text)
++    found = [node for node in root.iter('service') if node.get(ANDROID + 'name') == NAME]
++    if len(found) != 1:
++        raise ValueError('Compiled manifest must contain exactly one OTT listener declaration')
++    node = found[0]
++    expected = {ANDROID+'name': NAME, ANDROID+'enabled': 'false', ANDROID+'exported': 'true',
++                ANDROID+'permission': 'android.permission.BIND_INCALL_SERVICE'}
++    if node.attrib != expected or [child.tag for child in node] != ['meta-data', 'intent-filter']:
++        raise ValueError('OTT listener attributes/children differ from the reviewed disabled component')
++    if node[0].attrib != {ANDROID+'name': 'android.telecom.INCLUDE_SELF_MANAGED_CALLS', ANDROID+'value': 'true'}:
++        raise ValueError('OTT listener metadata changed')
++    if node[1].attrib or len(node[1]) != 1 or node[1][0].tag != 'action' or node[1][0].attrib != {ANDROID+'name': 'android.telecom.InCallService'}:
++        raise ValueError('OTT listener intent contract changed')
++
++
++def verify_apk(apk, apktool):
++    with tempfile.TemporaryDirectory(prefix='m4-ott-manifest-') as td:
++        out = Path(td) / 'decoded'
++        result = subprocess.run([str(apktool), 'd', '-f', '--only-manifest', '-o', str(out), str(apk)],
++                                capture_output=True, text=True)
++        if result.returncode:
++            raise ValueError('Compiled OTT manifest decode failed: ' + result.stderr)
++        verify_manifest((out / 'AndroidManifest.xml').read_text())
++
++
++def fixture():
++    scope()
++    prefix = '<manifest xmlns:android="http://schemas.android.com/apk/res/android"><application>\n'
++    suffix = '\n<service android:name="unrelated.Service"/></application></manifest>'
++    text = prefix + BLOCK + suffix
++    output = rewrite(text)
++    assert output == prefix + PATCHED + suffix
++    assert rewrite(output) == output
++    for wrong in (text.replace('android.permission.BIND_INCALL_SERVICE', 'wrong.permission'),
++                  prefix + BLOCK + '\n' + BLOCK + suffix, text.replace(NAME, NAME + 'Changed')):
++        try:
++            rewrite(wrong)
++        except ValueError:
++            pass
++        else:
++            raise ValueError('Changed/missing/duplicate service fixture was accepted')
++    wrong = dict(os.environ, STAR2LTE_BUILD_MODEL='SM-G965N')
++    try:
++        scope(wrong)
++    except ValueError:
++        pass
++    else:
++        raise ValueError('Wrong-model fixture was accepted')
++    print('PASS exact single-attribute change, unrelated bytes, idempotence and negative declaration/scope fixtures')
++
++
++def main():
++    parser = argparse.ArgumentParser()
++    parser.add_argument('command', choices=['apply', 'verify-apk', 'fixture'])
++    parser.add_argument('--manifest', type=Path)
++    parser.add_argument('--work-dir', type=Path)
++    parser.add_argument('--donor-root', type=Path)
++    parser.add_argument('--apk', type=Path)
++    parser.add_argument('--apktool', type=Path)
++    args = parser.parse_args()
++    scope()
++    if args.command == 'fixture':
++        fixture()
++        return
++    inputs(args.work_dir, args.donor_root)
++    if args.command == 'apply':
++        if args.manifest.is_symlink():
++            raise ValueError('Refusing symlinked manifest')
++        args.manifest.write_text(rewrite(args.manifest.read_text()))
++        print('PASS disabled only absent optional OTT listener for the pinned diagnostic backend')
++    else:
++        verify_apk(args.apk, args.apktool)
++        print('PASS compiled OTT listener manifest, donor and diagnostic backend pins')
++
++
++if __name__ == '__main__':
++    main()
+--- /dev/null
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/a376b_android17_call_listener.lock.json
+@@ -0,0 +1,10 @@
++{
++  "scope": "M4 G965F BZI6, existing S22-based diagnostic network composition only",
++  "donor_framework_res_sha256": "628e530425c802c23f67b83b05be25b16bcd3df2144907700b4022dcd82eee1a",
++  "network_apex_sha256": "650f75fa946ee5fbe44e38418c4581738e7654abcea527832c97d092d6d7671d",
++  "framework_connectivity_jar_sha256": "cb000f867b4a969954b157f50a1c07920fc047a3232ee51086dc0fb0ace541f3",
++  "source_block_sha256": "1a74fea5764a9a9fac5913b02334388f478e32b3ebf76e955b57e17bc4369a68",
++  "runtime_backend_feature_bits": "0x3",
++  "ott_slicing_feature_bit": "0x4",
++  "reason": "Telecom binds an advertised BZI6 class absent from the compatibility APEX; this throws ClassNotFoundException in system_server. The actual backend reports OTT slicing disabled. Disable only that nonfunctional service declaration; ordinary Telecom InCallService components are unchanged."
++}

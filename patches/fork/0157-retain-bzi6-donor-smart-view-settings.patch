@@ -1,0 +1,32 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] Retain BZI6 donor Smart View tile behavior
+
+# Reason: attempt29 lines1188–1214 show the optional Smart View visibility patch fails at QpRune.smali:308 because the BZI6 donor initialization differs. Keep donor tile behavior on the exact M4 target until ported.
+# Affected: scripts/internal/apply_modules.sh.
+# Verify: exact M4/G965F/BZI6 route skips only the Smart View visibility patch; wrong model/milestone fail closed; AZH4 and unrelated routes remain active; shell syntax, dispatcher tests, full ordered replay, clean attempt30.
+# Rollback: remove patch0157 from patches/fork/series and sources.lock.json, then restore the previous dispatcher.
+
+--- a/scripts/internal/apply_modules.sh
++++ b/scripts/internal/apply_modules.sh
+@@ -269,6 +269,21 @@
+         if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] && \
+                 [[ "$p" == */csc/smali/system/priv-app/SecSettings/SecSettings.apk/0003-Enable-quick-switch-to-Secure-Folder-feature.patch ]]; then
+             LOGW "A376B AZH4 relocated Secure Folder Settings classes; retaining donor behavior for M2"
++            continue
++        fi
++        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ] && \
++                [[ "$p" == */csc/smali/system_ext/priv-app/SystemUI/SystemUI.apk/0002-Enable-Smart-View-tile-visibility-settings.patch ]]; then
++            if [ "${ROM_MILESTONE:-}" != M4 ] || [ "${TARGET_CODENAME:-}" != star2lte ] || \
++                    [ "${STAR2LTE_BUILD_MODEL:-}" != SM-G965F ] || \
++                    [ "${SOURCE_PLATFORM_SDK_VERSION:-}" != 37 ] || \
++                    [ "${TARGET_PLATFORM_SDK_VERSION:-}" != 31 ] || \
++                    [ "${TARGET_BOARD_API_LEVEL:-}" != 33 ] || \
++                    [ "${SOURCE_FIRMWARE_CACHE_SUFFIX:-}" != A376BXXU5BZI6 ] || \
++                    [ "${SOURCE_FIRMWARE:-}" != SM-A376B/XXV/LOCAL ]; then
++                LOGE "Unreviewed BZI6 Smart View tile dispatch scope"
++                return 1
++            fi
++            LOGW "BZI6 QpRune differs; retaining donor Smart View tile behavior"
+             continue
+         fi
+         if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] && \

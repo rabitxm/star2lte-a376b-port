@@ -1,0 +1,41 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] Review absent BZI6 legacy OTA Settings method
+
+# Reason: tail-attempt36/settings.txt:6 reports missing isOTAUpgradeAllowed(Context) in SoftwareUpdateUtils. The unique BZI6 class has no such method. Hash-pin this reviewed class and retain donor navigation; do not invent an Android17 method or bypass the separate mandatory ADB/Auto Blocker checks.
+# Affected: unica/mods/settings/customize.sh.
+# Verify: exact decoded BZI6 class hash/absent method, changed-preimage and wrong-scope rejection, legacy branch retained; actual module continuation, shell syntax, source-lock/replay and clean compiled output.
+# Rollback: remove0165 from series/source lock and restore the previous customizer.
+
+--- a/unica/mods/settings/customize.sh
++++ b/unica/mods/settings/customize.sh
+@@ -28,10 +28,26 @@
+ 
+ # Disable stock OTA references
+ if [ ! -f "$WORK_DIR/system/system/priv-app/ChoiDujour/ChoiDujour.apk" ]; then
+-    SMALI_PATCH "system" "system/priv-app/SecSettings/SecSettings.apk" \
+-        "smali_classes3/com/samsung/android/settings/softwareupdate/SoftwareUpdateUtils.smali" "return" \
+-        'isOTAUpgradeAllowed(Landroid/content/Context;)Z' \
+-        'false'
++    if [ "${ROM_SOURCE_CONFIG:-}" = essi_a376b_android17 ]; then
++        IS_A376B_M4_BOOT_TEST && [ "${TARGET_PLATFORM_SDK_VERSION:-}" = 31 ] && \
++            [ "${TARGET_BOARD_API_LEVEL:-}" = 33 ] || { LOGE "Unreviewed BZI6 OTA Settings scope"; return 1; }
++        python3 - "$APKTOOL_DIR/system/priv-app/SecSettings/SecSettings.apk" <<'PYBZI6OTA' || return 1
++from pathlib import Path
++import hashlib,sys
++paths=list(Path(sys.argv[1]).glob("smali*/com/samsung/android/settings/softwareupdate/SoftwareUpdateUtils.smali"))
++if len(paths)!=1 or hashlib.sha256(paths[0].read_bytes()).hexdigest()!="cf8845458b67110bfe6060e41bed7028bf9c3c48731decd449366c1a346c8fe9":
++    raise SystemExit("Unreviewed BZI6 SoftwareUpdateUtils preimage")
++if ".method public static isOTAUpgradeAllowed(Landroid/content/Context;)Z" in paths[0].read_text():
++    raise SystemExit("Unexpected legacy OTA method in BZI6")
++print("PASS BZI6 donor OTA navigation: legacy isOTAUpgradeAllowed method absent")
++PYBZI6OTA
++        LOGW "BZI6 removed the legacy OTA Settings method; retaining donor navigation"
++    else
++        SMALI_PATCH "system" "system/priv-app/SecSettings/SecSettings.apk" \
++            "smali_classes3/com/samsung/android/settings/softwareupdate/SoftwareUpdateUtils.smali" "return" \
++            'isOTAUpgradeAllowed(Landroid/content/Context;)Z' \
++            'false'
++    fi
+ fi
+ 
+ # Always show One UI minor version

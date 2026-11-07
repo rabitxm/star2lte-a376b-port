@@ -1,0 +1,152 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] enable retained Gralloc3/2 fallback for the M4 Hybrid Vendor
+
+# Reason: the V6 runtime trial reaches SurfaceFlinger but aborts gralloc-mapper is missing. BZI6 libui's API-level>35 branch skips its retained genuine Gralloc3/2 implementations after mapper5/4 fail on star2lte.
+# Affected: M4 runtime helper/lock, restore metadata loop and real-ext4 gate. Change one four-byte conditional branch to NOP only in the exact locked BZI6 libui. Keep mapper5/4 preference, mapper2/3 isLoaded tests, allocator checks, OS properties and every other library byte.
+# Verify: full input/output hash and executable-segment/context/branch-target checks; exact four-byte diff and reverse; idempotence/replacement and wrong-M2/N scope negatives; actual ext4 byte/owner/mode/label fixture; complete source replay. Runtime result remains separate.
+# Rollback: reverse0193 and its series/lock entry; diagnostic SYSTEM libui must restore the original locked bytes/metadata. No kernel/vendor/radio/EFS or version-property change.
+
+--- a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_runtime_compat.py
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_runtime_compat.py
+@@ -104,6 +104,55 @@
+             raise ValueError("Missing M4 graphics compatibility interface: " + rel)
+ 
+ 
++
++def mapper_fallback(work, donor, stage=False):
++    for rel, entry in manifest()["runtime_patches"].items():
++        source = Path(donor) / rel
++        if not source.is_file() or source.is_symlink() or digest(source) != entry["source_sha256"]:
++            raise ValueError("Unreviewed M4 mapper source: " + rel)
++        data = source.read_bytes()
++        if data[:6] != b"\x7fELF\x02\x01" or struct.unpack_from("<H", data, 18)[0] != 183:
++            raise ValueError("M4 mapper source must be ELF64 AArch64")
++        phoff = struct.unpack_from("<Q", data, 32)[0]
++        size, count = struct.unpack_from("<HH", data, 54)
++        va = entry["branch_va"]
++        offsets = []
++        for index in range(count):
++            kind, flags, offset, start, _, length, _, _ = struct.unpack_from(
++                "<IIQQQQQQ", data, phoff + index * size)
++            if kind == 1 and flags & 1 and start <= va < start + length:
++                offsets.append(offset + va - start)
++        if len(offsets) != 1:
++            raise ValueError("M4 mapper branch must map to one executable segment")
++        offset = offsets[0]
++        before = bytes.fromhex(entry["instruction_before"])
++        after = bytes.fromhex(entry["instruction_after"])
++        instruction = int.from_bytes(before, "little")
++        immediate = (instruction >> 5) & 0x7ffff
++        if immediate & 0x40000:
++            immediate -= 0x80000
++        if len(before) != 4 or after != bytes.fromhex("1f2003d5") or \
++                instruction & 0xff00001f != 0x5400000c or \
++                va + immediate * 4 != entry["branch_target_va"] or \
++                data[offset:offset + 4] != before or \
++                data[offset - 8:offset + 20].hex() != entry["context_before_bytes"]:
++            raise ValueError("M4 API-level mapper branch/context mismatch")
++        patched = data[:offset] + after + data[offset + 4:]
++        if hashlib.sha256(patched).hexdigest() != entry["output_sha256"]:
++            raise ValueError("M4 mapper four-byte output mismatch")
++        target = Path(work) / rel
++        if target.exists() or target.is_symlink():
++            allowed = {entry["source_sha256"], entry["output_sha256"]} if stage else {entry["output_sha256"]}
++            if not target.is_file() or target.is_symlink() or digest(target) not in allowed:
++                raise ValueError("Unreviewed M4 mapper destination: " + rel)
++        elif not stage:
++            raise ValueError("Missing M4 mapper fallback library")
++        if stage and (not target.exists() or digest(target) != entry["output_sha256"]):
++            target.parent.mkdir(parents=True, exist_ok=True)
++            target.write_bytes(patched)
++            target.chmod(0o644)
++
++
+ def verify_source(donor):
+     m = manifest()
+     donor = source_root(donor)
+@@ -232,6 +281,7 @@
+     work = Path(work)
+     m = manifest()
+     rows = donor_account_rows(donor)
++    mapper_fallback(work, donor, stage=True)
+     graphics_compat(work, donor, stage=True)
+     for rel, expected in m["files"].items():
+         source = donor / rel
+@@ -268,6 +318,7 @@
+             continue
+         if not path.is_file() or path.is_symlink() or digest(path) != expected:
+             raise ValueError("Final M4 runtime input mismatch: " + rel)
++    mapper_fallback(work, donor)
+     graphics_compat(work, donor)
+     verify_vendor_account(work)
+     vendor_ueventd(work)
+@@ -337,6 +388,21 @@
+         if first != {p.relative_to(root).as_posix(): p.read_bytes()
+                      for p in (root / "vendor/etc/aconfig").iterdir()}:
+             raise ValueError("M4 aconfig staging is not idempotent")
++        mapper = root / "system/system/lib64/libui.so"
++        correct_mapper = mapper.read_bytes()
++        mapper.write_bytes(b"unreviewed mapper")
++        try:
++            mapper_fallback(root, donor, stage=True)
++        except ValueError:
++            pass
++        else:
++            raise ValueError("Unreviewed mapper overwrite accepted")
++        if mapper.read_bytes() != b"unreviewed mapper":
++            raise ValueError("Rejected mapper was modified")
++        mapper.unlink()
++        mapper_fallback(root, donor, stage=True)
++        if mapper.read_bytes() != correct_mapper:
++            raise ValueError("Mapper regeneration mismatch")
+         graphics = root / "system/system/lib64/android.hardware.graphics.common-V6-ndk.so"
+         original_graphics = graphics.read_bytes()
+         graphics.write_bytes(b"unreviewed graphics provider")
+--- a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_runtime_compat.lock.json
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_runtime_compat.lock.json
+@@ -54,5 +54,17 @@
+       "source_path": "system/system/lib64/android.hardware.graphics.common-V6-ndk.so",
+       "sha256": "010bf814b8e62ac739ff228fd6cd84477d40279c6e1c86892f064d750ee4d652"
+     }
++  },
++  "runtime_patches": {
++    "system/system/lib64/libui.so": {
++      "source_sha256": "4bc342521a9745c3c5fa7b8bc9987e8437a043ef16bfb4a2e1f98ec6ecbf0122",
++      "output_sha256": "ac1c5a4cbfc370002d1c173d8f201a4cefe7459282180636bed5adf8ed50ade7",
++      "branch_va": 206572,
++      "branch_target_va": 206688,
++      "context_before_bytes": "8bbc00941f8c0071ac0300540002805205b70094f40300aa37b90094",
++      "instruction_before": "ac030054",
++      "instruction_after": "1f2003d5",
++      "reason": "allow existing Gralloc3/2 fallbacks after Gralloc5/4 fail on Android17; keep actual mapper/allocator load checks"
++    }
+   }
+ }
+--- a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/customize.sh
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/customize.sh
+@@ -2004,6 +2004,7 @@
+     for M4_RUNTIME_LIB in \
+         system/lib64/libaudiobase.so \
+         system/lib64/libaudioclient.so \
++        system/lib64/libui.so \
+         system/lib64/android.hardware.graphics.common-V6-ndk.so \
+         system/lib64/android.hardware.graphics.common-V7-ndk.so; do
+         _EXYNOS9810_SET_METADATA_SAFE system "$M4_RUNTIME_LIB" \
+--- a/scripts/internal/verify_m4_runtime_image.py
++++ b/scripts/internal/verify_m4_runtime_image.py
+@@ -27,6 +27,7 @@
+             "system/priv-app/SamsungCamera/SamsungCamera.apk": (0o644, (0, 0), "system_file"),
+             "system/lib64/libaudiobase.so": (0o644, (0, 0), "system_lib_file"),
+             "system/lib64/libaudioclient.so": (0o644, (0, 0), "system_lib_file"),
++            "system/lib64/libui.so": (0o644, (0, 0), "system_lib_file"),
+             "system/lib64/android.hardware.graphics.common-V6-ndk.so": (0o644, (0, 0), "system_lib_file"),
+             "system/lib64/android.hardware.graphics.common-V7-ndk.so": (0o644, (0, 0), "system_lib_file"),
+             "system/apex/com.google.android.tethering_compressed.apex": (0o644, (0, 0), "system_file"),
+@@ -106,6 +107,7 @@
+         paths = [rel.removeprefix("system/") for rel in runtime.manifest()["files"]
+                  if rel.startswith("system/system/")]
+         paths.extend(rel.removeprefix("system/") for rel in runtime.manifest()["compatibility_files"])
++        paths.extend(rel.removeprefix("system/") for rel in runtime.manifest()["runtime_patches"])
+         paths.extend(verify_nfc_apex(work, donor))
+     elif partition == "vendor":
+         paths = ["etc/passwd", "etc/group", "etc/ueventd.rc", "etc/init/hw/init.samsungexynos9810.rc",

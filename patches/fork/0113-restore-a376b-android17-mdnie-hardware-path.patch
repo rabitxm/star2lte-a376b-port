@@ -1,0 +1,111 @@
+diff --git a/unica/patches/product_feature/mdnie/a376b_hw.py b/unica/patches/product_feature/mdnie/a376b_hw.py
+--- a/unica/patches/product_feature/mdnie/a376b_hw.py
++++ b/unica/patches/product_feature/mdnie/a376b_hw.py
+@@ -4,6 +4,7 @@
+ from hashlib import sha256
+ import re
+ import sys
++import os
+ 
+ 
+ def method(text, name):
+@@ -14,6 +15,13 @@
+ 
+ 
+ def adapt(root, module):
++    a17 = os.environ.get("ROM_SOURCE_CONFIG") == "essi_a376b_android17"
++    if a17:
++        for key, value in {"ROM_MILESTONE": "M4", "TARGET_CODENAME": "star2lte",
++                           "STAR2LTE_BUILD_MODEL": "SM-G965F", "SOURCE_PLATFORM_SDK_VERSION": "37",
++                           "SOURCE_FIRMWARE_CACHE_SUFFIX": "A376BXXU5BZI6"}.items():
++            if os.environ.get(key) != value:
++                raise RuntimeError("Unreviewed BZI6 mDNIe scope: " + key)
+     patch = module / "mdnie/hw/services.jar/0001-Disable-HW-mDNIe.patch"
+     if sha256(patch.read_bytes()).hexdigest() != "0d81648383615d03218463e4da7117ff269e329e12e59dbfb076749dfa653557":
+         raise RuntimeError("Reviewed upstream mDNIe diff changed")
+@@ -27,11 +35,25 @@
+         "setmDNIeColorBlind(Z[I)Z": "fa090c41d8fd70c6574e19729d42c0c042fac93db9d06cd633af62cf7d009765",
+         "setmDNIeNegative(Z)Z": "ee25290898a9f89ef38ef20f7c1ccedcbe50614394cae38a9cf535140cca5f18",
+     }
++    if a17:
++        hashes.update({
++            "setmDNIeColorBlind(Z[I)Z": "4f98be642a16a551b28ac7da24ddde86f569da606b8e336f356118ef00c7059c",
++            "setmDNIeNegative(Z)Z": "52618e88ab9cc00c13be50ad732c937cc7488d5c629b7084058f381a39bbe8ac",
++        })
+     for name, expected in hashes.items():
+         current = method(service, name)
+         if sha256(current.group().encode()).hexdigest() != expected:
+-            raise RuntimeError("Unreviewed AZH4 mDNIe method: " + name)
++            raise RuntimeError("Unreviewed A376B mDNIe method: " + name)
+         restored = method(old, name).group()
++        if a17:
++            # BZI6 removed the old synthetic logger. These methods reset v0
++            # after logging; inline its verified append/toString/Slog.i body.
++            outline = "    invoke-static {v0, v1, v2}, Lcom/android/server/DeviceIdleController$$ExternalSyntheticOutline0;->m(Ljava/lang/StringBuilder;Ljava/lang/String;Ljava/lang/String;)V"
++            restored = restored.replace(outline,
++                "    invoke-virtual {v0, v1}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;\n\n"
++                "    invoke-virtual {v0}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;\n\n"
++                "    move-result-object v0\n\n"
++                "    invoke-static {v2, v0}, Landroid/util/Slog;->i(Ljava/lang/String;Ljava/lang/String;)I")
+         service = service[:current.start()] + restored + service[current.end():]
+     if "mCurtainModeIsRunning:Z" in path.read_text() or "sysfsWrite_CB(" in path.read_text():
+         raise RuntimeError("AZH4 mDNIe state/helper already exists")
+@@ -51,17 +73,27 @@
+     service += "\n\n" + helper + "\n"
+     service = service.replace("# instance fields\n", "# instance fields\n.field public mCurtainModeIsRunning:Z\n\n", 1)
+     curtain = method(service, "setmDNIeScreenCurtain(Z)Z")
+-    if sha256(curtain.group().encode()).hexdigest() != "64f6abf333fecebaf03873901a73c7344f810cdd7d8697fee23134c79ebb0d74":
++    curtain_hash = ("aaf44c75d1083ddf163a08467e2ff84801fe9e1dca5487f8422e43f9020cc2fa" if a17 else
++                    "64f6abf333fecebaf03873901a73c7344f810cdd7d8697fee23134c79ebb0d74")
++    if sha256(curtain.group().encode()).hexdigest() != curtain_hash:
+         raise RuntimeError("AZH4 screen curtain method changed")
+     body = curtain.group().replace("    .locals 4\n", "    .locals 4\n\n    iput-boolean p1, p0, Lcom/samsung/android/hardware/display/SemMdnieManagerService;->mCurtainModeIsRunning:Z\n", 1)
+     service = service[:curtain.start()] + body + service[curtain.end():]
+     # Remaining outlines are already used by AZH4's existing methods. Check
+     # the exact signatures before installing the restored method bodies.
+-    for cls, signature in [("BatteryService", "m(Ljava/lang/String;)Z"),
+-                           ("DeviceIdleController", "m(Ljava/lang/StringBuilder;Ljava/lang/String;Ljava/lang/String;)V")]:
+-        method((root / f"system/framework/services.jar/smali/com/android/server/{cls}$$ExternalSyntheticOutline0.smali").read_text(), signature)
++    outlines = [("BatteryService", "m(Ljava/lang/String;)Z")]
++    if not a17:
++        outlines.append(("DeviceIdleController", "m(Ljava/lang/StringBuilder;Ljava/lang/String;Ljava/lang/String;)V"))
++    for cls, signature in outlines:
++        found = method((root / f"system/framework/services.jar/smali/com/android/server/{cls}$$ExternalSyntheticOutline0.smali").read_text(), signature)
++        if a17 and sha256(found.group().encode()).hexdigest() != "588fa7e2eae85cc7ff4b4d4a5ff321ab466053e0e98528d4cf7deeb5538232fe":
++            raise RuntimeError("BZI6 file-existence helper changed")
++    if a17 and "Lcom/android/server/DeviceIdleController$$ExternalSyntheticOutline0;" in "\n".join(method(service, name).group() for name in hashes):
++        raise RuntimeError("Stale mDNIe synthetic logger remains")
+     rune_path = root / "system/framework/framework.jar/smali_classes4/android/view/accessibility/A11yRune.smali"
+     rune = rune_path.read_text()
++    if a17 and sha256(method(rune, "<clinit>()V").group().encode()).hexdigest() != "da5658ddbd5733efaa0ebc1b28a43ffc28ad6f461db74dfb85b28cfcc6150a13":
++        raise RuntimeError("BZI6 A11yRune initializer changed")
+     replacements = {
+         "A11Y_COLOR_BOOL_SUPPORT_MDNIE_HW:Z = false": "A11Y_COLOR_BOOL_SUPPORT_MDNIE_HW:Z = true",
+         "sput-boolean v0, Landroid/view/accessibility/A11yRune;->A11Y_COLOR_BOOL_SUPPORT_DMC_COLORWEAKNESS:Z": "sput-boolean v1, Landroid/view/accessibility/A11yRune;->A11Y_COLOR_BOOL_SUPPORT_DMC_COLORWEAKNESS:Z",
+@@ -78,7 +110,7 @@
+         rune = rune.replace(before, after, 1)
+     path.write_text(service)
+     rune_path.write_text(rune)
+-    print("PASS AZH4 HW mDNIe: three methods, color-table helper, curtain state and accessibility flags restored")
++    print("PASS " + ("BZI6" if a17 else "AZH4") + " HW mDNIe: three methods, color-table helper, curtain state and accessibility flags restored")
+ 
+ 
+ if __name__ == "__main__":
+diff --git a/unica/patches/product_feature/customize.sh b/unica/patches/product_feature/customize.sh
+--- a/unica/patches/product_feature/customize.sh
++++ b/unica/patches/product_feature/customize.sh
+@@ -746,6 +746,14 @@
+         [ "$TARGET_LCD_CONFIG_COLOR_WEAKNESS_SOLUTION" = "3" ]; then
+     EVAL "python3 \"$MODPATH/mdnie/a376b_hw.py\" \"$APKTOOL_DIR\" \"$MODPATH\"" || return 1
+     SET_FLOATING_FEATURE_CONFIG "SEC_FLOATING_FEATURE_LCD_SUPPORT_MDNIE_HW" "TRUE"
++elif [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ] && \
++        [ "${ROM_MILESTONE:-}" = M4 ] && [ "$SOURCE_PLATFORM_SDK_VERSION" = 37 ] && \
++        [ "$TARGET_CODENAME" = star2lte ] && $TARGET_LCD_SUPPORT_MDNIE_HW && \
++        [ "$TARGET_PRODUCT_SHIPPING_API_LEVEL" = 26 ] && \
++        [ "$SOURCE_LCD_CONFIG_COLOR_WEAKNESS_SOLUTION" = 3 ] && \
++        [ "$TARGET_LCD_CONFIG_COLOR_WEAKNESS_SOLUTION" = 3 ]; then
++    EVAL "python3 \"$MODPATH/mdnie/a376b_hw.py\" \"$APKTOOL_DIR\" \"$MODPATH\"" || return 1
++    SET_FLOATING_FEATURE_CONFIG "SEC_FLOATING_FEATURE_LCD_SUPPORT_MDNIE_HW" "TRUE"
+ elif $SOURCE_LCD_SUPPORT_MDNIE_HW && [[ "$SOURCE_LCD_CONFIG_COLOR_WEAKNESS_SOLUTION" == "0" ]]; then
+     # TODO handle these conditions
+     LOG_MISSING_PATCHES "SOURCE_LCD_SUPPORT_MDNIE_HW" "TARGET_LCD_SUPPORT_MDNIE_HW" || true

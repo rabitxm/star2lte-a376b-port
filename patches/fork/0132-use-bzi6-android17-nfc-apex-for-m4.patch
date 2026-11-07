@@ -1,0 +1,202 @@
+--- a/unica/patches/exynos9810_device_stack/customize.sh
++++ b/unica/patches/exynos9810_device_stack/customize.sh
+@@ -1202,19 +1202,41 @@
+         "system" "system/lib64" "/system/lib64" \
+         "u:object_r:system_lib_file:s0" 0
+ 
+-    # Keep the Android 16 NfcNci package and framework. The Android 15
+-    # Exynos9810 package lacks INfcAdapter methods added in Android 16 and
+-    # otherwise crash-loops with AbstractMethodError. Use the Android 16 SEC
+-    # JNI bridge from the r11s firmware for the legacy S3NRN82 HAL.
+-    rm -rf "$WORK_DIR/system/system/priv-app/NfcNci/oat"
+-    _EXYNOS9810_DELETE_METADATA_PREFIX "system" \
+-        "system/priv-app/NfcNci/oat" \
+-        "/system/priv-app/NfcNci/oat"
+-
+-    [ -f "$WORK_DIR/system/system/priv-app/NfcNci/NfcNci.apk" ] || {
+-        LOGE "Android 16 NfcNci.apk is missing from the system image"
+-        return 1
+-    }
++    # Android 16 stores NfcNci under /system/priv-app. BZI6/Android 17 moves
++    # com.android.nfc into com.android.nfcservices.capex as NfcNciApex.apk.
++    # Keep that donor APEX intact; the S9+ stack below supplies the legacy
++    # S3NRN82 HIDL 1.2 HAL. Static APEX symbols include HIDL 1.0-1.2 and AIDL
++    # NFC references, but only device boot logs can prove runtime compatibility.
++    if [ "${EXYNOS9810_M4_RUNTIME_COMPAT:-false}" = "true" ]; then
++        [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ] && \
++            [ "${ROM_MILESTONE:-}" = "M4" ] && \
++            [ "${SOURCE_PLATFORM_SDK_VERSION:-}" = "37" ] || {
++            LOGE "Android 17 NFC APEX is outside the reviewed M4 BZI6 scope"
++            return 1
++        }
++        [ -f "$WORK_DIR/system/system/apex/com.android.nfcservices.capex" ] || {
++            LOGE "BZI6 Android 17 com.android.nfcservices.capex is missing from the system image"
++            return 1
++        }
++        [ ! -e "$WORK_DIR/system/system/priv-app/NfcNci/NfcNci.apk" ] || {
++            LOGE "Unexpected legacy NfcNci.apk beside the Android 17 NFC APEX"
++            return 1
++        }
++        LOG "- Keeping BZI6 Android 17 NFC APEX with the Exynos9810 S3NRN82 HIDL stack"
++    else
++        # The Android 15 Exynos9810 package lacks INfcAdapter methods added in
++        # Android 16 and crash-loops with AbstractMethodError. Use Android 16
++        # NfcNci and the compatible SEC JNI bridge for other donor profiles.
++        rm -rf "$WORK_DIR/system/system/priv-app/NfcNci/oat"
++        _EXYNOS9810_DELETE_METADATA_PREFIX "system" \
++            "system/priv-app/NfcNci/oat" \
++            "/system/priv-app/NfcNci/oat"
++
++        [ -f "$WORK_DIR/system/system/priv-app/NfcNci/NfcNci.apk" ] || {
++            LOGE "Android 16 NfcNci.apk is missing from the system image"
++            return 1
++        }
++    fi
+ 
+     _EXYNOS9810_SET_METADATA "vendor" \
+         "vendor/bin/hw/sec.android.hardware.nfc@1.2-service" \
+--- a/scripts/internal/verify_m4_runtime_image.py
++++ b/scripts/internal/verify_m4_runtime_image.py
+@@ -3,7 +3,7 @@
+ 
+ Reason: catch last-minute replacement or metadata loss after filesystem packing.
+ Files: temporary debugfs extracts only; the image is read-only.
+-Verify locked BZI6 camera/runtime files, vendor account/aconfig and mount bytes.
++Verify locked BZI6 camera/runtime/NFC APEX files, vendor account/aconfig and mount bytes.
+ """
+ from pathlib import Path
+ import argparse
+@@ -17,6 +17,7 @@
+ 
+ ROOT = Path(__file__).resolve().parents[2]
+ HELPER = ROOT / "unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_runtime_compat.py"
++NFC_LOCK = ROOT / "unica/patches/exynos9810_device_stack/nfc/a376b_android17_nfc.lock.json"
+ 
+ 
+ def metadata(partition, rel):
+@@ -28,6 +29,8 @@
+             "system/lib64/libaudioclient.so": (0o644, (0, 0), "system_lib_file"),
+             "system/lib64/android.hardware.graphics.common-V7-ndk.so": (0o644, (0, 0), "system_lib_file"),
+             "system/apex/com.google.android.tethering_compressed.apex": (0o644, (0, 0), "system_file"),
++            "system/apex/com.android.nfcservices.capex": (0o644, (0, 0), "system_file"),
++            "system/priv-app/SecNfc/SecNfc.apk": (0o644, (0, 0), "system_file"),
+             "system/etc/init/aconfigd.rc": (0o644, (0, 0), "system_file"),
+             "system/etc/aconfig/package.map": (0o644, (0, 0), "system_aconfig_storage_file"),
+             "system/etc/aconfig/flag.map": (0o644, (0, 0), "system_aconfig_storage_file"),
+@@ -51,6 +54,36 @@
+     return result.stdout + result.stderr
+ 
+ 
++def verify_nfc_apex(work, donor):
++    lock = json.loads(NFC_LOCK.read_text())
++    expected_scope = {
++        "source_config": "essi_a376b_android17",
++        "milestone": "M4",
++        "source_firmware": "SM-A376B/XXV/A376BXXU5BZI6",
++        "target": "star2lte",
++        "target_model": "SM-G965F",
++        "source_platform_sdk": 37,
++    }
++    if lock.get("scope") != expected_scope:
++        raise ValueError("M4 Android17 NFC lock scope is not the reviewed BZI6/G965F profile")
++    checks = [
++        (lock["source_capex_path"], lock["source_capex_sha256"], "Android17 NFC APEX"),
++        (lock["system_sec_nfc_apk_path"], lock["system_sec_nfc_apk_sha256"], "Android17 SecNfc.apk"),
++    ]
++    rels = []
++    for source_rel, expected_hash, label in checks:
++        image_rel = source_rel.removeprefix("system/")
++        paths = (("donor", donor / source_rel), ("work", work / "system" / image_rel))
++        for tree_name, path in paths:
++            if not path.is_file():
++                raise ValueError("M4 " + label + " is missing from " + tree_name + ": " + str(path))
++            found_hash = hashlib.sha256(path.read_bytes()).hexdigest()
++            if found_hash != expected_hash:
++                raise ValueError("M4 " + label + " hash mismatch in " + tree_name + ": " + found_hash)
++        rels.append(image_rel)
++    return rels
++
++
+ def verify(image, partition, work):
+     if os.environ.get("ROM_SOURCE_CONFIG") != "essi_a376b_android17" or \
+             os.environ.get("ROM_MILESTONE") != "M4" or \
+@@ -67,6 +100,7 @@
+     if partition == "system":
+         paths = [rel.removeprefix("system/") for rel in runtime.manifest()["files"]
+                  if rel.startswith("system/system/")]
++        paths.extend(verify_nfc_apex(work, donor))
+     elif partition == "vendor":
+         paths = ["etc/passwd", "etc/group", "etc/init/hw/init.samsungexynos9810.rc",
+                  "etc/init/init.samsungexynos9810.rc", "etc/aconfig"]
+--- a/unica/patches/exynos9810_device_stack/nfc/README.md
++++ b/unica/patches/exynos9810_device_stack/nfc/README.md
+@@ -1,18 +1,28 @@
+ # Exynos9810 NFC stack
+ 
+-This payload combines:
++The target stack combines:
+ 
+-- The Android 16 `NfcNci` app, framework and generic NFC libraries from the
+-  UN1CA source firmware.
++- Android 16 donor profiles: the source `NfcNci` app/framework and generic NFC
++  libraries from the UN1CA firmware.
++- M4 Android 17: the BZI6 `com.android.nfcservices.capex` APEX, which contains
++  the version-17 `com.android.nfc` package (`NfcNciApex.apk`) and its matching
++  NFC JNI. The exact CAPEX bytes are pinned in
++  `a376b_android17_nfc.lock.json` and checked again in the packed SYSTEM image.
+ - The Samsung S3NRN82 HAL, configuration and device firmware from the
+   tested Exynos9810 vendor stack.
+-- The Android 16 SLSI `libnfc_sec_jni.so` prebuilt from UN1GAGA's
++- The SLSI `libnfc_sec_jni.so` prebuilt from UN1GAGA's
+   `r11sxxx` firmware prebuilts.
+ 
+-Do not replace the Android 16 `NfcNci.apk` with an Android 15
+-package. It does not implement the Android 16 `INfcAdapter` interface. The
+-Android 15 SEC JNI is incompatible as well because it registers methods that
+-are no longer present in Android 16's `NativeNfcManager`.
++Do not replace Android 16 `NfcNci.apk` with the Android 15 Exynos9810 package:
++it does not implement the Android 16 `INfcAdapter` interface. The M4 branch
++keeps the donor Android 17 APEX instead of looking for that Android 16 path.
++Static ELF inspection shows the APEX JNI references HIDL NFC 1.0/1.2 and AIDL;
++the target HAL provides HIDL 1.0/1.1/1.2. The separate BZI6 `SecNfc.apk` is
++version17 and references both HIDL and AIDL `ISehNfc`, while the selected S9+
++service exposes Samsung HIDL 2.0 only. This leaves vendor-manager/UI path
++selection to runtime verification. Validate service startup, tag discovery/read,
++and Samsung NFC UI from device logs before claiming support. The Android 15 SEC
++JNI is also incompatible with Android 16's `NativeNfcManager`.
+ 
+ The shared HAL files live under `common/vendor`. Device-specific S3NRN82
+ firmware and RF calibration files live under each target directory.
+--- /dev/null
++++ b/unica/patches/exynos9810_device_stack/nfc/a376b_android17_nfc.lock.json
+@@ -0,0 +1,30 @@
++{
++  "schema": 1,
++  "scope": {
++    "source_config": "essi_a376b_android17",
++    "milestone": "M4",
++    "source_firmware": "SM-A376B/XXV/A376BXXU5BZI6",
++    "target": "star2lte",
++    "target_model": "SM-G965F",
++    "source_platform_sdk": 37
++  },
++  "source_capex_path": "system/system/apex/com.android.nfcservices.capex",
++  "source_capex_sha256": "4a809ebc2d99b5f68066788bd5eb9710139487c55bf1523ee945d0692463af53",
++  "system_sec_nfc_apk_path": "system/system/priv-app/SecNfc/SecNfc.apk",
++  "system_sec_nfc_apk_sha256": "ab7bffc2f12562bf25b349007baaa0276ec7f5e26c32c6bcc5e1319a6b24508f",
++  "system_sec_nfc_package": "com.samsung.android.nfc",
++  "system_sec_nfc_version_code": 37,
++  "system_sec_nfc_min_sdk": 37,
++  "system_sec_nfc_target_sdk": 37,
++  "apex_name": "com.android.nfcservices",
++  "apex_embedded_app_path": "/priv-app/NfcNciApex@CP2A.260605.016/NfcNciApex.apk",
++  "apex_embedded_app_sha256": "1252b5df4f366d0c9ecde59f8e884f4f155164d76c087324711037299fff0470",
++  "android_package": "com.android.nfc",
++  "version_code": 37,
++  "version_name": "17",
++  "min_sdk": 36,
++  "target_sdk": 37,
++  "apex_embedded_jni_path": "/lib64/libnfc_nci_jni.so",
++  "apex_embedded_jni_sha256": "e312f4fd01044e2bb3ee26900df73090a4a657ed6292d4e0e056fa73b23e5d81",
++  "static_hal_evidence": "A37 libnfc_nci_jni.so references AIDL INfc and HIDL NFC 1.0/1.2; SecNfc.apk references HIDL and AIDL ISehNfc. Target S3NRN82 service exposes HIDL 1.0/1.1/1.2 and Samsung HIDL 2.0 only. Static evidence does not establish runtime NFC/UI compatibility."
++}

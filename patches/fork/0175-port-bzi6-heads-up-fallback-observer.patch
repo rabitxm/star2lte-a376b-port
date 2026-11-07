@@ -1,0 +1,111 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] port bzi6 heads up fallback observer
+
+# Reason: final-tail-preflight-0174.txt fails removed NotificationInterruptStateProviderImpl$1. Actual BZI6 PeekDisabledSuppressor observer still defaults unset heads_up_notifications_enabled to0. Change only fallback argument to1 using dead v4; keep explicit zero and releaseAllImmediately logic.
+# Affected: notifications/patch_brief_heads_up.py and verify_brief_rebuilt_artifacts.py
+# Verify: Hash-pinned real onChange method, unchanged explicit opt-out, idempotence/negative fixture, DEX039 assembly and compiled observer/EdgeLighting gate; legacy tests unchanged.
+# Rollback: Remove0175 and restore legacy patch/checker. No ADB or hardware/kernel changes.
+
+--- a/unica/patches/exynos9810_device_stack/exynos9810_finalization/notifications/patch_brief_heads_up.py
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/notifications/patch_brief_heads_up.py
+@@ -7,6 +7,10 @@
+ """
+ 
+ from pathlib import Path
++from hashlib import sha256
++import os
++import re
++import importlib.util
+ import sys
+ 
+ 
+@@ -50,11 +54,36 @@
+     path.write_text(source[:start] + new_body + source[end:], encoding="utf-8")
+ 
+ 
++def patch_bzi6(root: Path) -> None:
++    spec = importlib.util.spec_from_file_location("bzi6_product", Path(__file__).resolve().parents[3] / "product_feature/a376b_android17_product.py")
++    product = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(product)
++    product.scope()
++    path = root / "smali_classes3/com/android/systemui/statusbar/notification/interruption/PeekDisabledSuppressor$start$observer$1.smali"
++    text = path.read_text()
++    match = product.method(text, "onChange(Z)V")
++    body = match.group()
++    before = '    invoke-interface {v1, v2, v3}, Lcom/android/systemui/util/settings/SettingsProxy;->getInt(Ljava/lang/String;I)I'
++    after = '    const/4 v4, 0x1\n\n    invoke-interface {v1, v2, v4}, Lcom/android/systemui/util/settings/SettingsProxy;->getInt(Ljava/lang/String;I)I'
++    pristine = body.replace(after, before, 1) if after in body else body
++    if sha256(pristine.encode()).hexdigest() != "16c5136bf9c6274ab13816fcdc3d016353be277d0349f2c8318690800eb00c98":
++        raise ValueError("unreviewed BZI6 heads-up observer method")
++    if after in body:
++        return
++    # v4 is not live until the later logger allocation. Keep v3=0 and the
++    # original stored-zero branch, changing only SettingsProxy's fallback.
++    body = body.replace(before, after, 1)
++    path.write_text(text[:match.start()] + body + text[match.end():])
++
++
+ def main() -> None:
+     if len(sys.argv) != 2:
+         raise SystemExit("usage: patch_brief_heads_up.py DECODED_SYSTEMUI_APK_DIR")
+     try:
+-        patch(Path(sys.argv[1]) / CLASS)
++        if os.environ.get("ROM_SOURCE_CONFIG") == "essi_a376b_android17":
++            patch_bzi6(Path(sys.argv[1]))
++        else:
++            patch(Path(sys.argv[1]) / CLASS)
+     except ValueError as exc:
+         raise SystemExit(str(exc)) from exc
+     print("PASS SystemUI heads-up default enabled; user choice preserved")
+--- a/unica/patches/exynos9810_device_stack/exynos9810_finalization/notifications/verify_brief_rebuilt_artifacts.py
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/notifications/verify_brief_rebuilt_artifacts.py
+@@ -7,6 +7,8 @@
+ from __future__ import annotations
+ 
+ import argparse
++import os
++import importlib.util
+ from pathlib import Path
+ import re
+ import subprocess
+@@ -19,6 +21,9 @@
+ APKTOOL = ROOT / "out/tools/bin/apktool.jar"
+ OBSERVER = ("com/android/systemui/statusbar/notification/interruption/"
+             "NotificationInterruptStateProviderImpl$1")
++BZI6 = os.environ.get("ROM_SOURCE_CONFIG") == "essi_a376b_android17"
++if BZI6:
++    OBSERVER = "com/android/systemui/statusbar/notification/interruption/PeekDisabledSuppressor$start$observer$1"
+ EDGE_SERVICE = "com/android/systemui/edgelighting/EdgeLightingService"
+ 
+ 
+@@ -67,6 +72,11 @@
+ 
+ 
+ def verify(work_dir: Path) -> None:
++    if BZI6:
++        spec = importlib.util.spec_from_file_location("bzi6_product", ROOT / "unica/patches/product_feature/a376b_android17_product.py")
++        product = importlib.util.module_from_spec(spec)
++        spec.loader.exec_module(product)
++        product.scope()
+     apk = work_dir / "system/system/system_ext/priv-app/SystemUI/SystemUI.apk"
+     classes = _disassemble(apk)
+     observer = classes[OBSERVER]
+@@ -81,9 +91,17 @@
+         r'\s+invoke-interface\s+\{p1,\s*\1,\s*\3\},\s*'
+         r'Lcom/android/systemui/util/settings/SettingsProxy;->getInt\(Ljava/lang/String;I\)I',
+         body)
++    if BZI6:
++        default_enabled = re.search(
++            r'(?s)const-string\s+v2,\s+"heads_up_notifications_enabled"'
++            r'\s+const/4\s+v3,\s+0x0\s+const/4\s+v4,\s+0x1'
++            r'\s+invoke-interface\s+\{v1,\s*v2,\s*v4\},\s*'
++            r'Lcom/android/systemui/util/settings/SettingsProxy;->getInt\(Ljava/lang/String;I\)I'
++            r'\s+move-result v1\s+if-eqz v1, :(cond_[0-9a-f]+)\s+const/4 v3, 0x1'
++            r'\s+:\1\s+iput-boolean v3, p1, .*;->isEnabled:Z', body)
+     if not default_enabled:
+         raise ValueError("rebuilt SystemUI lost unset-key heads-up fallback")
+-    if ("if-eqz p1" not in body or
++    if not BZI6 and ("if-eqz p1" not in body or
+             f"iput-boolean {default_enabled.group(2)}, " not in body):
+         raise ValueError("rebuilt SystemUI no longer preserves explicit heads-up opt-out")
+     edge = classes[EDGE_SERVICE]

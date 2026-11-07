@@ -1,5 +1,12 @@
 # Bản đồ fork đã đọc
 
+Kiểm bổ sung 01/11/2026: `unica/mods/keybox/` có hooks/generator/db/operations
+của UN1CA, nhưng `scripts/internal/apply_modules.sh` bỏ mod trên M4/BZI6.
+`unica/mods/settings/a376b_android17_boot_limits.py` ẩn UI và compiled gate
+cấm hook hiện tại. Trong `out/target/star2lte/apktool/system/framework/framework.jar`,
+hai proxy Keystore2 ở DEX4, `KeyStore2` ở DEX3, `KeymasterUtils` ở DEX2.
+Preflight copy và kế hoạch port: [Integrity community plan](m4-play-integrity-community-plan-20261101.md).
+
 Audit 20/10/2026, `rom/`, nhánh Android-16,
 commit `2b25ae6fc3098650be249bd1898e21e563cd5df1`. Không có AGENTS.md con trong fork.
 Đã thêm hai bản vá host-path cho công cụ dependency; chưa chạy build ROM hoặc installer.
@@ -20,8 +27,21 @@ commit `2b25ae6fc3098650be249bd1898e21e563cd5df1`. Không có AGENTS.md con tron
 | Cùng file, `_EXYNOS9810_RESTORE_BOOTING_VNDK_APEX` | Ghép com.android.vndk.v33.apex. Không suy khả năng Android 17 chỉ từ tên APEX/prop |
 | Cùng file, `_EXYNOS9810_RESTORE_BOOTING_SYSTEM_CORE` | Có khả năng thay framework/lib/lib64/Settings bằng baseline embedded. Khi đổi donor phải audit để không vô tình giữ framework cũ |
 | `.../exynos9810_boot_restore/customize.sh` | Xây lại vendor từ baseline + common/star2lte overlays; star2lte giữ baseline đã nhúng. Không phân biệt N chỉ bằng codename |
+| `.../exynos9810_boot_restore/a376b_android17_selinux.py` | Patch policy trong WORK_DIR riêng M4: khai báo alias VNDK33 cần cho BZI6, đổi đúng telephony label và bỏ một genfscon cũ trùng; không load policy trực tiếp trên thiết bị |
+| `.../product_feature/a376b_android17_sim.py` | Xác minh method hash BZI6 và giữ TelephonyFeatures.isOneTray() runtime; tránh hard-code tray count chưa có bằng chứng |
+| `.../product_feature/mdnie/a376b_hw.py` | Khôi phục mDNIe sysfs từ diff đã khóa của fork; nhánh BZI6 kiểm method/hash riêng, inline logger cũ đã mất và giữ permission check |
+| `.../product_feature/wifi/a376b_backend.py` | Nhánh BZI6 tắt APE/personalization theo cờ target; kiểm Qbox handler, ordinal37 và thanh ghi SQE thật trước khi sửa |
+| `.../product_feature/wifi/a376b_softap.py` | Nhánh BZI6 cho country fallback, power và sharing-lite; power kiểm đầu vào sau APE, sharing-lite kiểm sau power, không đổi HAL/radio blob |
+| `.../product_feature/wifi/a376b_android17_wlan.py` | Chỉ M4/BZI6/F: kiểm booster000, bỏ ba literal bảng RF donor qua empty guard sẵn có, chuyển SoftAP11ax sang query chip; không sửa vendor/calibration |
+| `.../product_feature/a376b_android17_product.py` + `a376b_android17_display.json` | Ba phase shipping/HDR/display chỉ BZI6/F/M4; pin source, giữ sensor queries; gate release đọc DEX/XML cuối |
+| `scripts/utils/smali_utils.sh` | A16 fallback cũ; BZI6/F/M4/SDK37 phân giải descriptor chính xác qua DEX và chặn thiếu/trùng class |
+| `.../product_feature/fingerprint/a376b_rear.py` | Nhánh BZI6 pin method framework/service/SystemUI và client BiometricSetting, kiểm Settings sau SPF replacement; giữ register v3 cho các cờ khác |
+| `unica/patches/legacy/a376b_android17_media.py` | Chỉ BZI6/F/M4: kiểm ELF/hash/PT_LOAD/CBZ, vá4byte native và4 default encoder đã pin; verify-compiled đọc DEX thật bằng baksmali và được gọi ở release gate |
+| `unica/patches/signature/verify_a376b17_preimages.py` | Pin ba class PM BZI6 trước patch signature riêng; giữ helper platform identity và so chứng chỉ của fork |
+| `unica/patches/legacy/lights/patch_bzi6_sehlights.py` | Pin bốn class trước ghi; giữ LogicalLight/mute, thêm overload và cache brightness, chuyển extra argument vào SehLights Parcel; dùng patch backlight BZI6 riêng |
 | `.../exynos9810_finalization/customize.sh` | Khôi phục N770F radio rồi stock_radio_restore_v5 (rild/channel/imsd); giữ libsec-ril/libril_sem đi cặp, kiểm hash cuối pipeline |
 | `target/star2lte/camera/camera-feature.xml` | Ma trận camera S9+; tái dùng, không thay bằng ma trận camera donor |
+| `unica/patches/camera/a376b_android17_features.py` | Pin marker/XML/GPPM BZI6, kiểm classifier/ARDoodle thực sự vắng; release gate kiểm claim không hồi sinh và GPPM còn trong work tree |
 | `target/star2lte/vintf/compatibility_matrix.device.xml` | Matrix thiết bị; phải so matrix/framework donor thật và log |
 | `platform/exynos9810/installer/customize.sh` | Chọn kernel ZIP theo filesystem, xác minh hash/payload/DTB, ghép ramdisk và vendor_bootfix |
 | `platform/exynos9810/installer/install_ds_ack.sh` | Phân biệt G965F/G965N từ bootloader/model, dựng kernel/DTB qua bsdiff; repack và ghi BOOT. CHƯA CHẠY |
@@ -248,3 +268,265 @@ Detailed execution and limits: docs/m2-integrated-runtime-build.md.
 24/10/2026 M2 runtime diagnostic extension: `unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_runtime_compat.py` now hash-checks and stages a volatile `/metadata` tmpfs hook in donor `system/etc/init/aconfigd.rc` for the opt-in G965F M2 profile only. The generated rc SHA is pinned in the adjacent runtime lock and checked by compiled and actual-ext4 gates. Patch0104 is after0103 in the fork series; production/M1 profiles remain off.
 
 24/10/2026 M2 attempt53 output is retained at `rom/out/releases/M2/star2lte-1792833533-dLCdbp`; read-only preflight, eight TWRP32 stages and install helper are under `logs/20261024-m2-attempt53/`. Existing fork paths remain the build, profile, hybrid vendor restore, image verification and package split implementation. The package has not been flashed under the current exact-SHA authorization; see `docs/m2-integrated-runtime-build.md`.
+
+
+25/10/2026: parallel M2 logger profile is
+`rom/target/star2lte/profiles/m2-g965f-a376b-android16-runtime-init-debug.sh`.
+It sources the existing runtime-diagnostic profile and enables only INIT_DEBUG.
+Existing `scripts/make_rom.sh` cache identity records both logger flags;
+`gen_config_file.sh` preserves them in build-config, and
+`verify_m2_runtime_image.py` audits the two logger files in actual ext4 VENDOR.
+Storage placement/rollback is documented in docs/storage-cleanup-20261025.md;
+`tools/mount-release-storage.sh` mounts only the known second-drive UUID.
+
+
+Checkpoint0124: STAR2LTE_M4_FIXED_RESOLUTION is a distinct guarded selection in
+`target/star2lte/config.sh`. Its floating-feature removal/final audit live in
+the existing device-stack and finalization customizers. The M1 base profile
+resets it, so selecting M1/M2 cannot inherit it. Checkpoint0131 later adds the
+scoped M4 profile.
+Detailed source/runtime boundaries: docs/m4-product-display.md.
+
+## Checkpoint0128 — BZI6 registry, eSE and initial UI wiring
+
+- `unica/configs/essi_a376b_android17.sh`: separate SDK37/shipping36/board34
+  registry, locked BZI6 cache suffix, dynamic SIM count and unknown-Bluetooth
+  consumer guard. It is not a ready target kernel/runtime profile.
+- `unica/patches/ese/a376b_android17_baseline.py`: pins four BZI6 classes,
+  applies existing target-none substitutions and checks compiled fields/paths.
+- `unica/patches/product_feature/wifi/a376b_android17_ui.py/json`: pins13 retained
+  UI classes and checks canonical compiled bodies before/after the skipped S22
+  UI edits. Hardware capability configuration remains target Wi-Fi5.
+- `scripts/utils/common_utils.sh::IS_A376B_M4_BOOT_TEST`: strict BZI6/F/M4/SDK37
+  predicate used only for reviewed optional selection branches.
+- `unica/mods/settings/a376b_android17_boot_limits.py`: initial control pruning,
+  BZI6 Intelligence key array and compiled search/remap gate. The existing
+  a376b_search.py now has separate BZI6 input pins, preserving A16 output.
+- `scripts/make_rom.sh`: scoped Face omission entry and donor-hash coverage for
+  four M4 runtime/UI selections. Existing boot/release verifiers gain the
+  corresponding selected Face/Bixby/Settings checks; other M2-only workarounds
+  remain restricted.
+
+Evidence/limits: docs/m4-source-selection.md and
+logs/20261026-m4-profile-preflight. Full M4 native32/runtime staging and profile
+are still pending; no phone operation occurred in this checkpoint.
+
+## Checkpoint0129 — M4 native32 staging within existing fork
+
+- `.../exynos9810_boot_restore/a376b_native32.py::lock_path`: existing M2 lock
+  by default; exact BZI6/F/M4/ext4/no-KSU selects the separate
+  `a376b_android17_native32.lock.json`. Mixed M2 flags reject.
+- Existing restore customizer uses that lock and
+  `OUT_DIR/compat/a376b-android17-native32`; signing identity remains the local
+  ignored `keys/m2-native32-apex`. No standalone ROM builder is added.
+- Existing release-default A17 branch calls native32 verify. Existing ext4
+  image verifier calls `verify-image` on M4 SYSTEM. This checks only the
+  native32/app64 slice, not all still-pending M4 runtime/vendor/boot contracts.
+- M1 base profile resets EXYNOS9810_M4_RUNTIME_COMPAT; M2 inherits that reset.
+
+Exact APEX, actual M2/M4 staging, real ext4 fixture and image entrypoint pass.
+119 patches replay to102 matching text files,118 old hashes unchanged.
+Full M4 build/image/flash remain pending. See docs/m4-native32-runtime.md.
+
+
+## Checkpoint0130 — isolated BZI6 runtime staging and image gate
+
+- `.../exynos9810_boot_restore/a376b_android17_runtime_compat.py` consumes its
+  adjacent hash lock, validates M4 scope and donor marker, stages matching A37
+  camera/audio/graphics V7/Tethering plus vendor_kg and vendor aconfig-v2.
+- `a376b_metadata_bind.py --milestone M4` uses the existing CACHE-backed
+  `/metadata` hook with M4-specific SELinux aliases; M2 remains its default.
+- Existing restore/finalization scripts invoke the M4-only source path and
+  keep the A37 camera server/app native. Release defaults and image verification
+  call the new work-tree/real-ext4 gate; no new build system was added.
+- Existing `adb_defaults.py` keeps one-time SettingsProvider seeds and no-RSA
+  properties, with a strict BZI6 AdbService lifecycle read. The source hashes
+  for BZI6 `services.jar`/SettingsProvider are separate from staged runtime
+  files; the existing Rampart/SecSettings/SUW UI is retained and statically
+  checked, not patched.
+- The image gate checks locked bytes, ext4 mode/owner/SELinux, vendor account,
+  init bind and aconfig files. Positive ext4 fixture and wrong-mode/label
+  negatives pass; the pre-0130 M2 metadata output is byte-identical.
+
+Full M4 profile/build and runtime are still absent. No kernel, vendor binary,
+radio, modem or device partition was modified. See
+`docs/m4-native32-runtime.md` and `logs/20261026-m4-runtime-0130/`.
+
+
+
+## Checkpoint0131 — scoped M4 profile and source/cache switch
+
+- `target/star2lte/profiles/m4-g965f-a376b-android17-no-ksu.sh` sources the
+  pinned M1/F/no-KSU DS-ACK baseline, then selects BZI6, M4 runtime/native32,
+  metadata bind and the reviewed fixed-resolution/donor-Wi-Fi/boot-limit choices.
+  It explicitly keeps every M2-only compatibility flag false.
+- `patches/fork/0131-add-scoped-g965f-m4-android17-profile.patch` adds the
+  profile to the existing fork series; its hash is in `sources.lock.json`.
+- `logs/20261026-m4-profile-0131/profile-config-switch.txt` records actual
+  isolated M2→M4→M2 generator/cache-marker verification. `rom/out/config.sh`
+  and the M2 config/output remain unchanged.
+- This is a scoped source profile, not an accepted release. Generic module/Knox
+  dispatch, compiled work-cache switching and final boot/vendor/image gates remain.
+  Clean build attempt01 stopped at the NFC guard before image creation.
+
+
+## Checkpoint0132 — BZI6 Android17 NFC APEX
+
+- `unica/patches/exynos9810_device_stack/customize.sh` now has a strict M4/BZI6/
+  SDK37 branch that retains `system/apex/com.android.nfcservices.capex`; M1/M2
+  continue using the existing Android16 `NfcNci.apk` route.
+- `nfc/a376b_android17_nfc.lock.json` pins the exact donor capex and records the
+  embedded `com.android.nfc` v17 APK/JNI hashes. Static APEX JNI inspection sees
+  HIDL NFC1.0/1.2 and AIDL symbols; device logs are still needed for runtime proof.
+- `scripts/internal/verify_m4_runtime_image.py` verifies donor/work capex and
+  `SecNfc.apk` hashes plus packed SYSTEM bytes, mode0644, root ownership and
+  system_file SELinux labels.
+- Source audit, positive exact-file fixture, and changed-SecNfc negative pass in
+  `logs/20261026-m4-nfc-0132/nfc-source-audit.json`; attempt01's exact path error
+  is retained in `logs/20261026-m4-profile-0131/m4-build-attempt01.txt`.
+- All122 ordered patches replay on pinned fork commit `2b25ae6`; all four 0132
+  source files match byte-for-byte. Replay log:
+  `logs/20261026-m4-nfc-0132/replay-local-0132-success.txt`.
+
+Complete build and packed-image verification are still pending. No phone
+operation occurred. See `docs/m4-nfc-integration.md`.
+
+
+## Checkpoint0133 — BZI6 donor camera dispatch
+
+- Attempt02 passed the NFC branch, then stopped at
+  `customize.sh:4562:_EXYNOS9810_PATCH_ONEUI8_CAMERA_APP` because the A37 Android17
+  camera APK lacks `PackageUtil.smali`.
+- Patch0133 scopes the legacy One UI8 camera Smali adapter away from only the
+  exact M4/G965F/SDK37 selection. Existing M4 finalization keeps the exact
+  hash-locked BZI6 SamsungCamera APK/cameraserver/runtime. M1/M2 dispatch stays
+  on the prior behavior.
+- The donor runtime lock/source verification and valid/invalid profile fixtures
+  pass. The release image and camera runtime remain unverified. Details:
+  `docs/m4-plan.md`, `docs/patch-matrix.md`, and
+  `logs/20261026-m4-nfc-0132/camera-source-audit.json`.
+
+
+26/10/2026 M4 BZI6 patch0142: the existing scripts/internal/apply_modules.sh
+dispatcher routes the donor vendor-mismatch warning patch to a separate
+hash-locked Android17 decoded-Smali adapter only for exact M4 G965F/BZI6 scope.
+Rationale and validation are in docs/patch-matrix.md; fixture/replay/Apktool
+assembly evidence is under logs/20261026-m4-vendor-warning-0142/.
+
+
+26/10/2026 M4 BZI6 patch0143: the existing unica/patches/nfc/customize.sh
+dispatch preserves the exact donor Android17 sidecar libraries only for the
+hash-pinned G965F/PHN target when both stock sidecars are absent. Patch rationale
+and checks are in docs/patch-matrix.md; source/ELF/dispatch/replay evidence is
+under logs/20261026-m4-vendor-warning-0142/.
+
+
+27/10/2026 — M4 runtime mount owner: `a376b_metadata_bind.py` now removes only
+the secondary early/late mount_all commands for M4 after vendor baseline
+restore. `a376b_android17_runtime_compat.py` validates sole canonical ownership,
+and the existing `verify_m4_runtime_image.py` composes this check with actual
+rc image/work byte equality. M2 metadata transform is unchanged. Both legacy
+rc files are still present because their other hardware actions differ.
+
+
+27/10/2026 — M4 ueventd and diagnostics: a376b_android17_runtime_compat.py
+copies/verifies the pinned existing vendor/ueventd.rc at vendor/etc/ueventd.rc;
+boot_restore/customize.sh registers the new file metadata and the real M4
+ext4 gate checks it. The separate M4 runtime-init-debug profile reuses the
+existing WIPEONFORK archive and CACHE logger; the image gate checks logger
+artifacts only when selected. No new build system or kernel build is involved.
+
+
+## 27/10/2026 — patch0192, M4 additive graphics V6
+
+Actual paired-network log exposes Hybrid Vendor libgralloctypes V6 dependency
+after bpfloader exit0. Add locked S22 64-bit V6 alongside BZI6 V7 through the
+existing M4 runtime helper/lock, restore metadata loop and real-ext4 verifier.
+Helper negatives, actual ext4 byte/owner/mode/label fixture and182-patch/126-file
+replay PASS;181 prior hashes unchanged. M2, network lock and kernel remain
+unchanged. Reason/files/tests/rollback: docs/m4-graphics-v6-runtime.md.
+
+
+## 27/10/2026 — patch0193, retained mapper3/2 fallback
+
+Actual V6 trial exposes BZI6 libui API>35 guard skipping retained mapper3/2
+code. Extend existing M4 helper/lock/restore/image gates with a single locked
+four-byte branch adaptation; preserve genuine mapper/allocator load checks,
+all other bytes and OS properties. Source/output/context/ELF/branch-target
+gates, idempotence, bad destination/wrong M2/N rejection, actual ext4 metadata
+fixture and183-patch/126-file replay PASS;182 earlier hashes unchanged.
+Reason/files/runtime limits/rollback: docs/m4-graphics-v6-runtime.md.
+
+
+## 27/10/2026 — patch0194, complete mapper call-site coverage
+
+Actual0193 trial still fails in inlined GraphicBuffer constructor. Full BZI6
+executable BL audit finds three API35 guards: out-of-line constructor, inline
+constructor and preloadHal. Extend only existing M4 helper/lock to cover all
+three with per-site segment/context/branch-target and whole-output hashes;
+12 instruction bytes change, real mapper/allocator load checks stay. Helper,
+actual ext4 metadata fixture and184-patch/126-file replay PASS;183 previous
+hashes unchanged. Runtime result is separate. Reason/files/rollback and failed
+0193 evidence: docs/m4-graphics-v6-runtime.md.
+
+
+## 27/10/2026 — patch0195, real A17 native connectivity composition
+
+New diagnostic-only helper/lock in the existing vendor-restore module compose
+S22 Tethering with only the actual BZI6 connectivity-native DSO replaced. No
+API stub, Java/framework downgrade, normal profile integration or kernel
+change. All remaining payload bytes/links and75 metadata records preserved;
+AVB/v3/4KiB and three identical independent builds PASS.185-patch/128-file
+replay PASS;184 previous hashes unchanged. Static native consumers audited;
+actual runtime and networking remain separate gates. Files/reason/limits/
+rollback: docs/m4-native-connectivity-runtime.md.
+
+- source0196: vendor-restore `a376b_android17_network_l4s.py` is imported only
+  for diagnostic `a376b_android17_network_native.py --l4s-compat`; donor JARs,
+  output and existing signing identity are hash-pinned. No normal profile
+  automatically enables it. Real services API audit/private builds and device
+  test: logs/20261027-m4-network-java and logs/20261027-m4-l4s-test.
+
+- source0197: vendor-restore a376b_android17_network_stats.py is an optional
+  adapter called only by the existing network-native builder --stats-compat
+  (implies196 L4S). It changes main/t boot Java JARs, not the stats Binder
+  service. support/diagnostics/m4-network-stats contains source-only runtime
+  fixture; private logs/20261028-m4-stats-test holds narrow stats-data rollback.
+
+
+0198 adds explicit diagnostic-only a376b_android17_meminfo.py/.lock.json
+inside exynos9810_boot_restore; it is not selected by any normal profile.
+Read actual BZI6/S22 libmeminfo disassembly and installed file before the
+bounded GPU BPF invalid-fd experiment. See docs/m4-meminfo-runtime.md.
+
+
+## M4 runtime-repair additions — 28/10/2026
+
+- `unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_postboot_diagnostic.py`: strict-scope composition of already measured network APEX and libmeminfo outputs after final vendor restore. It uses the existing network/meminfo builders, not a new build system.
+- `unica/patches/dvfs/a376b_android17_dvfs_policy.py` + lock: exact hash-pinned removal of the user-approved BZI6-unsupported DEX special node; no generic suppression.
+- `scripts/internal/verify_m4_runtime_image.py`: diagnostic profile checks compiled SDHMS policy payload, runtime files and ext4 bytes/metadata. Full final image gate still needs a new build.
+- `patches/fork/series` now ends at0199/0200; `sources.lock.json` pins both patch hashes. Replay fixture checked each patch against its saved preimage.
+
+- `unica/patches/exynos9810_device_stack/exynos9810_finalization/a376b_android17_facewidget_thread.py`: exact BZI6 `PluginFaceWidgetManager` dispatch bridge; routes one-time init through the existing main-looper handler with connect-generation and plugin-identity checks. `verify-apk` performs Apktool compile/decode validation.
+
+- `unica/patches/exynos9810_device_stack/nfc/a376b_android17_nfc_native.py`: M4/G965F-only verifier for the matching BZI6 NFC APEX JNI and strict removal of the PHN global JNI shadow after restores. The target SLSI service, firmware/RF and Samsung JNI remain from the Exynos9810 target stack. The compiled image gate checks the nested APEX JNI hash and rejects a global PHN JNI. Runtime classloader namespace/JNI/HAL/tag acceptance is still required.
+
+28/10 patch0210 extends the existing `exynos9810_boot_restore/a376b_android17_network_native.py` composition helper with a hash-pinned BZI6 resolver TLS member set and recursive APEX DT_NEEDED/import gate. The existing selected diagnostic profile consumes its locked stats output; normal M4 profile remains separate. Device tests can replace only the APEX file with a byte-verified backup, retaining BOOT/vendor/radio. Full provenance: docs/m4-postboot-runtime-repair.md.
+
+Patch0211 adds `--system-resolver` to the existing network composition helper. The selected postboot helper stages BZI6 resolver plus the one-entry system linker protobuf transform, verifies14 SYSTEM DSOs+statsd, and exposes both paths through image_paths() to the real ext4 verifier. Finalizer applies the reviewed system_lib_file/system_file metadata. Earlier APEX-resolver modes remain explicit historical diagnostic modes; selected M4 diagnostic uses the SYSTEM namespace mode.
+
+M4 ION display boundary (0212): `a376b_android17_runtime_compat.py::ion_file_context` stages/verifies one exact legacy `/dev/ion` pathname in platform contexts; the runtime lock pins donor contexts and rule. Existing apply/verify owns it, and `verify_m4_runtime_image.py` includes byte/owner/mode/file_contexts_file metadata checks inside packed SYSTEM. No new build system, vendor node permission or policy allow rule.
+
+Source preparation audit28/10: `tools/prepare_fork.sh` selects -p2 for historical a/rom/ patch headers, otherwise -p1. Full203-patch replay reproduces140 current source files; default GNU patch fuzz remains needed for14 historical patches.0212 separately replays fuzz0.0209 hunk-count correction and0213 release-verifier import-scope record do not alter tested APK/APEX/device bytes.
+
+28/10 post0212 plan/code ownership: Bluetooth JNI/capability adaptations belong to `unica/patches/bluetooth/customize.sh`; AOD/Infinity rebuild and payload/gates to `unica/mods/s9_infinity_Wallpaper/source/rebuild.py` plus source/aod and existing SystemUI main-thread adapter; thermal pathname policy to final boot_restore mapping with DVFS parser/asset lock; networking to existing network_native/postboot helpers after identifying the actual fwmark parser error owner. Current FwmarkServer string provenance is BZI6 netd, not enough evidence to replace S22 libnetd_updatable blindly.
+
+29/10 Bluetooth follow-up: `unica/patches/bluetooth/a376b_android17_fdf1_skip.py`
+and its JSON lock own the one-call BZI6 sender repair. The existing
+`unica/patches/bluetooth/customize.sh` applies it only when the explicit
+M4/G965F/BZI6/SDK37/star2lte profile flag is true, including final reapply;
+`scripts/internal/verify_m4_runtime_image.py` verifies the final JNI hash in the
+packed ext4 image. The adjacent `a376b_android17_native_backend.py` and lock
+reproduce the VaultKeeper backend already used by attempt0222. Patch series and
+lock entries are0219/0220; fixture/replay passes, while build and device runtime
+remain pending.

@@ -1,0 +1,158 @@
+diff --git a/unica/patches/camera/a376b_android17_features.py b/unica/patches/camera/a376b_android17_features.py
+new file mode 100644
+--- /dev/null
++++ b/unica/patches/camera/a376b_android17_features.py
+@@ -0,0 +1,86 @@
++#!/usr/bin/env python3
++"""Guard BZI6 optional camera claims without removing its GPPM package."""
++
++from hashlib import sha256
++from pathlib import Path
++import os
++import sys
++import xml.etree.ElementTree as ET
++
++
++FEATURES = (
++    "SEC_FLOATING_FEATURE_CAMERA_CONFIG_ACTION_CLASSIFIER",
++    "SEC_FLOATING_FEATURE_SAIV_CONFIG_ARDOODLE_LIB",
++)
++ABSENT = (
++    "lib64/libVideoClassifier.camera.samsung.so",
++    "lib64/libtensorflowLite2_11_0_dynamic_camera.so",
++    "etc/ardoodle",
++    "lib64/lib_pet_detection.arcsoft.so",
++)
++GPPM = "priv-app/GlobalPostProcMgr/GlobalPostProcMgr.apk"
++FLOATING_SHA = "76f9e27c92500562fe4163366c07b71e2ac41e510a57b643500e3a7b68aa1989"
++GPPM_SHA = "409b23d911d63addc7ead0abae8771df5782474428c31eff746bb684388d488b"
++
++
++def scope():
++    expected = {
++        "ROM_SOURCE_CONFIG": "essi_a376b_android17",
++        "ROM_MILESTONE": "M4",
++        "TARGET_CODENAME": "star2lte",
++        "TARGET_PLATFORM": "exynos9810",
++        "STAR2LTE_BUILD_MODEL": "SM-G965F",
++        "SOURCE_PLATFORM_SDK_VERSION": "37",
++        "SOURCE_FIRMWARE_CACHE_SUFFIX": "A376BXXU5BZI6",
++        "SOURCE_FIRMWARE": "SM-A376B/XXV/LOCAL",
++    }
++    for key, value in expected.items():
++        if os.environ.get(key) != value:
++            raise ValueError("Unreviewed BZI6 camera scope: " + key)
++
++
++def no_claims(path):
++    root = ET.parse(path).getroot()
++    for key in FEATURES:
++        for item in root.iter(key):
++            if (item.text or "").strip():
++                raise ValueError(f"Unsupported camera claim {key} in {path}")
++
++
++def no_implementation(system):
++    for relative in ABSENT:
++        path = system / relative
++        if path.exists() or path.is_symlink():
++            raise ValueError("BZI6 optional camera layout changed: " + relative)
++
++
++def verify_source(source):
++    marker = (source / ".extracted").read_text().strip()
++    if marker != "A376BXXU5BZI6/A376BOLM5BZI6/A376BXXU5BZI6":
++        raise ValueError("BZI6 camera source marker mismatch")
++    system = source / "system/system"
++    floating = system / "etc/floating_feature.xml"
++    if sha256(floating.read_bytes()).hexdigest() != FLOATING_SHA:
++        raise ValueError("BZI6 camera floating-feature hash mismatch")
++    no_claims(floating)
++    no_implementation(system)
++    if sha256((system / GPPM).read_bytes()).hexdigest() != GPPM_SHA:
++        raise ValueError("BZI6 GPPM positive input changed")
++    print("PASS BZI6 classifier/ARDoodle absent; donor GPPM present and pinned")
++
++
++def verify_work(work):
++    system = work / "system/system"
++    no_claims(system / "etc/floating_feature.xml")
++    no_claims(work / "vendor/etc/floating_feature.xml")
++    no_implementation(system)
++    if not (system / GPPM).is_file() or (system / GPPM).stat().st_size == 0:
++        raise ValueError("BZI6 GPPM was lost from the release work tree")
++    print("PASS M4 optional camera claims absent from final XML; GPPM retained")
++
++
++if __name__ == "__main__":
++    if len(sys.argv) != 3 or sys.argv[1] not in ("verify-source", "verify-work"):
++        raise SystemExit("usage: a376b_android17_features.py verify-source SOURCE | verify-work WORK")
++    scope()
++    {"verify-source": verify_source, "verify-work": verify_work}[sys.argv[1]](Path(sys.argv[2]))
+diff --git a/unica/patches/camera/customize.sh b/unica/patches/camera/customize.sh
+--- a/unica/patches/camera/customize.sh
++++ b/unica/patches/camera/customize.sh
+@@ -15,6 +15,13 @@
+ 
+ SOURCE_FIRMWARE_PATH="$(GET_FIRMWARE_CACHE_KEY "$SOURCE_FIRMWARE")" || return 1
+ TARGET_FIRMWARE_PATH="$(cut -d "/" -f 1 -s <<< "$TARGET_FIRMWARE")_$(cut -d "/" -f 2 -s <<< "$TARGET_FIRMWARE")"
++
++_A376B_M4_OPTIONAL_CAMERA=false
++if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++    python3 "$MODPATH/a376b_android17_features.py" verify-source \
++        "$FW_DIR/$SOURCE_FIRMWARE_PATH" || return 1
++    _A376B_M4_OPTIONAL_CAMERA=true
++fi
+ 
+ if [ -d "$FW_DIR/$TARGET_FIRMWARE_PATH/system/system/cameradata/portrait_data" ]; then
+     DELETE_FROM_WORK_DIR "system" "system/cameradata/portrait_data"
+@@ -142,13 +149,14 @@
+ else
+     if [ "$TARGET_CAMERA_CONFIG_ACTION_CLASSIFIER" ]; then
+         if [ "$TARGET_PLATFORM" = "exynos9810" ] && \
+-                [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] && \
++                { [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] || \
++                    [ "$_A376B_M4_OPTIONAL_CAMERA" = true ]; } && \
+                 [ ! -e "$FW_DIR/$SOURCE_FIRMWARE_PATH/system/system/lib64/libVideoClassifier.camera.samsung.so" ] && \
+                 [ ! -L "$FW_DIR/$SOURCE_FIRMWARE_PATH/system/system/lib64/libVideoClassifier.camera.samsung.so" ] && \
+                 [ ! -e "$FW_DIR/$SOURCE_FIRMWARE_PATH/system/system/lib64/libtensorflowLite2_11_0_dynamic_camera.so" ] && \
+                 [ ! -L "$FW_DIR/$SOURCE_FIRMWARE_PATH/system/system/lib64/libtensorflowLite2_11_0_dynamic_camera.so" ]; then
+             # The inherited S22/legacy floating-feature file advertises a
+-            # classifier absent from verified A376B AZH4. Do not advertise
++            # classifier absent from verified A376B source. Do not advertise
+             # this optional Single Take feature without its implementation.
+             LOG "- Disabling inherited optional action-classifier claim absent from A376B donor"
+             SET_FLOATING_FEATURE_CONFIG "SEC_FLOATING_FEATURE_CAMERA_CONFIG_ACTION_CLASSIFIER" --delete
+@@ -259,7 +267,8 @@
+     else
+         if [ "$TARGET_SAIV_CONFIG_ARDOODLE_LIB" ]; then
+             if [ "$TARGET_PLATFORM" = "exynos9810" ] && \
+-                    [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] && \
++                    { [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] || \
++                        [ "$_A376B_M4_OPTIONAL_CAMERA" = true ]; } && \
+                     [ ! -e "$FW_DIR/$SOURCE_FIRMWARE_PATH/system/system/etc/ardoodle" ] && \
+                     [ ! -L "$FW_DIR/$SOURCE_FIRMWARE_PATH/system/system/etc/ardoodle" ] && \
+                     [ ! -e "$FW_DIR/$SOURCE_FIRMWARE_PATH/system/system/lib64/lib_pet_detection.arcsoft.so" ] && \
+@@ -448,7 +457,7 @@
+     fi
+ fi
+ 
+-unset SOURCE_FIRMWARE_PATH TARGET_FIRMWARE_PATH \
++unset SOURCE_FIRMWARE_PATH TARGET_FIRMWARE_PATH _A376B_M4_OPTIONAL_CAMERA \
+     SOURCE_CAMERA_CONFIG_ACTION_CLASSIFIER TARGET_CAMERA_CONFIG_ACTION_CLASSIFIER \
+     SOURCE_CAMERA_CONFIG_GPPM_SOLUTIONS TARGET_CAMERA_CONFIG_GPPM_SOLUTIONS \
+     SOURCE_GALLERY_CONFIG_PET_CLUSTER_VERSION TARGET_GALLERY_CONFIG_PET_CLUSTER_VERSION \
+diff --git a/scripts/internal/verify_exynos9810_release_defaults.py b/scripts/internal/verify_exynos9810_release_defaults.py
+--- a/scripts/internal/verify_exynos9810_release_defaults.py
++++ b/scripts/internal/verify_exynos9810_release_defaults.py
+@@ -35,6 +35,10 @@
+ def verify(work: Path, target: str) -> None:
+     if target not in ("starlte","star2lte","crownlte"): raise RuntimeError("Unsupported target")
+     system=work/"system/system"
++    if os.environ.get("ROM_SOURCE_CONFIG") == "essi_a376b_android17":
++        import subprocess
++        camera_checker=ROOT/"unica/patches/camera/a376b_android17_features.py"
++        subprocess.run([sys.executable,str(camera_checker),"verify-work",str(work)],check=True)
+     if os.environ.get("ROM_SOURCE_CONFIG") == "essi_a376b_android16":
+         if (target, os.environ.get("ROM_MILESTONE")) != ("star2lte", "M2"):
+             raise RuntimeError("Unreviewed native32 A376B release profile")

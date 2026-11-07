@@ -1,0 +1,232 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] use the BZI6 NFC APEX Java/JNI pair on M4 G965F
+
+# Reason: fresh NFC logs show PHN JNI cannot load libnfc-nci.so; source audit found the PHN JNI NativeNfcManager contract differs from BZI6 Java (72 vs 54 native declarations).
+# Affected: existing NFC customization, finalization, M4 ext4 image verifier, plus a profile-scoped source/work helper and lock.
+# Verify: extract/hash the JNI embedded in BZI6 capex, verify exact PHN source hash and APEX/SecNfc donor hashes, ensure no system JNI shadow, run Python/Bash syntax and patch replay fixtures. Live namespace/JNI/HAL/tag checks remain pending.
+# Rollback: reverse this patch and rebuild M4 work tree; no source firmware or device partition is modified.
+
+--- a/rom/unica/patches/nfc/customize.sh
++++ b/rom/unica/patches/nfc/customize.sh
+@@ -70,6 +70,11 @@
+             _LOG "Unreviewed G965F PHN libnfc_nci_jni.so"
+             return 1
+         }
++        # The A37 NFC APEX carries its matching JNI implementation. The PHN
++        # JNI has a different NativeNfcManager native-method contract and must
++        # not shadow the APEX library in the app linker namespace.
++        DELETE_FROM_WORK_DIR "system" "system/lib64/libnfc_nci_jni.so"
++        LOGW "M4 uses the hash-pinned BZI6 NFC APEX JNI; omitting PHN JNI with incompatible Java native signatures"
+         if [ ! -e "$_M4_NFC_SOURCE_LIBDIR/libnfc_prop_extn.so" ] &&                 [ ! -e "$_M4_NFC_SOURCE_LIBDIR/libnfc_vendor_extn.so" ]; then
+             [ "$(sha256sum "$_M4_NFC_DONOR_LIBDIR/libnfc_prop_extn.so" | cut -d ' ' -f 1)" =                 "9f75da0bfc77a6a1727616d70fe5c0a7cb25c940e8ca54a7b3397d5af2e1a449" ] &&             [ "$(sha256sum "$_M4_NFC_DONOR_LIBDIR/libnfc_vendor_extn.so" | cut -d ' ' -f 1)" =                 "bb410612066722ba02db56d74b3a457f25e8c12fa0b6bafbe101f25c77439d02" ] || {
+                 _LOG "Unreviewed BZI6 donor NFC extension sidecars"
+--- a/rom/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
++++ b/rom/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
+@@ -7575,4 +7575,15 @@
+         0 0 644 "u:object_r:system_lib_file:s0"
+     python3 "$SRC_DIR/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_postboot_diagnostic.py" \
+         verify --work-dir "$WORK_DIR" --donor-root "$FW_DIR/$EXYNOS9810_SOURCE_CACHE_KEY" || return 1
++    # The PHN JNI's Java contract differs from the BZI6 NativeNfcManager.
++    # Reapply after all donor restores so only the matching JNI inside the
++    # pinned NFC APEX remains available; the S9 SLSI HAL stack stays intact.
++    python3 "$SRC_DIR/unica/patches/exynos9810_device_stack/nfc/a376b_android17_nfc_native.py" \
++        apply-work --work-dir "$WORK_DIR" \
++        --target-root "$FW_DIR/SM-G965F_PHN" \
++        --donor-root "$FW_DIR/$EXYNOS9810_SOURCE_CACHE_KEY" || return 1
++    python3 "$SRC_DIR/unica/patches/exynos9810_device_stack/nfc/a376b_android17_nfc_native.py" \
++        verify-work --work-dir "$WORK_DIR" \
++        --target-root "$FW_DIR/SM-G965F_PHN" \
++        --donor-root "$FW_DIR/$EXYNOS9810_SOURCE_CACHE_KEY" || return 1
+ fi
+--- a/rom/scripts/internal/verify_m4_runtime_image.py
++++ b/rom/scripts/internal/verify_m4_runtime_image.py
+@@ -9,6 +9,7 @@
+ import argparse
+ import hashlib
+ import importlib.util
++import io
+ import json
+ import os
+ import re
+@@ -93,6 +94,26 @@
+             if found_hash != expected_hash:
+                 raise ValueError("M4 " + label + " hash mismatch in " + tree_name + ": " + found_hash)
+         rels.append(image_rel)
++    # BZI6 packages its JNI beside the Java classes in the NFC APEX. The
++    # target PHN JNI was compiled for a different NativeNfcManager signature
++    # set (72 methods vs 54 in BZI6), so a global /system copy must not shadow
++    # the APEX-matched implementation.
++    system_jni = work / "system/system/lib64/libnfc_nci_jni.so"
++    if system_jni.exists() or system_jni.is_symlink():
++        raise ValueError("M4 must omit the PHN system JNI and use BZI6 NFC APEX JNI")
++    capex = donor / lock["source_capex_path"]
++    with zipfile.ZipFile(capex) as capex_zip:
++        original_apex = capex_zip.read("original_apex")
++    with zipfile.ZipFile(io.BytesIO(original_apex)) as apex_zip:
++        payload = apex_zip.read("apex_payload.img")
++    with tempfile.TemporaryDirectory(prefix="m4-nfc-apex-") as td:
++        payload_path = Path(td) / "apex_payload.img"
++        embedded_jni = Path(td) / "libnfc_nci_jni.so"
++        payload_path.write_bytes(payload)
++        run(["debugfs", "-R", "dump " + lock["apex_embedded_jni_path"] + " " + str(embedded_jni), str(payload_path)])
++        found_hash = hashlib.sha256(embedded_jni.read_bytes()).hexdigest()
++        if found_hash != lock["apex_embedded_jni_sha256"]:
++            raise ValueError("M4 BZI6 NFC APEX embedded JNI hash mismatch: " + found_hash)
+     return rels
+ 
+ 
+--- /dev/null
++++ b/rom/unica/patches/exynos9810_device_stack/nfc/a376b_android17_nfc_native.py
+@@ -0,0 +1,107 @@
++#!/usr/bin/env python3
++"""Select and verify the matching BZI6 NFC APEX Java/JNI pair for M4/G965F.
++
++Reason: the observed crash was caused by the PHN system JNI's missing provider,
++but audit found its NativeNfcManager contract differs from BZI6 Java (72 vs 54
++declared native methods). The BZI6 APEX contains the JNI built with its Java.
++Files: removes only the PHN global libnfc_nci_jni.so from the M4 work tree;
++keeps target SLSI vendor/HAL and Samsung NFC JNI untouched.
++Verify: lock the input blobs and embedded APEX JNI; verify the final work tree
++contains the exact BZI6 APEX and has no global PHN JNI shadow. Runtime HAL/JNI
++registration and tag I/O remain required.
++Rollback: reverse this profile-scoped call and restore the original target JNI;
++no source firmware or device partition is modified.
++"""
++from pathlib import Path
++import argparse
++import hashlib
++import io
++import json
++import subprocess
++import tempfile
++import zipfile
++
++HERE = Path(__file__).resolve().parent
++LOCK = HERE / "a376b_android17_nfc_native.lock.json"
++
++
++def sha(path):
++    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
++
++
++def read_lock():
++    return json.loads(LOCK.read_text())
++
++
++def extract_apex_jni(capex, lock):
++    with zipfile.ZipFile(capex) as capex_zip:
++        original_apex = capex_zip.read("original_apex")
++    with zipfile.ZipFile(io.BytesIO(original_apex)) as apex_zip:
++        payload = apex_zip.read("apex_payload.img")
++    with tempfile.TemporaryDirectory(prefix="m4-nfc-apex-") as td:
++        payload_path = Path(td) / "apex_payload.img"
++        jni_path = Path(td) / "libnfc_nci_jni.so"
++        payload_path.write_bytes(payload)
++        subprocess.run(["debugfs", "-R", "dump " + lock["apex_embedded_jni_path"] + " " + str(jni_path),
++                        str(payload_path)], check=True, capture_output=True, text=True)
++        if not jni_path.is_file() or sha(jni_path) != lock["apex_embedded_jni_sha256"]:
++            raise ValueError("BZI6 NFC APEX embedded JNI hash mismatch")
++
++
++def verify_sources(target_root, donor_root):
++    lock = read_lock()
++    target_root, donor_root = Path(target_root), Path(donor_root)
++    target_jni = target_root / "system/system/lib64/libnfc_nci_jni.so"
++    if not target_jni.is_file() or sha(target_jni) != lock["target_jni_sha256"]:
++        raise ValueError("Unreviewed G965F PHN NFC JNI input")
++    capex = donor_root / lock["source_capex_path"]
++    if not capex.is_file() or sha(capex) != lock["source_capex_sha256"]:
++        raise ValueError("Unreviewed BZI6 NFC APEX input")
++    sec_nfc = donor_root / lock["system_sec_nfc_apk_path"]
++    if not sec_nfc.is_file() or sha(sec_nfc) != lock["system_sec_nfc_apk_sha256"]:
++        raise ValueError("Unreviewed BZI6 SecNfc input")
++    extract_apex_jni(capex, lock)
++    return lock
++
++
++def verify_work(work, target_root, donor_root):
++    lock = verify_sources(target_root, donor_root)
++    work = Path(work)
++    for rel, expected in ((lock["source_capex_path"], lock["source_capex_sha256"]),
++                          (lock["system_sec_nfc_apk_path"], lock["system_sec_nfc_apk_sha256"])):
++        path = work / "system" / rel.removeprefix("system/")
++        if not path.is_file() or sha(path) != expected:
++            raise ValueError("M4 NFC donor input is not retained in work tree: " + rel)
++    shadow = work / "system/system/lib64/libnfc_nci_jni.so"
++    if shadow.exists() or shadow.is_symlink():
++        raise ValueError("PHN NFC JNI still shadows the BZI6 APEX implementation")
++    return {"apex_jni_sha256": lock["apex_embedded_jni_sha256"],
++            "system_phn_jni": "omitted", "target_hal": "star2lte SLSI retained"}
++
++
++def main():
++    parser = argparse.ArgumentParser(description=__doc__)
++    sub = parser.add_subparsers(dest="command", required=True)
++    for name in ("verify-source", "apply-work", "verify-work"):
++        p = sub.add_parser(name)
++        p.add_argument("--work-dir", type=Path)
++        p.add_argument("--target-root", type=Path, required=True)
++        p.add_argument("--donor-root", type=Path, required=True)
++    args = parser.parse_args()
++    if args.command == "verify-source":
++        lock = verify_sources(args.target_root, args.donor_root)
++        result = {"apex_jni_sha256": lock["apex_embedded_jni_sha256"], "result": "PASS"}
++    else:
++        if not args.work_dir:
++            parser.error("--work-dir is required")
++        if args.command == "apply-work":
++            verify_sources(args.target_root, args.donor_root)
++            shadow = args.work_dir / "system/system/lib64/libnfc_nci_jni.so"
++            shadow.unlink(missing_ok=True)
++        result = verify_work(args.work_dir, args.target_root, args.donor_root)
++        result["result"] = "PASS"
++    print(json.dumps(result, sort_keys=True))
++
++
++if __name__ == "__main__":
++    main()
+--- /dev/null
++++ b/rom/unica/patches/exynos9810_device_stack/nfc/a376b_android17_nfc_native.lock.json
+@@ -0,0 +1,42 @@
++{
++  "schema": 1,
++  "scope": {
++    "source_config": "essi_a376b_android17",
++    "milestone": "M4",
++    "source_firmware": "SM-A376B/XXV/A376BXXU5BZI6",
++    "target": "star2lte",
++    "target_model": "SM-G965F",
++    "source_platform_sdk": 37,
++    "target_firmware": "SM-G965F/PHN/352966091234565"
++  },
++  "target_jni_path": "system/system/lib64/libnfc_nci_jni.so",
++  "target_jni_sha256": "ed74c2fc3c76a835d0fe88043366b3e8c86a920c503cf247355cc84f94efa042",
++  "source_capex_path": "system/system/apex/com.android.nfcservices.capex",
++  "source_capex_sha256": "4a809ebc2d99b5f68066788bd5eb9710139487c55bf1523ee945d0692463af53",
++  "system_sec_nfc_apk_path": "system/system/priv-app/SecNfc/SecNfc.apk",
++  "system_sec_nfc_apk_sha256": "ab7bffc2f12562bf25b349007baaa0276ec7f5e26c32c6bcc5e1319a6b24508f",
++  "apex_embedded_jni_path": "/lib64/libnfc_nci_jni.so",
++  "apex_embedded_jni_sha256": "e312f4fd01044e2bb3ee26900df73090a4a657ed6292d4e0e056fa73b23e5d81",
++  "audit": {
++    "bzi6_native_nfc_manager_native_methods": 54,
++    "g965f_phn_native_nfc_manager_native_methods": 72,
++    "bzi6_jni_needed": [
++      "libaconfig_storage_read_api_cc.so",
++      "libnativehelper.so",
++      "libcutils.so",
++      "liblog.so",
++      "libbase.so",
++      "libhidlbase.so",
++      "libutils.so",
++      "libbinder_ndk.so",
++      "libstatssocket.so",
++      "libz.so",
++      "libpower.so",
++      "libc.so",
++      "libm.so",
++      "libdl.so"
++    ],
++    "decision": "Use BZI6 JNI embedded in the matching NFC APEX; omit target PHN global JNI. Preserve target SLSI vendor NFC service, firmware and Samsung extension JNI.",
++    "limitations": "Static Java/JNI pairing and APEX identity only. Runtime classloader namespace, JNI registration, HIDL service, RF/tag, HCE/eSE/UICC remain unverified."
++  }
++}

@@ -100,3 +100,12 @@ checksums and final msync/fsync values pass; both BOOTs are restored. M2 still
 fails boot. See `../docs/probe13-report.md` and probe13-m2-summary.json.
 Selected evidence: `support/evidence/probe13-m1-calibration.json` and
 `probe13-m1-selected.txt`. No normal fork recipe or ROM package changed.
+
+
+`bpf_prog_type_selftest.c` (25 October 2026): temporary AArch64 raw-syscall
+control loads an identical two-instruction return-0 program as SOCKET_FILTER,
+TRACEPOINT and PERF_EVENT, prints raw returns/verifier output and closes every
+successful FD. It does not attach, pin or create maps. Current DS-ACK diagnostic
+runtime returns3/-22/-22 respectively; temporary binary removed. This narrows
+program-type support and does not validate actual GPU tracepoint/helper/map ABI.
+See docs/m2-integrated-runtime-build.md for source/config and runtime evidence.

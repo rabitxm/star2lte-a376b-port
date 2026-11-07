@@ -1,0 +1,66 @@
+Reason: attempt53's installer recopied the secondary vendor init over the audited canonical init, deleting the persistent CACHE bind. The same profile also kept a tmpfs mount over /metadata, so reboot persistence was not tested.
+Affected: platform/exynos9810/installer/repartition/vendor_bootfix.sh, unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_runtime_compat.py.
+Verify: shell syntax; installer preserves an existing canonical init and only falls back when absent; runtime helper retains original donor aconfigd and requires exactly one CACHE bind in canonical vendor init; final ext4 image and embedded installer payload match staged files; reboot confirms /metadata is backed by CACHE and aconfig marker inode/hash persist.
+Rollback: reverse this patch, restore the original donor aconfigd, and disable the M2 metadata-bind flag. No kernel, radio, EFS, or modem change.
+
+--- a/platform/exynos9810/installer/repartition/vendor_bootfix.sh
++++ b/platform/exynos9810/installer/repartition/vendor_bootfix.sh
+@@ -239,7 +239,8 @@
+     fi
+ done
+ 
+-if [ -f "$VENDOR_MNT/etc/init/init.samsungexynos9810.rc" ]; then
++if [ -f "$VENDOR_MNT/etc/init/init.samsungexynos9810.rc" ] && \
++    [ ! -f "$VENDOR_MNT/etc/init/hw/init.samsungexynos9810.rc" ]; then
+     mkdir -p "$VENDOR_MNT/etc/init/hw"
+     cp -pf "$VENDOR_MNT/etc/init/init.samsungexynos9810.rc" "$VENDOR_MNT/etc/init/hw/init.samsungexynos9810.rc"
+ fi
+--- a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_runtime_compat.py
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_runtime_compat.py
+@@ -33,21 +33,11 @@
+         dst=system/rel;dst.parent.mkdir(parents=True,exist_ok=True)
+         tmp=dst.with_name(dst.name+'.runtime-tmp');shutil.copyfile(compat/rel,tmp)
+         tmp.chmod(0o644);os.replace(tmp,dst)
+-    # M2 uses a volatile metadata surface because star2lte has no metadata block.
+-    rc=system/'etc/init/aconfigd.rc';rc_bytes=rc.read_bytes();rc_sha=hashlib.sha256(rc_bytes).hexdigest()
+-    if rc_sha==m['aconfigd_original_sha256']:
+-        marker=b'on early-init\n'
+-        if rc_bytes.count(marker)!=1:raise ValueError('Unexpected donor aconfigd early-init action')
+-        diagnostic=rc_bytes.replace(marker,marker+
+-            b'    # Diagnostic only: legacy star2lte has no metadata partition.\n'
+-            b'    mount tmpfs tmpfs /metadata nosuid nodev noexec mode=0755,size=16777216\n'
+-            b'    restorecon /metadata\n',1)
+-        if hashlib.sha256(diagnostic).hexdigest()!=m['aconfigd_diagnostic_sha256']:
+-            raise ValueError('Generated volatile metadata init file hash mismatch')
+-        tmp=rc.with_name(rc.name+'.runtime-tmp');tmp.write_bytes(diagnostic);tmp.chmod(0o644);os.replace(tmp,rc)
+-    elif rc_sha!=m['aconfigd_diagnostic_sha256']:
+-        raise ValueError('Unreviewed existing donor aconfigd init file')
+-    print('PASS staged pinned M2 Tethering, graphics V6 and volatile metadata diagnostic')
++    # Preserve aconfigd; the existing CACHE bind provides the persistent /metadata.
++    rc=system/'etc/init/aconfigd.rc'
++    if digest(rc)!=m['aconfigd_original_sha256']:
++        raise ValueError('Unreviewed donor aconfigd init file')
++    print('PASS staged pinned M2 Tethering, graphics V6 and persistent metadata path')
+ def verify(work,tools):
+     scope();m=lock();system=work/'system/system'
+     for rel,h in m['files'].items():
+@@ -55,12 +45,13 @@
+     if digest(system/'bin/cameraserver')!=m['cameraserver_sha256']:
+         raise ValueError('Final cameraserver ABI adaptation lost')
+     aconfigd=system/'etc/init/aconfigd.rc'
+-    if digest(aconfigd)!=m['aconfigd_diagnostic_sha256']:
+-        raise ValueError('Final volatile metadata diagnostic hook missing')
+-    rc=aconfigd.read_text()
+-    if rc.count('mount tmpfs tmpfs /metadata nosuid nodev noexec mode=0755,size=16777216')!=1 or \
+-            rc.index('restorecon /metadata')>rc.index('mkdir /metadata/aconfig'):
+-        raise ValueError('Volatile metadata mount order/content changed')
++    if digest(aconfigd)!=m['aconfigd_original_sha256']:
++        raise ValueError('Final donor aconfigd init changed')
++    if 'mount tmpfs tmpfs /metadata' in aconfigd.read_text():
++        raise ValueError('Volatile metadata mount must not shadow persistent CACHE bind')
++    vendor_rc=work/'vendor/etc/init/hw/init.samsungexynos9810.rc'
++    if vendor_rc.read_text().count('mount none /cache/metadata /metadata bind')!=1:
++        raise ValueError('Persistent CACHE metadata bind missing from canonical vendor init')
+     # Reapply to an isolated text fixture to verify exact final bind/label state.
+     import tempfile
+     with tempfile.TemporaryDirectory() as td:

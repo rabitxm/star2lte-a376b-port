@@ -1,0 +1,75 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] clear restored bzi6 unsupported camera claims
+
+# Reason: m4-package-attempt37-0181.txt:24 rejects vendor ACTION_CLASSIFIER=1,0. Vendor baseline restore also reinstates ARDOODLE=PET_DETECTION,IMG_PICKING, although both implementations are absent in BZI6 and earlier camera selection clears them. Reconcile the two exact reviewed vendor values at finalization end; retain strict final gate and donor GPPM.
+# Affected: camera/a376b_android17_features.py apply-work and exynos9810_finalization/customize.sh final call
+# Verify: Actual restored values, implementation absence, XML parse, both-file preflight before writes, idempotence/unreviewed-value negative, final compiled/image gates.
+# Rollback: Remove0182 to restore previous order; no binary/kernel/radio changes.
+
+--- a/unica/patches/camera/a376b_android17_features.py
++++ b/unica/patches/camera/a376b_android17_features.py
+@@ -4,6 +4,7 @@
+ from hashlib import sha256
+ from pathlib import Path
+ import os
++import re
+ import sys
+ import xml.etree.ElementTree as ET
+ 
+@@ -79,8 +80,38 @@
+     print("PASS M4 optional camera claims absent from final XML; GPPM retained")
+ 
+ 
++def apply_work(work):
++    # Earlier camera selection clears the claims, but the final vendor
++    # restore reinstates the embedded S22 values. Reconcile only the two
++    # reviewed baseline values after all feature/overlay restoration.
++    no_implementation(work / "system/system")
++    expected = dict(zip(FEATURES, ("1,0", "PET_DETECTION,IMG_PICKING")))
++    pending = []
++    for rel in ("system/system/etc/floating_feature.xml", "vendor/etc/floating_feature.xml"):
++        path = work / rel
++        text = path.read_text()
++        root = ET.fromstring(text)
++        for key in FEATURES:
++            nodes = list(root.iter(key))
++            if len(nodes) > 1:
++                raise ValueError("Duplicate M4 camera feature: " + key)
++            if not nodes or not (nodes[0].text or "").strip():
++                continue
++            if rel.startswith("system/") or nodes[0].text.strip() != expected[key]:
++                raise ValueError("Unreviewed restored M4 camera claim: " + key)
++            text, count = re.subn(r"<" + key + r">[^<]*</" + key + r">", "", text)
++            if count != 1:
++                raise ValueError("Unexpected restored M4 feature XML shape: " + key)
++        ET.fromstring(text)
++        pending.append((path, text))
++    for path, text in pending:
++        path.write_text(text)
++    verify_work(work)
++    print("PASS final M4 camera claims reconciled after vendor restore; optional implementations remain absent")
++
++
+ if __name__ == "__main__":
+-    if len(sys.argv) != 3 or sys.argv[1] not in ("verify-source", "verify-work"):
++    if len(sys.argv) != 3 or sys.argv[1] not in ("verify-source", "verify-work", "apply-work"):
+         raise SystemExit("usage: a376b_android17_features.py verify-source SOURCE | verify-work WORK")
+     scope()
+-    {"verify-source": verify_source, "verify-work": verify_work}[sys.argv[1]](Path(sys.argv[2]))
++    {"verify-source": verify_source, "verify-work": verify_work, "apply-work": apply_work}[sys.argv[1]](Path(sys.argv[2]))
+--- a/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
+@@ -7510,6 +7510,13 @@
+ grep -q '^persist.sys.unica.bixby_action ' "$BIXBY_CONTEXTS" ||     printf '%s\n' 'persist.sys.unica.bixby_action u:object_r:system_prop:s0 exact uint' >> "$BIXBY_CONTEXTS"
+ unset BIXBY_CONTEXTS
+ 
++# Match optional camera claims to the retained BZI6 implementation after the
++# final baseline vendor/feature restores, before compiled release checks.
++if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++    python3 "$SRC_DIR/unica/patches/camera/a376b_android17_features.py" \
++        apply-work "$WORK_DIR" || return 1
++fi
++
+ # Optional M4 spoof integrations are omitted; keep UI/defaults consistent
+ # after the final vendor baseline restore. Mandatory ADB rules remain below.
+ if [ "${ROM_SOURCE_CONFIG:-}" = essi_a376b_android17 ]; then

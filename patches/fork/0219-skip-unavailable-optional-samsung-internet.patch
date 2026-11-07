@@ -1,0 +1,56 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] skip unavailable optional Samsung Internet preload
+
+# Reason: The M4 clean build stopped when the optional Galaxy Store lookup returned no URI; preserve the existing preload when a URL exists, skip only the absent optional URL, and fail if an actual download fails.
+# Affected: rom/unica/mods/preload/customize.sh only.
+# Verify: Bash syntax and URL-absent/URL-present harness paths; then clean fork build and existing package gates.
+# Rollback: Remove patch0219 from patches/fork/series and sources.lock.json, then restore the previous preload customizer.
+
+--- a/rom/unica/mods/preload/customize.sh
++++ b/rom/unica/mods/preload/customize.sh
+@@ -1,21 +1,30 @@
+ # Samsung Internet Browser
+ # https://play.google.com/store/apps/details?id=com.sec.android.app.sbrowser
+ LOG "- Downloading Samsung Internet app"
+-DOWNLOAD_FILE "$(GET_GALAXY_STORE_DOWNLOAD_URL "com.sec.android.app.sbrowser")" \
+-    "$WORK_DIR/system/system/preload/SBrowser/SBrowser.apk"
++if _PRELOAD_SBROWSER_URL="$(GET_GALAXY_STORE_DOWNLOAD_URL "com.sec.android.app.sbrowser" 2>/dev/null)"; then
++    DOWNLOAD_FILE "$_PRELOAD_SBROWSER_URL" \
++        "$WORK_DIR/system/system/preload/SBrowser/SBrowser.apk"
++else
++    # This optional preload must not block a ROM build when Samsung's store
++    # stops returning a URI for the donor SDK/One UI version. Keep a clear
++    # build warning; a returned URL that fails to download still fails closed.
++    LOGW "Samsung Internet preload skipped: Galaxy Store returned no download URI"
++fi
+ 
+-while IFS= read -r i; do
+-    i="${i//$WORK_DIR\/system\//}"
++if [ -d "$WORK_DIR/system/system/preload" ]; then
++    while IFS= read -r i; do
++        i="${i//$WORK_DIR\/system\//}"
+ 
+-    if [ -d "$WORK_DIR/system/$i" ]; then
+-        SET_METADATA "system" "$i" 0 0 755 "u:object_r:system_file:s0"
+-    else
+-        SET_METADATA "system" "$i" 0 0 644 "u:object_r:system_file:s0"
+-    fi
++        if [ -d "$WORK_DIR/system/$i" ]; then
++            SET_METADATA "system" "$i" 0 0 755 "u:object_r:system_file:s0"
++        else
++            SET_METADATA "system" "$i" 0 0 644 "u:object_r:system_file:s0"
++        fi
+ 
+-    if [[ "$i" == *".apk" ]] && \
+-            ! grep -q "$i" "$WORK_DIR/system/system/etc/vpl_apks_count_list.txt"; then
+-        LOG "- Adding \"$i\" to /system/system/etc/vpl_apks_count_list.txt"
+-        EVAL "echo \"$i\" >> \"$WORK_DIR/system/system/etc/vpl_apks_count_list.txt\""
+-    fi
+-done <<< "$(find "$WORK_DIR/system/system/preload")"
++        if [[ "$i" == *".apk" ]] && \
++                ! grep -q "$i" "$WORK_DIR/system/system/etc/vpl_apks_count_list.txt"; then
++            LOG "- Adding \"$i\" to /system/system/etc/vpl_apks_count_list.txt"
++            EVAL "echo \"$i\" >> \"$WORK_DIR/system/system/etc/vpl_apks_count_list.txt\""
++        fi
++    done <<< "$(find "$WORK_DIR/system/system/preload")"
++fi

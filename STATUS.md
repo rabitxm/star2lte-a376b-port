@@ -1,4 +1,403 @@
-# Trạng thái thực thi — 21/10/2026
+# Trạng thái thực thi — cập nhật30/10/2026
+
+
+**Cập nhật kiểm thử Bluetooth30/10:** người dùng xác nhận màn hình thật lên
+Chào mừng và chủ động reboot. Ghép đôi với điện thoại `meizuo`, nhận2ảnh qua
+OBEX/OPP PASS;34mẫu/337,03s giữ boot/PID core,0crash/0FDF1timeout; hai file
+kết thúc status200, phiên hoàn tất200. A2DP/AVRCP/HFP và reconnect tai nghe/loa
+chưa thử. Xem [báo cáo truyền file](docs/m4-bluetooth-phone-opp-validation.md).
+
+**Tiếp tục sửa30/10:** live `getprop` vẫn chọn model/name donor vì
+`ro.product.system.*` và `ro.product.system_ext.*` còn là A37/essi. Patch0225
+đặt các trường identity partition-qualified thành star2lte/G965F, giữ donor
+fingerprint Android17; fixture đúng/âm tính/idempotence PASS, build/image/runtime
+còn pending. Crash buffer hiện tại chỉ còn lỗi receiver Bixby; xem báo cáo sửa.
+
+
+## Cập nhật30/10 — sửa runtime sau attempt0223
+
+G965F đã hiển thị trang **Chào mừng** qua screenshot ADB. Ba nhóm sửa đã áp riêng
+và kiểm chứng:0221 chặn service OTT thiếu class làm system_server restart;
+0222+0223 xử lý DBFW+ trên Bluetooth;0224 nối hook nền tùy chọn của AOD cũ để
+SystemUI không crash. Lượt cuối có boot_completed1/server start_count1,
+7 mẫu/121,77 giây và5 vòng Asleep→Awake giữ PID core. Mốc uptime423 giây vẫn
+cùng server/UI/Bluetooth PID, Bluetooth ON/0crash/không timeout FDF1. Bluetooth
+còn qua3 vòng tắt/bật ở lượt thử trước và tự bật đúng sau reboot.
+
+M4 **chưa nghiệm thu tổng thể**. Bixby còn crash do cấu hình Side Key; NFC
+shell/dump vẫn lỗi transaction, chưa có kết quả RF; ghép đôi/phát nhạc/HFP với
+phụ kiện, networking ứng dụng và phần lớn phần cứng chưa kiểm trong lượt này.
+Model/name còn mang donor ở live properties; wireless ADB mặc định bật cần
+được audit riêng. Chỉ hủy hộp thoại ủy quyền Wi-Fi, không cấp quyền mạng.
+
+Các sửa đang ở source và trên máy dưới dạng thay riêng framework-res, Bluetooth
+JNI, SystemUI, giữ USERDATA. Chưa có full ROM mới tích hợp0221–0224, chưa có
+image/ZIP gate mới cho composition này. ROM hoàn chỉnh mới nhất vẫn là M4
+attempt0223, full ZIP SHA256
+`a35d05fc9707930a1f747a10008ede86b62ec88273e35bca5319126ef865e4fa`.
+215 patch replay thành160 path byte-identical sau0225; không sửa kernel/Hybrid
+Vendor/radio. Hash10 phân vùng bảo vệ khớp trong từng cửa sổ ghi recovery;
+không ghi/restore EFS. M1/G965N giữ nguyên.
+
+Báo cáo, bằng chứng, giới hạn và bước tiếp:
+[m4-post-0223-runtime-repair.md](docs/m4-post-0223-runtime-repair.md).
+Ưu tiên tiếp: port hợp đồng phím Bixby đúng phần cứng và giữ chữ ký Samsung;
+kiểm phụ kiện Bluetooth/hoàn tất wizard bằng thao tác thật; typed NFC/RF và
+app network; sau đó build/audit full image/ZIP trong run mới. Không ép global
+Side Key feature hoặc đổi blob/kernel để che lỗi cấu hình.
+
+Các checkpoint bên dưới là lịch sử.
+
+**M4-attempt0222 đã fresh-flash và boot được Android17 trên G965F; M4 chưa nghiệm thu.**
+Full ZIP SHA256 `c3aff071dec34579a69e7e66f88e134a9714e89d850e2a09582667ae367ee23d`,
+target-files `c741a3d1118169e707d02874d1cc96fc9925db9e1b0101618344e9919c9dbf06`;
+8 ZIP32 stage, CRC/signature/ZIP32 và hash readback đều PASS. Runtime:
+`sys.boot_completed=1`, Enforcing; `system_server`/SystemUI giữ PID khoảng180s.
+Bluetooth FAIL: log boot ghi `Timed out waiting for Unknown OpCode(0xfdf1)` và
+`ServiceConnection.onServiceDisconnected`; live follow-up tăng tới94 lần crash.
+Disassembly khóa sender BZI6, source patch0220 qua fixture nhưng chưa build/
+flash. Mạng app-level chưa được thử. Báo cáo:
+`docs/m4-validation-after-0222.md`; artifact review:
+`docs/m4-attempt0222-artifact-review.md`.
+
+**M4-0219 chưa nghiệm thu tổng thể; số liệu đó là lịch sử, không thay kết quả0222.**
+Lượt kiểm0219 có
+18mẫu/180s giữ core PID/starttime và boot ID,5sleep/wake
+không crash mới. Bluetooth FAIL7PID/6timeout: native stack khóa BLE local-key
+load→VaultKeeper read→service wait~29s; metadata/format16–32byte phải được kiểm
+trước backend adaptation. Network ping IP/name vẫn EMSGSIZE, rawTCP control
+mới PASS; browser HTTP/HTTPS chưa có verdict do Chrome FirstRun.
+
+NFC no-FD transaction6 đã verify runtime jar/stub, trả ON. AOD/Bixby Java fatal
+trong startup buffer cùng boot vẫn mở, không phát sinh mới trong live window.
+Provider failure0217 chưa tái hiện; GNSS firstboot null callback crash chưa
+khép và chưa có outdoor fix test. Thermal effective product RRO là max867/
+table306/408/510; đã rút lại suy luận caller từ base framework-res.13class/
+194compiled methods PASS; actual caller/gates/calibrated thresholds còn mở.
+Không có nhiệt kế ngoài, không ép nhiệt hoặc sửa policy/kernel.
+
+Package mới nhất đang giữ là M4-attempt0222. Flash fresh và runtime logs lưu ở
+`logs/20261029-m4-g965f-flash-0222/flash-01/`; EFS/CPEFS/RADIO/RECOVERY/BOTA
+hash trước/sau khớp, không cần rollback. Kết quả Android/Enforcing, Bluetooth,
+ADB, Auto Blocker và giới hạn mạng thuộc báo cáo0222; các kiểm tra Settings
+task15/Dozing, brightness63/manual0/stay-awake0 vẫn chỉ thuộc lượt0219.
+Báo cáo: [validation0219](docs/m4-validation-after-0219.md);
+[plan hiện hành](docs/m4-post-0219-repair-plan.md), [validation0222](docs/m4-validation-after-0222.md), [thermal audit](docs/m4-thermal-limiter-audit-0219.md),
+[RTC](docs/m4-rtc-label-0218.md), [bugs](docs/bugs.md).
+
+Các checkpoint bên dưới là lịch sử.
+
+
+Patch0214 đã flash fresh trên G965F: `/sys/devices/platform/panel_drv@001/backlight/panel/brightness` có context `sysfs_ski_display_writable` sau reboot Enforcing, không còn SDHMS brightness EACCES. Fresh boot lộ thêm `max_brightness` EACCES; patch0215 thêm exact genfscon node này. Patch0215 đã qua source tests và build: candidate `star2lte-1793191531-88WPtN`, package SHA256 `6d0c43e77c3bae6f392250cb5c4625fb6fc3af0041637b44bfd7e96ff61ae58d`; vendor CIL/image gate PASS, 8-stage ZIP32 manifest PASS. Đã fresh-flash candidate0215 8/8 stage, USERDATA format mới, boot_completed=1/Enforcing; hash EFS/CPEFS/RADIO/RECOVERY/BOTA khớp trước/sau. Cả brightness và max_brightness có label đúng, không còn backlight EACCES; thay Setting60/180 làm sysfs brightness đổi. Thermal HAL vẫn không expose cooling/threshold type0; limiter/actuator chưa nghiệm thu. Package0214 riêng được giữ nguyên; kernel/vendor blob/radio và protected partitions không đổi.
+
+Cập nhật kiểm thử28/10 sau0212: giữ nguyên ROM; snapshot chi tiết1178.75s và mốc cuối2052.12s vẫn cùng PID core. SystemServer/netd/SurfaceFlinger ổn; SystemUI sau lần crash đầu sống hơn17phút,5 lượt sleep/wake không crash mới; người dùng xác nhận Home thật bình thường. **Chưa nghiệm thu M4**: Bluetooth ít nhất30restart, Bionic network nhận EMSGSIZE từ control socket (rawTCP đối chứng PASS), thermal backlight permissions đã qua fresh-flash/runtime gate0215; HAL cooling/threshold và actuator vẫn chờ audit, AOD thiếu API; NFC dump/Binder chưa kết luận RF, Bixby/KG còn lỗi. Kế hoạch hiện hành: [plan sửa sau0212](docs/m4-post-0212-validation-plan.md); bằng chứng: [validation](docs/m4-validation-after-0212.md), [thermal0214](docs/m4-thermal-backlight-0214.md).
+
+
+Latest28/10 —0212: physical Welcome confirmed, persistent boot_completed/Enforcing and automatic ion_device context pass. Main SystemServer/netd remain stable120s; previous ION/gralloc allocation errors absent. Device stays in Android with0211 resolver +0212 context on full attempt0209. AOD background-disconnect AbstractMethodError still restarts SystemUI once; Bixby/general hardware tests and a new complete package remain pending. Source replay203 patches/140 byte-identical files. Details: [runtime repair](docs/m4-postboot-runtime-repair.md). Older entries below are historical.
+
+
+Cập nhật28/10 — source0198: M4 đã quan sát được `sys.boot_completed=1`, `bootanim=stopped`, SDK37/OneUI90000 và SELinux Enforcing trên G965F. Fixture Debug JNI/MemInfoReader PASS exit0; GPU map không có trả-1, không còn làm SystemServer abort. SystemServer PID1830 còn ở uptime337.22s. **Chưa nghiệm thu giao diện/phần cứng**: SystemUI/FaceWidget sai luồng main, SDHMS lỗi enumDEX và NFC thiếu libnfc-nci.so. Đã thu189 file và hoàn tất rollback SYSTEM/BOOT/VENDOR/netstats, đối chiếu sau ghi PASS; máy đang ở TWRP.188 patch/132 file replay PASS,187 hash cũ giữ nguyên; chưa có ROM hoàn chỉnh mới tích hợp các thử nghiệm195–198. Chi tiết: [meminfo runtime](docs/m4-meminfo-runtime.md), [lỗi sau boot](docs/m4-post-boot-blockers.md).
+
+Cập nhật runtime 28/10/2026 — source0197: đã port nhóm query stats và bộ transport/identity/template/Parcel/lưu v7-v8 từ BZI6, giữ entry point S22 cũ và Binder service.2161 lớp round-trip,385 tham chiếu services và36 phụ thuộc mới đã rà; APEX dựng lặp cùng hash,187 patch/130 file replay PASS. Fixture trên G965F đã PASS exit0; SystemServer sau đó native SIGABRT trong libmeminfo (chi tiết0198 ở trên). Đã thu136 file và hoàn tất rollback SYSTEM/BOOT/VENDOR cùng hai thư mục netstats. boot_completed chưa đạt. Chi tiết: [network stats runtime](docs/m4-network-stats-runtime.md).
+
+**M4 đã build và đóng gói hoàn chỉnh —27/10/2026, attempt37/source0188.** Full ZIP đã ký (5,192,379,395 bytes) và target-files đã qua đối chiếu SHA256;8 gói ZIP32 đã qua CRC/chữ ký/giới hạn ZIP32 và có hash trong manifest; run `star2lte-1793025724-rBdwLO` có `.complete`. Toàn bộ kiểm compiled, PIF, ADB/Auto Blocker, SELinux và image ext4 thực tế đã PASS. Chuỗi178 patch replay thành125 file giống hệt từ fork đã khóa. **M4 đã fresh-flash G965F, khởi tạo được SystemServer nhưng chưa boot hoàn tất; đang sửa tương thích API mạng. Verdict Play Integrity trực tiếp chưa kiểm.**
+
+Đã giữ đúng một bản ROM hoàn chỉnh cuối cho mỗi mốc M1/M2/M4 trên NVMe phụ;3 lượt package M4 dở và4 replay fixture đã xóa sau kiểm chứng. SSD chính còn khoảng190.5 GiB và NVMe phụ161.4 GiB trống. Người dùng ưu tiên PIF; Paradigm, UI Setup Wizard và Misc Tweaks giữ hành vi donor. Xem [artifact review](docs/m4-attempt37-artifact-review.md), [lưu trữ](docs/storage-cleanup-20261026.md). Các checkpoint dưới đây là lịch sử.
+
+## M4 build — checkpoint0149, 26/10/2026
+
+Attempt17 passed the NFC and CoreRune display paths after patches0144–0145, then
+stopped at `m4-build-attempt17.txt:1074`: the generic Strongbox DeviceID patch
+tried to rewrite `isSupportStrongboxDeviceID()Z`, although BZI6 already returns
+false. Attempt16 and17 decode the class to the same SHA256
+`2d4eda789aa30c266fa9a3c66a2abec140d18004157ae1d9fd72080928578e5e`.
+Patch0146 adds a hash-pinned no-op only for M4/G965F/BZI6; exact-class positive,
+changed-class, wrong-model and missing-class fixtures pass.
+
+Attempt18 reached the next SAIV module after logging that Strongbox no-op at line
+1072, then stopped at line1087 because the BZI6 donor has no legacy
+`vendor/etc/midas/moire_detection/moire_detection.tflite` path. Its hash-pinned
+`midas_config.json` references that relative path at line1531, while the exact
+model is under `vendor/etc/VslMesDetector/moire_detection.tflite` with SHA256
+`88e001d4007446f82bd999d71d358b6f48ae976c0cd38128fcfc77a4ec9060c1`.
+Patch0147 stages those reviewed bytes at the referenced path with vendor
+metadata, scoped to M4/G965F/BZI6. Attempt19 confirms the stage at log lines
+1084–1086, including `uid:0 gid:2000 mode:755` and the vendor config SELinux
+label.
+
+Attempt19 then stopped at line1091: BZI6 PhotoEditor supplies two versioned
+HumanSeg/BGPclassifier `.info` + `.tflite` pairs, while the generic branch asks
+for `hs_segmenter.info`/`.tflite`. Patch0148 verifies the exact four-file set,
+all four hashes and each JSON model path, then stages the whole donor directory.
+Pair staging and changed-model/wrong-model negatives pass.
+
+Attempt20 passed the pinned Strongbox no-op, Midas model staging and paired
+PhotoEditor model staging, then stopped at
+`logs/20261026-m4-vendor-warning-0142/m4-build-attempt20.txt:1097`:
+`File not found: .../system/system/saiv/smartcropping_2.0/db/smartcrop_saliency_deploy.prototxt`.
+BZI6 has no legacy `smartcropping_2.0` tree; its `IMAGE_CROPPER_VERSION=V1`
+model is `system/saiv/imageCropper/sce_detector_cnn.tflite` (SHA256
+`5ee6feae9f8307b7f0c363ec6f41e764ef97b5d2afeb83e72714659268b887f5`). The
+target-specific vendor SCE model remains the pinned Exynos9810 baseline file
+(SHA256 `f39455590d713701df4d051612d1b0baf427d66704e51eb404fd6fabb4498f1c`).
+Patch0149 stages the donor system layout, removes only exact-hash G965F legacy
+smartcropping data, and keeps that vendor baseline model.
+
+Patch0149 positive staging/retention fixture and wrong-model, changed-donor and
+changed-vendor negatives pass. `bash -n` passes; ordered replay matches 115
+source files after139 patches and all138 earlier patch hashes remain unchanged.
+Patch0149 SHA256 is
+`7c7a8e940412b7c4ddc8a76ba2bc141ea767a07fd9ce6be51c285a7ebd722307`. A clean
+attempt21 will use a dedicated M.2 temporary-image directory to keep root space
+for the work tree and package output. The kernel parser warning at line956 was
+nonfatal; no kernel source or selected DS-ACK package changed. No complete M4
+image, flash or Android17 runtime proof exists; no phone was touched. Evidence:
+`logs/20261026-m4-vendor-warning-0142/`.
+
+## M4 build — checkpoint0144 (historical), 26/10/2026
+
+Attempt13 and attempt14 did not finish and have no `build_exit` result; logs and
+per-attempt configs are retained. Attempt15 reached NFC but the dispatcher still
+requested the missing G965F PHN sidecar at
+`logs/20261026-m4-vendor-warning-0142/m4-build-attempt15.txt:1038`. The attempt
+config has `TARGET_PLATFORM_SDK_VERSION="31"` at line22, while patch0143 checked
+29. Patch0144 changes only the exact G965F/BZI6 guard to SDK31. SDK31 positive,
+wrong-model, wrong-SDK and changed-JNI fixture checks pass; shell syntax and all134
+ordered patch replay pass with 111 source files byte-identical and prior133 patch
+locks unchanged. Patch SHA256: `092ce3155bede5598cdbc0d2f8324925350864efd4d4dfa29ee0bda13ac11f47`. Attempt16 later confirmed the route at line1038; checkpoint0145 records the next blocker.
+No M4 image or Android17 runtime is proven; no phone was touched. Evidence: logs/
+20261026-m4-vendor-warning-0142/.
+
+## M4 build — checkpoint0142, 26/10/2026
+
+Attempt11 passed the BZI6 USB Host and Samsung RescueParty adaptations, then
+stopped in the legacy vendor mismatch warning patch. Its caller expected
+ActivityManagerService lambda6; BZI6 uses lambda7, and the handler hunk failed
+against the changed lambda4 body. Exact errors are recorded at
+logs/20261026-m4-rescue-0141/m4-build-attempt11.txt:1060,1138.
+
+Patch0142 hash-pins the actual BZI6 caller/handler and suppresses only vendor
+mismatch dialog dispatch (class ID3), preserving the diagnostic log, UID warning
+(ID2), and handler cases0–2. It changes rom/scripts/internal/apply_modules.sh
+and adds rom/unica/patches/miscs/a376b_android17/0001-disable-bzi6-vendor-mismatch-warning.patch.
+The exact-source Smali fixture, Apktool services.jar rebuild, bash -n, and full
+132-patch replay from the fork base pass. Patch SHA256:
+2711d3dd2f857c5dee57ac55eec27f844dabe0644c5427e0c64881aeb96f6047.
+Attempt12 used a fresh output path. This was a PC build only; no phone,
+kernel, vendor, radio, or protected partition was touched.
+
+## M4 build — checkpoint0143 (historical; guard corrected by 0144), 26/10/2026
+
+Attempt12 exercised Patch0142 in the actual fork build. Log line1033 confirms
+“Applied reviewed BZI6 vendor-mismatch warning suppression; preserved UID and
+emergency dialogs.” It then stopped at line1039:
+“(unica/patches/nfc/customize.sh:66:ADD_TO_WORK_DIR) File not found:
+out/m4-run-20261026-attempt12/fw/SM-G965F_PHN/system/system/lib64/libnfc_prop_extn.so”.
+The matching vendor extension is also absent from the locked G965F PHN source.
+Both target core NFC libraries and target Samsung HIDL HAL are present; their
+ELF dynamic dependencies do not require either sidecar.
+
+Patch0143 added an exact profile route in rom/unica/patches/nfc/customize.sh. Its
+initial guard expected target SDK29, later found stale because generated M4 config
+uses SDK31. Attempt15 reproduced the fall-through; patch0144 corrects it. The
+profile still verifies G965F JNI and BZI6 sidecar hashes, retains donor sidecars
+only when both target sidecars are absent, and rejects partial or changed inputs.
+Patch SHA256:
+93dd48c8f59d2ed0e2841f5912f5bb56f6c26b5a4109bdd24a8ac28f26ed0b83.
+Evidence: logs/20261026-m4-vendor-warning-0142/. This historical checkpoint was
+superseded after attempt15; see checkpoint0144 above. No device was touched.
+
+
+
+
+## M4 build — checkpoint0141, 26/10/2026
+
+Attempt04 stopped because the Android16 P2P DEX signature occurs0 times in
+BZI6. Patch0135 routed only exact M4 G965F/SDK37 through the reviewed decoded
+Smali callback anchor. Attempt05 confirmed the real build takes that branch and
+logged `Patched decoded Samsung Wi-Fi Direct callback selection; Seh registration retained`.
+It then stopped at `logs/20261026-m4-p2p-0135/m4-build-attempt05.txt:926`:
+`rom/unica/patches/camera/customize.sh: line 397: abort: command not found`.
+BZI6 contains only `/system/lib64/libstagefright.so` (SHA256
+`f8ad6ae22b71d6ba4c7f5ba58e4d1223dfbfaf16e95435a195a9cd0dd886f517`); its
+old `ro.product.model` key occurs once. Patch0136 allows the absent 32-bit file
+only for the exact M4 arm64-only profile when the 64-bit file exists, patches
+the 64-bit binary and uses the fork's `ABORT` helper for failures. Attempt06
+passed the P2P and stagefright branches, then stopped at
+`logs/20261026-m4-camera-0136/m4-build-attempt06.txt:940`:
+`(unica/patches/dvfs/customize.sh:74:SMALI_PATCH) Missing BZI6 class descriptor: U1/w.smali`.
+Patch0137 maps the M4 SDHMS rule to its hash-pinned BZI6 class
+`smali/n5/i0.smali` (APK SHA256
+`53c76a214d5e325ed7c16e368392ad37e9de52b68568777a0b6fa29e554fe3f9`, class
+SHA256 `39ff200b94cf1e141c3d02aed62709850648d3b914d12f0931c80f02a14afdd6`)
+and keeps the AZH4 M2 route intact. Exact M4 positive, wrong-scope, mutated
+APK/class and M2 fixtures pass; all127 ordered patch hashes matched. Attempt07
+then reached the DVFS adapter and stopped at
+`logs/20261026-m4-dvfs-0137/m4-build-attempt07.txt:940`:
+`BZI6 SamsungDeviceHealthManagerService.apk is missing`. The guard used an unset
+module-local cache path. Patch0138 now calls the fork's
+`GET_FIRMWARE_CACHE_KEY "$SOURCE_FIRMWARE"`; it resolves the actual cache as
+`SM-A376B_XXV_A376BXXU5BZI6`, whose APK hash matches the pin. Shell syntax,
+actual cache lookup/hash, patch replay and all128 ordered patch hashes pass.
+Attempt08 passed the cache lookup and patch0137 SDHMS class gate, then stopped
+at `logs/20261026-m4-dvfs-0138/m4-build-attempt08.txt:1005` with
+`RuntimeError: Unreviewed BZI6 libstagefright preimage`. The camera module had
+already changed the model-property string, while the later media adapter still
+expected the untouched donor hash. Patch0139 pins the post-camera intermediate
+hash `005a887d...f7372`, verifies it reverses to donor hash
+`f8ad6ae2...f517`, then applies the HEVC patch and checks combined output hash
+`5f591074...2210`. Actual M4 fixture and original-donor rejection pass; all129
+ordered patch hashes and reverse/reapply pass. Clean attempt09 is next in a new
+output directory. No complete M4 package or Android17 runtime proof exists.
+Details: `docs/patch-matrix.md` and
+`logs/20261026-m4-media-0139/stagefright-composition-test.txt`.
+
+## M4 scoped profile — checkpoint0131, 26/10/2026
+
+Thêm profile G965F/no-KSU riêng, kế thừa gói duhansysl DS-ACK đã khóa, chọn
+BZI6 suffix/runtime/metadata, fixed-resolution, donor Wi-Fi UI và boot limits đã
+rà soát; mọi cờ M2 vẫn false. `gen_config_file.sh` thật chạy M2→M4→M2 trong
+OUT cô lập, marker AZH4→BZI6→AZH4 và M2 config sau switch-back giống nhau;
+`rom/out/config.sh` không đổi. Lần đầu guard báo chính xác
+`M4 fixed-resolution preflight requires reviewed BZI6/star2lte/F.` vì suffix bị
+M1 reset; profile đã khóa suffix trước khi target config chạy. Log:
+`logs/20261026-m4-profile-0131/`.
+
+Profile hiện chỉ chọn nguồn/flags; chưa có clean ROM build, flash hay Android17
+runtime. Còn module/Knox dispatch, work/compiled-cache switch và boot/vendor/image
+contracts. Patch0131 hash được khóa trong `sources.lock.json`.
+
+## M4 donor-native runtime closure — checkpoint0130, 26/10/2026
+
+Patch0129 vẫn giữ đường native32 riêng BZI6: APEX hash b6b559bf…5583cdaf,
+runtime64 donor giữ nguyên,17 path runtime32 và48 thư viện platform32 đã khóa.
+Patch0130 nối thêm donor-native A17 camera/audio/graphics V7/Tethering, vendor_kg
+và aconfig-v2 qua restore/finalization/release/ext4 gate hiện có. ADB helper
+được port riêng cho BZI6 `.locals 6`, source hash pin, DEX039 compiled fixture
+và Rampart/SecSettings/SUW key-action checks PASS; M2 ADB output trùng byte.
+Runtime helper, collision/overwrite negatives và real ext4 SYSTEM/VENDOR
+fixture PASS; M2 metadata output trùng byte với helper trước0130. Replay120 patch từ commit2b25ae6 được kiểm lại thành công,105 file text trùng
+byte và119 hash cũ không đổi. Log: `logs/20261026-m4-runtime-0130/replay-through-0130.txt`; ADB retest:
+`logs/20261026-m4-runtime-0130/adb-final-retest.txt`.
+
+Đây vẫn chỉ là source/image-fixture evidence: chưa có profile hoàn chỉnh, ROM,
+flash hay boot Android17. Aconfigd, Tethering/BPF, camera/audio/graphics HAL,
+full boot/vendor/image contracts và ADB/Auto Blocker fresh defaults/toggles cần
+log runtime. Kernel, Hybrid Vendor, radio, modem, EFS/CPEFS và G965N không đổi.
+Báo cáo: [docs/m4-native32-runtime.md](docs/m4-native32-runtime.md).
+
+### Checkpoint0128 trước đó
+
+Đã thêm donor config `essi_a376b_android17.sh` riêng: SDK37/shipping36/board34,
+cache BZI6 và SIM tray runtime. Chạy gen_config thật trong OUT cô lập theo
+M2→M4→M2 PASS; cache chọn AZH4→BZI6→AZH4, M2 khi quay lại trùng giá trị và
+rom/out/config.sh cũ không đổi. Chưa tạo profile kernel/runtime M4 hoàn chỉnh.
+
+0125 giữ eSE target-none như M2 bằng bốn class BZI6 đã pin, xử lý literal log
+mới và kiểm DEX; không chọn COS mới.0126 giữ UI Wi-Fi donor qua cờ M4 riêng,
+13 class source/DEX được kiểm; target phần cứng vẫn Wi-Fi5.0127 nối lựa chọn
+Face/Bixby/5 tùy chọn UN1CA tạm bỏ: ẩn đúng control, giữ WINK và FaceManager
+feature; không mở rộng các skip M2 khác. Search giữ211 provider donor +4 UN1CA;
+Intelligence giữ36 khóa kể cả Buds, thêm đúng1 khóa UN1CA. Actual AZH4 control
+search output không đổi.0128 thêm donor registry và khóa hash theo lựa chọn M4.
+
+Replay118patch PASS,101file trùng byte;114hash trước giữ nguyên. Chỉ kiểm source,
+config và DEX fixture trên PC; chưa build/flash M4. Bước tiếp theo là lock/stage
+native32/runtime/APEX riêng M4, rà module/mod còn lại và hợp đồng boot/vendor/
+image, rồi tạo profile đủ kiểm trước clean build. Rule ADB/Auto Blocker compiled
+và fresh-data runtime vẫn bắt buộc. Chi tiết: docs/m4-source-selection.md.
+
+### Checkpoint0124 trước đó
+
+Đã thêm0121–0124 cho source BZI6: shipping API phần cứng36→26 (framework vẫn
+SDK37), hai controller HDR, HFR default60/mode0, brightness3 và chế độ độ phân
+giải cố định riêng M4 (native1440×2960/density560). Không đổi kernel/blob/radio.
+Rune BZI6 dò cảm biến thật; giữ TYPE_LIGHT=5, không thay nhầm bằng profile3.
+SMALI_PATCH định vị class theo đúng descriptor qua các DEX, scope BZI6/F/M4;
+không đổi các nhánh M2. Profile M1/M2 xóa cờ M4 còn sót khi được chọn lại.
+
+Fixture ghép helper lights→shipping/HDR→rear FP→display PASS, pin15 class/
+19 method display và đóng DEX039 bằng tool hiện có của fork. Gate release mới
+đọc DEX/XML thật; chặn donor HFR2 và XML mode2 còn sót. Replay114patch PASS,
+95file trùng byte;110hash trước đó không đổi. Chỉ kiểm source/fixture trên PC,
+chưa tạo profile, build image hay flash M4. Chi tiết: docs/m4-product-display.md.
+
+Tiếp theo: chốt profile M4 cùng các lựa chọn Face/Wi-Fi/UN1CA UI/eSE, ghép
+runtime/native32/APEX và hợp đồng boot/vendor/release, kiểm M2→M4→M2 trước
+clean build. ADB/Auto Blocker compiled và fresh-data runtime vẫn bắt buộc.
+
+### Checkpoint0120 trước đó
+
+Đã thêm0119 cho BZI6 rear fingerprint: kiểm method/hash framework, services,
+SystemUI, BiometricSetting đã khóa và Settings sau thay SPF; giữ true register
+v3 của BZI6 cho các cờ SystemUI khác. Fixture Android16/17 và DEX assembly PASS.
+
+0120 thích ứng bốn encoder BZI6 (MotionPhoto/GPPM/Camera/vexfwk) và đúng một
+lệnh HEVC trong libstagefright. vexfwk_service có thật ở BZI6, dùng v2 thay vì
+v3 của patch cũ; không bỏ qua APK. LLVM relocation/disassembly chứng minh nhánh
+0xebdbc dẫn tới HDR10Plus assertion. Native chỉ đổi4byte, hash đầu ra khóa.
+Gate release mới đọc DEX thực và kiểm native; fixture PASS, chặn được native
+chưa vá và DEX donor vex còn default cũ. Chưa chứng nhận codec/runtime.
+
+Replay110patch từ commit gốc PASS,93file trùng byte;108hash trước đó không đổi.
+Lượt này chỉ sửa/kiểm source trên PC, chưa tạo profile/build/flash M4. Tiếp theo:
+các nhánh product/display-feature, rồi profile/runtime/release wiring và kiểm
+chuyển donor/cache. Xem docs/m4-dispatch-ledger.md và docs/patch-matrix.md.
+
+### Checkpoint0118 trước đó
+
+Đã thêm0116 cho WLAN target policy: bỏ đúng ba chuỗi bảng RF A37, giữ mã
+HAL/coexistence, kiểm booster000 và dùng truy vấn chip cho SoftAP11ax. Fixture
+chạy ghép với0114–0115 và đóng DEX PASS. Đây là source policy, chưa nghiệm thu RF.
+
+Rà gate tìm thấy patch M2 signature và backlight không khớp BZI6.0117 sửa đúng
+context try/catch, áp fuzz0 và giữ các kiểm chứng chỉ/platform identity hiện có.
+0118 thích ứng lights trên cấu trúc mới: LogicalLight, setLightUnchecked và
+mute/cache; chuyển thật tham số độ sáng mở rộng vào Parcel SehLights. Các
+fixture source/negative/DEX đều PASS. Chưa kiểm các hành vi này trên M4 runtime.
+
+Replay108patch từ commit gốc PASS,92file văn bản trùng byte;105hash trước đó
+không đổi. Không đổi kernel/vendor/radio hoặc tác động điện thoại. Chưa tạo
+profile/build/flash M4. Danh sách gate đã rà và còn mở:
+[docs/m4-dispatch-ledger.md](docs/m4-dispatch-ledger.md). Tiếp theo: rear
+fingerprint, OMX/media và các nhánh product-feature còn lại trước profile M4.
+
+### Checkpoint0115 trước đó
+
+Đã hoàn tất bước port source mDNIe, APE/personalization và ba nhánh SoftAP cho
+BZI6 bằng patch0113–0115. Fixture donor Android16 và Android17 đều PASS, đóng
+được DEX theo đúng writer API29/Dex039 hiện có của fork. Kiểm ghép theo thứ tự
+module xác nhận chỉ hai lệnh APE/power-save đổi đích trong bảng dispatch;
+permission check, HAL settings hợp lệ và Binder cleanup của country fallback
+được giữ. Các trường hợp sai SDK, preimage hoặc thứ tự bị từ chối trước ghi.
+
+Patch0112 sửa hash SIM của0110: fork dùng `--no-debug-info`, khác fixture debug
+ban đầu. Đây là lỗi guard nguồn được phát hiện và sửa trước build. Bộ source
+lock hiện có105patch; không thay hash của101patch đã khóa trước đó. Replay
+toàn bộ105patch từ commit gốc PASS, đủ87file văn bản trùng byte với source.
+Chi tiết
+lý do, file ảnh hưởng, kiểm chứng và rollback ở docs/patch-matrix.md.
+
+Chưa tạo profile/build/image/flash M4. M2 attempt56 vẫn là baseline. Bước tiếp:
+rà RF/backoff cùng các dispatch M2-only còn lại, rồi tạo profile A17 riêng và
+chạy kiểm đổi M2→M4→M2 trước clean build/compiled/image gates.
+
+### Bằng chứng preflight trước đó
+
+BZI6 extraction/cache isolation và patch0109/0110 đã có bằng chứng. Patch0111
+thêm guard chỉ cho classifier/ARDoodle thực sự vắng trong BZI6; pin GPPM có
+thật và kiểm final-work XML. Đã sửa hai kết luận audit quá mức: GPPM có APK và
+file quyền; chuỗi JCOP5.2U nằm trong lookup nhiều COS của stock G965F, không
+chứng minh COS được chọn. Replay đủ101patch từ commit gốc, source/negative
+fixtures, syntax, whitespace và source-lock hashes PASS.
+
+G965F M2 kết nối lại, boot_completed1 trên DS-ACK4.9.337. Các boot-SKU và
+COS-default properties rỗng. BZI6 secilc compile split CIL đã thích ứng VNDK33
+trong rootfs riêng exit0; cùng kích thước policy với host nhưng hash khác.
+Giữ giới hạn: cờ-N bỏ neverallow, chưa load policy/chạy init/boot Android17.
+Đã lưu output và dọn đúng rootfs tạm. Chưa có profile/build/flash M4. Tiếp theo:
+hoàn tất donor feature/dispatch audits, profile riêng và compiled/image gates.
+Tài liệu hiện hành: docs/m4-plan.md và docs/m4-donor-dispatch-audit.md.
 
 ## Cập nhật 21/10/2026 — flash fresh G965F đã PASS
 
@@ -448,3 +847,289 @@ attempt53 runs through the existing fork. M1/G965N untouched. See
 `docs/m2-integrated-runtime-build.md` and `logs/20261024-m2-integrated-build/`.
 
 24/10/2026 — attempt53 was built and passed compiled, actual SYSTEM/VENDOR/ODM ext4, signed package and eight TWRP32 stage checks. The user authorized one fresh G965F attempt for exact ZIP SHA256 `f72be9be303e34fd5f625c5fd3d50e0590589e62b85386d8816f97f9758343ef`. All stages RC=0; USERDATA UUID changed; protected EFS/CPEFS/RADIO/RECOVERY/BOTA hashes stayed identical; BOOT is diagnostic SHA `55f3af8c3dc9c5115fd80f944849c8205c2d2bc5459bb2ecc7114d842669fe77`. First fresh boot reached `sys.boot_completed=1` in 196.4s, Enforcing; `/metadata` tmpfs/aconfig initialized, dangerous RANGING was defined and RangingService registered. ADB defaults are 1/1 with `ro.adb.secure=0`; Rampart logs `disabledRampart=true`. The selected runtime-diagnostic profile does not enable the optional patch0095 logger, so its absence is expected. USB gadget UDC errors need follow-up even though ADB is reachable. This does not establish full hardware acceptance, G965N or Android17. The one-time write authorization is consumed; do not reuse for another package. Detailed evidence: `docs/m2-integrated-runtime-build.md`, `logs/20261024-m2-attempt53/`.
+
+
+## 25 October 2026 — attempt55 completed, CACHE logger partially verified
+
+Fresh install passed8/8 signed ZIP32 stages; USERDATA changed and protected
+partition hashes stayed unchanged. Corrected patch0106 profile/config and
+actual final/installed VENDOR logger metadata checks passed. Fresh/reboot
+completed in180.7s/79.7s under Enforcing. A temporary CACHE-backed /metadata
+marker survived reboot and was removed. Fresh ADB/debugging are enabled/keyless,
+Rampart off. First-boot SystemServer stayed one PID/start through uptime662.79s;
+second-boot sampled PID/start stayed unchanged. This is diagnostic M2 evidence,
+not full hardware or long-run stability acceptance, nor M4/G965N readiness.
+
+/cache/unica now contains post-fs/post-fs-data/completed markers and nonempty
+start/15s/60s logcat on both boots. props/dmesg snapshots remain empty under the
+init service context, reproduced after late restart and read-only runcon;
+root ADB captures work. That snapshot gap has no proven root cause yet.
+BPF remains `gpuMem.bpf: Invalid argument (os error 22)` / gpuWork.bpf
+(boot2/logcat-all.txt:7879,7887); kgclient has `No match for app with uid 5959`
+with `username oem_5959` (:152556) and child `Fatal signal 6 (SIGABRT)` (:153275).
+Bixby still throws `No matching ComponentResult found!` (:156141).
+Raw paths are under logs/20261025-m2-attempt55. Do not claim these issues fixed.
+
+The next scoped investigations are vendor_kg account-name integration (existing
+seapp rule survives) and BPF program-type/tracepoint/helper/map ABI compatibility
+(minimal TRACEPOINT/PERF_EVENT tests return EINVAL). No broad SELinux exception
+or speculative production kernel change is justified. Complete artifact/hash,
+files/reasons/checks and limits: docs/m2-integrated-runtime-build.md.
+
+
+## 25 October 2026 — attempt56 kgclient account patch prepared
+
+Live read-only G965F confirms UID/GID5959 resolves to `oem_5959`; donor rule
+requires `vendor_kg`, and only A37 donor passwd/group contain the locked exact
+rows. Patch0107 adds them to the existing G965F M2 compatibility profile,
+collision-checks them and verifies their actual vendor ext4 metadata. Fixture
+hash/row/idempotence/collision checks and syntax pass. Clean build/real image
+verification/live boot are next. attempt55 remains available; no BPF or kernel
+change is included. Evidence: docs/m2-integrated-runtime-build.md and local
+logs/20261025-kgclient-investigation.
+
+
+## 25 October 2026 — M2 attempt56 runtime result
+
+Attempt56 built through the existing fork, passed ext4/package/stage verification,
+and fresh-installed on G965F with a new USERDATA UUID. All eight signed ZIP32
+stages returned RC=0; protected EFS/CPEFS/RADIO/RECOVERY/BOTA hashes matched
+before and after. Two Enforcing boots reached `sys.boot_completed=1`. Patch0107
+restores only the locked A37 `vendor_kg` passwd/group rows: `id 5959` resolves
+correctly, kgclient uses `u:r:kg_app`, and the old NSS lookup miss/zygote abort
+no longer appears.
+
+Both boots also reproduce an independent KnoxGuard TA timeout and
+LockedBootCompletedReceiver ANR (`TLC_ERROR`, `@TimeoutException: getTAInfo -
+null`, blocked `IKnoxGuardManager.getTAInfo`). CACHE init markers/logcat pass,
+while init-context dmesg/props remain empty. BPF EINVAL and Bixby errors remain
+independent. The same WIPEONFORK diagnostic BOOT was used; no kernel or radio
+changes were made. G965N/M1 remain untouched. Next gate: diagnose the TA backend
+without disabling KnoxGuard; M4/Android17 is not accepted. Full evidence and hashes
+are in `docs/m2-integrated-runtime-build.md` and local
+`logs/20261025-m2-attempt56/`.
+
+
+## 26 October 2026 — storage cleanup and M4 attempt24
+
+Removed only failed/intermediate ROM build outputs after verifying the final
+M1 and M2 releases and their SHA256 manifests on the secondary NVMe. The root
+SSD now has about190GiB free. Final M1/M2 artifacts remain checksum-verified;
+there was no completed M4 release to retain. Inventory and exact retained
+hashes: `docs/storage-cleanup-20261026.md`.
+
+Attempt22 stopped at the BZI6 Battery Health lookup. Patch0150 resolves the
+base controller in classes3 and attempt23 passes that gate. Attempt23 then
+failed the incompatible optional blocklist hunks at log lines1194/1206/1234/1294.
+Patch0151 retains the BZI6 donor policy for the exact M4 G965F profile. Both
+patches have reason, affected files, verification, rollback and source-lock
+hashes in `docs/patch-matrix.md`. Clean attempt24 is running on the secondary
+NVMe; no completed M4 artifact, flash or runtime result is claimed yet.
+
+
+## 26 October 2026 — attempt24 FOTA gate and attempt25
+
+Attempt24 passed the BZI6 Battery Health gate and retained donor
+PackageBlockListPolicy, then stopped in optional UN1CA Updates patching. The
+log says at line1179 that
+`smali_classes2/com/android/settings/Settings$FOTASuggestionActivity.smali` is
+missing; line1181 reports `Build failed in 0hrs 6min 42sec.` BZI6 places the
+class in `smali/` (SHA256
+`a3a7cd0d1b6e533d45423f7d11a0da287733ffc52f55566d674a3b4c8c18bec8`).
+
+Patch0152 adds exact M4/G965F/BZI6 donor-retention dispatch for that optional
+shortcut. Exact profile, wrong model/milestone, AZH4 regression and unrelated
+patch dispatch tests pass; replay matches the source. Patches0150–0152 are
+locked and recorded in `docs/patch-matrix.md`. Failed attempt24's 12GiB scratch
+tree is removed after preserving logs and the relocated-class hash. Clean
+attempt25 is running on the second NVMe; no M4 release/device test is claimed.
+
+
+## 26 October 2026 — attempt25 CSC failure and attempt26
+
+Attempt25 passed the BZI6 Battery Health fix, donor blocklist retention, and
+FOTA suggestion retention. It then failed at log line1181 because CSC's
+optional Remote management tile patch requires missing
+`TopLevelRemoteSupportPreferenceController.smali`; the build exited at line1183.
+The actual BZI6 SecSettings.apk hash is
+`49dcc59150efb0d38ecc93ec2ffe675eeb6f4b98d39ae6d0f3f970d44b3c4693`.
+
+Patch0153 retains donor tile visibility only for M4/G965F/BZI6. Exact scope,
+wrong-target/milestone negatives, AZH4 regression and patch replay pass. Patches
+0150–0153 are recorded with reason/files/verification/rollback in
+`docs/patch-matrix.md`; all143 source-lock hashes validate. Failed attempt25's
+scratch was removed after preserving logs. Clean attempt26 is running on the
+secondary NVMe; no completed M4 artifact or device flash is claimed.
+
+
+## 26 October 2026 — attempt26 network-speed CSC failure and attempt27
+
+Attempt26 passed the BZI6 Battery Health, donor blocklist, FOTA shortcut, and
+Remote management tile gates. The next optional CSC network-speed patch failed
+at line1190 because
+`SecSettings.apk/smali_classes4/com/samsung/android/settings/eternal/provider/items/NotificationsItem.smali` is absent. The build exited1 at line1192. Patch0154 retains donor behavior on exact M4/G965F/BZI6; its scope, negative, AZH4, and unrelated-route tests plus replay pass. All144 patch locks validate. The attempt26 scratch was removed after logs were saved; clean attempt27 runs on M.2.
+
+
+## 26 October 2026 — attempt27 Secure Folder quick-switch failure and attempt28
+
+Attempt27 passes the Battery Health, donor blocklist, FOTA, Remote management,
+and network-speed gates. The optional Secure Folder quick-switch patch then
+partially changes `Usefulfeature$1` but fails at
+`FunctionKeyUtils.smali:589`; line1206 says `patch does not apply`, and line1208
+reports `Build failed in 0hrs 7min 16sec.` Patch0155 keeps donor Secure Folder
+key behavior only for exact M4/G965F/BZI6. Scope, negative, AZH4 regression and
+unrelated-route tests pass; patch replay and all145 lock hashes validate. The
+failed attempt27 scratch was removed after log preservation. Clean attempt28 runs
+on M.2; no completed M4 artifact or device flash is claimed.
+
+
+## 26 October 2026 — attempt28 SystemUI mismatch and attempt29
+
+Attempt28 passes the Battery Health, blocklist, FOTA, Remote management, Settings
+network-speed and Secure Folder donor-retention gates. It fails at
+`m4-build-attempt28.txt:1192–1203`: the optional SystemUI speed patch cannot find
+its expected context in BZI6 `BasicRune.smali:644`; line1205 records exit1.
+Patch0156 retains donor SystemUI speed behavior, paired with patch0154's Settings
+retention, only on exact M4/G965F/BZI6. Its exact-scope, wrong-model/milestone,
+AZH4 and unrelated-route assertions pass. All146 ordered patches replay from the
+pinned fork and the dispatcher matches byte-for-byte; all source locks validate.
+Attempt28 scratch/temp trees were removed after preserving the log and confirming
+there was no `.complete` or M4 release. Attempt29 is building cleanly on the second
+NVMe; the retained M1/M2 final packages are unchanged.
+
+
+## 26 October 2026 — attempt29 Smart View mismatch and attempt30
+
+Attempt29 passed the network-speed donor gates from patch0154/0156 and stopped
+at `m4-build-attempt29.txt:1193–1214`: the optional Smart View visibility patch
+expects a `QpRune.smali:308` context absent in BZI6; line1216 records exit1.
+Patch0157 keeps donor tile behavior only for exact M4/G965F/BZI6. Wrong model and
+milestone, AZH4 regression and unrelated-route assertions pass. All147 ordered
+patches replay from the pinned fork; the active dispatcher matches byte-for-byte,
+and all source locks validate. Attempt29 scratch was removed after log retention
+and checks for no `.complete`/empty M4 release. Attempt30 is the next clean build
+on the second NVMe; M1/M2 final packages remain unchanged.
+
+
+## 26 October 2026 — attempt30 DAAgent mismatch and attempt31
+
+Attempt30 passed patch0157's Smart View donor gate, then failed applying the
+optional all-apps Dual Messenger modification. The log at
+`m4-build-attempt30.txt:1198–1398` shows BZI6 mismatches in
+`DualAppProvider.smali:512`, `WhiteListApps.smali:4`,
+`DualAppIntentReceiver.smali:33`, and `DAUtility.smali:1947`; line1400 reports
+`Build failed in 0hrs 6min 53sec.` Patch0158 preserves the donor allowlist only
+for exact M4/G965F/BZI6. Wrong model/milestone, AZH4 regression, unrelated-route
+tests, all148 patch replay and byte-identical dispatcher checks pass. Attempt30
+scratch was removed after confirming no `.complete` and an empty M4 release root.
+Attempt31 is the next clean build; retained M1/M2 packages are unchanged.
+
+
+## 26 October 2026 — attempt31 DeKnox mismatch and attempt32
+
+Attempt31 passed the donor-retention gates through DAAgent, then stopped in the
+optional DeKnox module. Log line1264 says `Missing BZI6 class descriptor:
+com/android/server/knox/dar/ddar/ta/TAProxy.smali`; line1266 reports
+`Build failed in 0hrs 8min 16sec.` Patch0159 keeps the complete donor Knox/DAR
+stack on exact M4/G965F/BZI6. Wrong model/milestone, AZH4 regression and unrelated
+module tests pass. All149 patches replay from pinned base, the dispatcher matches
+byte-for-byte, and all source locks validate. Attempt31 scratch was removed after
+checking no `.complete` and empty M4 release. Attempt32 is the next clean build;
+M1/M2 final packages remain unchanged.
+
+
+## 26 October 2026 — attempt32 Device Image mismatch and attempt33
+
+Attempt32 passed the M4 donor-retention gates through Knox, then `m4-build-attempt32.txt:1195` reported `PATTERN_NOT_FOUND` in the existing About phone device-image customizer; line1197 records build failure. Patch0160 supports the exact BZI6 `const-string`/compact-call layout and the legacy jumbo layout while pinning `SM-G965FZKDEUX`. The actual BZI6 APK was decoded after its hash check; positive, compatibility and changed-accessor negative tests pass. All150 ordered patches replay from the pinned fork. Attempt32 had no `.complete` marker, the M4 release root was empty, and its 12.45GB scratch was removed after preserving logs. Attempt33 is the next clean build on the secondary NVMe. M1/M2 final packages remain checksum-verified and untouched; no phone operation occurred.
+
+
+## 26 October 2026 — attempt33 Hide My Applist mismatch and attempt34
+
+Attempt33 confirmed Device Image patch0160 at log line1194 (`Pinning About phone device image model code to SM-G965FZKDEUX`), then failed on optional Hide My Applist hooks. Lines1232/1245 report failed contexts at BZI6 `ComputerEngine.smali:9954` and `ActivityStarter.smali:5341`; line1248 records build failure. Patch0161 retains donor behavior only for exact M4/G965F/BZI6. Five scope/regression assertions, shell syntax, all151 ordered patch hashes and full replay pass; dispatcher matches byte-for-byte. Attempt33 had no `.complete`, M4 release root was empty, and its 12.51GB scratch was removed after preserving logs. Attempt34 is the next clean build on the second NVMe. M1/M2 final packages remain untouched; no phone operation occurred.
+
+
+## 26 October 2026 — attempt34 Keybox mismatch and attempt35
+
+Attempt34 passed Device Image (line1194) and the scoped Hide My Applist donor-retention branch, then failed in Keybox imitation: lines1204/1206 report absent framework `IKeystoreSecurityLevel$Stub$Proxy.smali` and `IKeystoreService$Stub$Proxy.smali`; line1226 records build failure. Patch0162 retains BZI6 donor key-attestation behavior only on exact M4/G965F. Five scope/regression tests, shell syntax, all152 patch locks and full replay pass; dispatcher matches byte-for-byte. Attempt34 had no `.complete`, M4 release root was empty, and its 12.51GB scratch was removed after preserving logs. Attempt35 is the next clean build on the second NVMe. M1/M2 final packages remain untouched; no phone operation occurred.
+
+
+## Resume after interrupted attempt35 — 26/10/2026
+
+Attempt35 has no `build_exit` and stops immediately after the clean-work-dir
+message; no build failure is inferred. The build process was absent on resume,
+and the secondary NVMe was not mounted. `tools/mount-release-storage.sh` mounted
+UUID `a26834a0-9fe6-4668-8896-c87a532862d9` at the expected path successfully.
+Final M1/M2 `.complete` markers exist and M4 release root remains empty. Attempt35
+partial scratch (24KiB allocated files) was removed with logs retained. All152
+patch locks and baseline root config hash were rechecked; no source patch changed.
+Attempt36 is a clean run of the same M4 profile; its per-run wrapper requires the
+actual secondary UUID mount before creating output paths. This changes only
+orchestration/output paths, not the fork build system. Shell syntax passes.
+
+
+## 26/10/2026 — attempt36 and tail preflight, source through0168
+
+Attempt36 passed the Keybox donor-retention gate, then failed in KnoxPatch:
+`m4-build-attempt36.txt:1250,1262,1296,1313,1329,1341` reports incompatible
+DevicePolicyManager/DAR/attestation hunks; line1344 says
+`Build failed in 0hrs 7min 8sec.` Patch0163 retains the complete donor Knox/
+attestation stack. This failed tree is diagnostic-only: KnoxPatch had already
+changed some framework state before failure, and it will never be packaged.
+
+Using the existing fork dispatcher on later modules found independent source
+mismatches in Paradigm EAD, PIF, Setup Wizard, Tweaks, Settings and the paired
+wallpaper default. Per-module exits and exact logs are in
+`logs/20261026-m4-vendor-warning-0142/tail-attempt36/`. The initial M4 selection
+retains donor behavior for the four optional modules Paradigm/PIF/Setup Wizard/
+Tweaks and the MultiSound app-selection limit (0166). A user preference question
+was sent; the recommended donor-preserving option is the stated working default
+while independent fixes continue. Mandatory ADB/Auto Blocker gates stay active.
+
+0164 adapts the exact BZI6 paired-live wallpaper branch using full-method hash
+`74bc3b52672248a3ac4745093b97e3ac3d921e0eec6235cfbce8120910969e12` and preserves
+the old Android16 route; actual class/negative/idempotence/DEX tests pass.
+0165 reviews/hash-pins the removed legacy OTA method instead of inventing a new
+API; actual Settings continuation passes search integration and hidden controls.
+0167 adapts FloatingFeature hooks to three primary getters while retaining BZI6
+overload delegation and the upstream helper unchanged; real DEX assembly passes.
+0168 preserves donor ASKS after the actual hunk failure and hides omitted
+ASKS/HMA/Keybox/PIF controls; it seeds PIF/Keybox false after vendor restore and
+adds compiled hook/control absence guards. XML, real-property-copy and scope
+fixtures pass. All patch reasons, files and verification are in patch-matrix.md.
+
+The earlier Keybox failure was a stale DEX path: both proxy descriptors exist in
+BZI6 `classes4` rather than legacy `classes3`. Evidence and hashes are in
+`keybox-bzi6-layout.json`; retaining donor behavior does not mean Keystore2 is
+missing. There is still no completed M4 image/package or Android17 boot evidence.
+M1/M2 final releases remain retained. Next: final-stage preflight, full ordered
+source replay and clean attempt37. No phone was operated.
+
+
+## 26/10 continuation — finalization and PIF priority
+
+User selected porting Play Integrity Fix first; Paradigm, Setup Wizard UI and
+Misc Tweaks retain donor behavior. This supersedes the PIF omission in0166/0168.
+Patch0171 restores PIF application/keystore/task hooks for exact BZI6 methods,
+retains upstream hook helper classes, restores its three Settings controls and
+enables its default; unsupported Keybox/HMA/Knox integration remains omitted.
+Actual BZI6 compiled DEX fixture and Settings/property gates passed
+(`test-pif-0171.txt`, `test-pif-settings-0171.txt`). A live Integrity verdict is
+still untested; no device writes occurred.
+
+Patches0169–0174 fix child-module donor cache resolution, prevent applying the
+Android16 Scene/OCR patch to the locked BZI6 camera, remove the stale optional
+Cloud preinstall config, and retain reviewed native Secure Folder desktop checks
+and new Brief components. Every patch records reason/files/verification/rollback
+in `patches/fork/` and is hash-locked in `sources.lock.json`.
+The disposable attempt36 tree is only for sequential finalization diagnostics;
+it contains partial earlier Knox edits and must never be packaged. After the
+remaining finalization checks, remove that tree and run a clean attempt37.
+M1/M2 retained completed releases remain unchanged. No completed M4 release yet.
+
+
+Cập nhật28/10 — source0200: patch0199 đã tích hợp fixture network197 + meminfo198 vào profile M4/G965F diagnostic sau bước restore cuối; fixture hash PASS. Patch0200 loại bỏ đúng nhánh DEX special theo người dùng chấp thuận; SIOP/SSRM hash/XML fixture PASS. Chưa build hoặc flash; APK cuối/ext4 chưa kiểm runtime. SDHMS thermal liveness/control, SystemUI main-thread lifecycle và NFC provider/namespace closure còn pending. Chi tiết: [repair record](docs/m4-postboot-runtime-repair.md).
+
+
+Cập nhật28/10 — source0201: SystemUI source patch đã chuyển pha khởi tạo FaceWidget sang handler main-looper hiện có, kiểm connection generation và plugin instance trước dispatch. BZI6 APK fixture đã Apktool build + decode roundtrip và qua semantic gate. Mất/lỗi UI, thời gian khởi tạo, AOD/Infinity và reconnect runtime chưa kiểm. 0199/0200/0201 chưa build thành ROM; M4 đang ở source/candidate stage, attempt37 giữ nguyên. Xem [M4 repair record](docs/m4-postboot-runtime-repair.md).
+
+Cập nhật28/10 — source0202: audit NFC decode xác nhận JNI PHN không khớp Java BZI6 (72 so với54 native methods; nhiều descriptor khác). Thay hướng sang JNI nằm cùng BZI6 NFC APEX và bỏ riêng system JNI PHN shadow trong profile chẩn đoán M4/G965F; giữ nguyên SLSI HAL/RF/Samsung JNI của S9. Hash extractor/gate static đã thêm. Runtime namespace, registration, HAL, tag và thermal/SystemUI còn chưa nghiệm thu. Không build/flash; attempt37 nguyên vẹn, máy ở TWRP. Xem [M4 repair record](docs/m4-postboot-runtime-repair.md).

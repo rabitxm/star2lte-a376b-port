@@ -1,0 +1,216 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] label S9+ backlight for M4 SDHMS metadata reads
+
+# Reason: M4 SDHMS logs `/sys/class/backlight/panel/brightness: fstat failed: EACCES` while Enforcing. The real node is panel_drv@001 and remains generic sysfs; an exact temporary label test using the already-authorized display type produced no new SDHMS fstat error in the observed interval. Existing policy grants system_app display getattr/read; no new allow is added.
+# Affected: M4 vendor-restore hook, new exact-scope policy helper/lock, and real vendor ext4 image verifier. Add one genfscon for the exact brightness node; retain thermal values, thresholds, kernel and all other sysfs labels.
+# Verify: helper positive/idempotence and duplicate/conflicting/missing-permission fixtures; Python/shell syntax; require the exact CIL rule and existing permission in the final vendor image, checking image bytes/mode/owner/label. Device restorecon/reboot and SDHMS log verification remain a required runtime gate.
+# Rollback: reverse this patch and rebuild the M4 candidate; no current release artifact or protected device partition is changed by this source patch.
+
+--- a/rom/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/customize.sh
++++ b/rom/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/customize.sh
+@@ -1949,6 +1949,12 @@
+ fi
+ _EXYNOS9810_FINAL_WRITE_PHYSICAL_FSTABS
+ _EXYNOS9810_APPLY_SUPPLEMENTARY_SEPOLICY
++if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ] && \
++        [ "${ROM_MILESTONE:-}" = "M4" ] && \
++        [ "${EXYNOS9810_M4_RUNTIME_COMPAT:-false}" = "true" ]; then
++    python3 "$MODPATH/a376b_android17_thermal.py" apply \
++        --work-dir "$WORK_DIR" || return 1
++fi
+ _EXYNOS9810_PATCH_FINAL_VENDOR_BOOT_COMPAT
+ _EXYNOS9810_USE_SENSORS_HAL_1_0 || return 1
+ _EXYNOS9810_APPLY_FINAL_SECURITY_STACK || return 1
+--- a/rom/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_thermal.py
++++ b/rom/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_thermal.py
+@@ -0,0 +1,139 @@
++#!/usr/bin/env python3
++"""Stage the exact S9+ backlight sysfs label needed by M4 SDHMS.
++
++Reason: BZI6 labels the Exynos9810 panel_drv@001 backlight as generic sysfs,
++which lacks the getattr permission SDHMS needs for fstat. The existing
++sysfs_ski_display_writable type already has the reviewed display permissions.
++Files: one exact vendor CIL genfscon rule, pinned by the adjacent lock.
++Verify exact scope, required existing policy permissions, idempotence and
++conflict rejection before the vendor image gate.
++"""
++from pathlib import Path
++import argparse
++import hashlib
++import json
++import tempfile
++
++
++HERE = Path(__file__).resolve().parent
++LOCK = HERE / "a376b_android17_thermal.lock.json"
++
++
++def lock():
++    return json.loads(LOCK.read_text())
++
++
++def digest(path):
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def cil_path(work):
++    return Path(work) / "vendor/etc/selinux/vendor_sepolicy.cil"
++
++
++def policy_text(data):
++    rules = lock()["policy"]
++    for required in rules["required_existing_rules"]:
++        if required not in data:
++            raise ValueError("M4 backlight policy lost an existing permission: " + required)
++    rule = rules["genfscon"]
++    conflicts = [line for line in data.splitlines()
++                 if line.lstrip().startswith('(genfscon sysfs ') and
++                 rules["path"] in line and line.strip() != rule]
++    if conflicts:
++        raise ValueError("Conflicting M4 backlight genfscon: " + conflicts[0])
++    occurrences = data.splitlines().count(rule)
++    if occurrences > 1:
++        raise ValueError("Duplicate M4 backlight genfscon")
++    if occurrences == 0:
++        data = data.rstrip("\n") + "\n" + rule + "\n"
++    return data
++
++
++def apply(work):
++    path = cil_path(work)
++    if path.is_symlink() or not path.is_file():
++        raise ValueError("M4 vendor policy is missing or symlinked")
++    before = path.read_text(errors="strict")
++    after = policy_text(before)
++    if after != before:
++        path.write_text(after)
++    verify(work)
++
++
++def verify(work):
++    path = cil_path(work)
++    if path.is_symlink() or not path.is_file():
++        raise ValueError("M4 vendor policy is missing or symlinked")
++    data = path.read_text(errors="strict")
++    expected = lock()["policy"]["genfscon"]
++    if data.splitlines().count(expected) != 1:
++        raise ValueError("Exact M4 backlight genfscon is missing or duplicated")
++    # Validate all pre-existing rules without changing the compiled policy.
++    policy_text(data)
++    return {"path": str(path), "rule": expected, "sha256": digest(path)}
++
++
++def self_test():
++    rules = lock()["policy"]
++    seed = "\n".join(rules["required_existing_rules"]) + "\n"
++    with tempfile.TemporaryDirectory(prefix="m4-backlight-policy-") as tmp:
++        root = Path(tmp)
++        target = cil_path(root)
++        target.parent.mkdir(parents=True)
++        target.write_text(seed)
++        apply(root)
++        staged = target.read_bytes()
++        apply(root)
++        if target.read_bytes() != staged:
++            raise ValueError("M4 backlight genfscon staging is not idempotent")
++        bad = seed + rules["genfscon"] + "\n" + rules["genfscon"] + "\n"
++        target.write_text(bad)
++        try:
++            verify(root)
++        except ValueError as error:
++            if "missing or duplicated" not in str(error):
++                raise
++        else:
++            raise ValueError("Duplicate M4 backlight genfscon was accepted")
++        target.write_text(seed + rules["conflicting_genfscon"] + "\n")
++        try:
++            apply(root)
++        except ValueError as error:
++            if "Conflicting M4 backlight" not in str(error):
++                raise
++        else:
++            raise ValueError("Conflicting M4 backlight genfscon was accepted")
++        target.write_text(seed)
++        target.write_text(target.read_text().replace(
++            rules["required_existing_rules"][0], "(type sysfs_ski_display_writable_missing)"))
++        try:
++            apply(root)
++        except ValueError as error:
++            if "lost an existing permission" not in str(error):
++                raise
++        else:
++            raise ValueError("Missing existing SDHMS policy permission was accepted")
++    print("PASS M4 backlight exact policy scope, required permissions, idempotence and negative fixtures")
++
++
++def main():
++    parser = argparse.ArgumentParser(description=__doc__)
++    sub = parser.add_subparsers(dest="command", required=True)
++    apply_parser = sub.add_parser("apply")
++    apply_parser.add_argument("--work-dir", type=Path, required=True)
++    verify_parser = sub.add_parser("verify")
++    verify_parser.add_argument("--work-dir", type=Path, required=True)
++    sub.add_parser("self-test")
++    args = parser.parse_args()
++    if args.command == "self-test":
++        self_test()
++    elif args.command == "apply":
++        apply(args.work_dir)
++        print("PASS staged exact M4 S9+ backlight genfscon")
++    else:
++        print(json.dumps({"result": "PASS", **verify(args.work_dir)}))
++
++
++if __name__ == "__main__":
++    main()
+--- a/rom/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_thermal.lock.json
++++ b/rom/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_thermal.lock.json
+@@ -0,0 +1,18 @@
++{
++  "schema": 1,
++  "scope": "M4 BZI6 Android17 G965F star2lte SDHMS backlight read metadata",
++  "reason": "SDHMS fstat on the real panel_drv@001 brightness node fails with EACCES under generic sysfs. The existing display type grants system_app getattr/read and is already used for the neighboring legacy panel backlight path.",
++  "files": [
++    "vendor/etc/selinux/vendor_sepolicy.cil"
++  ],
++  "policy": {
++    "path": "/devices/platform/panel_drv@001/backlight/panel/brightness",
++    "genfscon": "(genfscon sysfs \"/devices/platform/panel_drv@001/backlight/panel/brightness\" (u object_r sysfs_ski_display_writable ((s0) (s0))))",
++    "conflicting_genfscon": "(genfscon sysfs \"/devices/platform/panel_drv@001/backlight/panel/brightness\" (u object_r sysfs_ski_display_readable ((s0) (s0))))",
++    "required_existing_rules": [
++      "(type sysfs_ski_display_writable)",
++      "(allow system_app_33_0 sysfs_ski_display_writable (file (ioctl read write getattr lock append map open watch watch_reads)))"
++    ]
++  },
++  "verification": "exact CIL genfscon and existing system_app display permission are present in the final vendor ext4 image; device restorecon/reboot and SDHMS fstat must pass while Enforcing"
++}
+--- a/rom/scripts/internal/verify_m4_runtime_image.py
++++ b/rom/scripts/internal/verify_m4_runtime_image.py
+@@ -21,6 +21,7 @@
+ HELPER = ROOT / "unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_runtime_compat.py"
+ NFC_LOCK = ROOT / "unica/patches/exynos9810_device_stack/nfc/a376b_android17_nfc.lock.json"
+ POSTBOOT_HELPER = ROOT / "unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_postboot_diagnostic.py"
++THERMAL_HELPER = ROOT / "unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_thermal.py"
+ FACEWIDGET_HELPER = ROOT / "unica/patches/exynos9810_device_stack/exynos9810_finalization/a376b_android17_facewidget_thread.py"
+ 
+ 
+@@ -57,6 +58,8 @@
+     if rel.startswith("etc/aconfig/"):
+         return 0o444, (0, 0), "vendor_aconfig_storage_file"
+     if rel in ("etc/passwd", "etc/group", "etc/ueventd.rc"):
++        return 0o644, (0, 0), "vendor_configs_file"
++    if rel == "etc/selinux/vendor_sepolicy.cil":
+         return 0o644, (0, 0), "vendor_configs_file"
+     if rel == "etc/init/init.debug.rc":
+         return 0o644, (0, 0), "vendor_configs_file"
+@@ -174,6 +177,9 @@
+                  "--apktool", str(apktool), "--temp-root", tempfile.gettempdir()])
+             paths.append(systemui_rel)
+     elif partition == "vendor":
++        if os.environ.get("EXYNOS9810_M4_RUNTIME_COMPAT") == "true":
++            run(["python3", str(THERMAL_HELPER), "verify", "--work-dir", str(work)])
+-        paths = ["etc/passwd", "etc/group", "etc/ueventd.rc", "etc/init/hw/init.samsungexynos9810.rc",
++        paths = ["etc/passwd", "etc/group", "etc/ueventd.rc", "etc/selinux/vendor_sepolicy.cil",
++                 "etc/init/hw/init.samsungexynos9810.rc",
+                  "etc/init/init.samsungexynos9810.rc", "etc/aconfig"]
+         paths += ["etc/aconfig/" + name for name in ("package.map", "flag.map", "flag.val", "flag.info")]

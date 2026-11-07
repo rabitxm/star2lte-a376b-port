@@ -200,3 +200,322 @@ boot completion under this diagnostic configuration. It does not prove full
 hardware acceptance, user-toggle lifecycle, persistent metadata, G965N
 compatibility or Android17/M4 readiness. Keep this diagnostic package distinct
 from production duhansysl kernel releases; M1 and G965N remain untouched.
+
+
+## Live follow-up after user acceptance
+
+The user confirms ADB/Auto Blocker behavior is stable and reports no observed
+basic hardware fault. The read-only attempt53 follow-up found that the installed
+canonical and secondary vendor init hashes were both
+`f299c805...d74bc8`, while the image-audited canonical init with the CACHE bind
+was `88deb866...e7be1a6`. `vendor_bootfix.sh` overwrote the canonical file from
+the secondary during install. At runtime `/metadata` remained tmpfs and
+`/cache/metadata` was absent. Patch0105 changes the installer copy to fallback
+only, removes the volatile tmpfs staging, and adds final checks for original
+donor aconfigd and the canonical CACHE bind. Build and boot verification remain
+pending.
+
+The same read-only capture found repeated SystemServer SIGABRTs after first
+boot. `bpfloader` logs `gpuMem.bpf: Invalid argument` and
+`gpuWork.bpf: Invalid argument`; the pinned system `libmeminfo.so` aborts in
+`BpfMapRO::abortOnMismatch` while stats pull calls `ReadPerProcessGpuMem` and
+`ReadProcessGpuUsageKb`. The latest captured SystemServer stayed alive after a
+restart, but long-run stability remains open. Preserve the production kernel
+selection and investigate this Android 16 GPU stats/BPF interface separately.
+Evidence: `logs/20261024-m2-followup/`.
+
+## Attempt54 — persistent metadata installer fix and G965F runtime (25 October 2026)
+
+Patch0105 fixes the attempt53 install-time overwrite: `vendor_bootfix.sh` now
+copies the secondary init file only when the canonical `etc/init/hw` file is
+missing. The M2 runtime compatibility patch also leaves donor `aconfigd.rc`
+unchanged instead of staging volatile `/metadata` tmpfs, and requires the
+original donor hash plus exactly one `/cache/metadata` bind in the canonical
+init. Files: `patches/fork/0105-preserve-cache-metadata-bind-in-installer.patch`,
+`rom/platform/exynos9810/installer/repartition/vendor_bootfix.sh`, and
+`rom/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_runtime_compat.py`.
+Patch replay, shell syntax, Python syntax, build gates, SELinux policy compile,
+three ext4 image checks, and signed flashable ZIP verification passed. The real
+vendor image contains canonical init SHA256
+`88deb866246c25eef4926ee9b11b5344c5878cbe399bb0f67d6cefeb0e7be1a6`; its
+secondary baseline remains `f299c805332262f5eb1f7625e6dbd15e7a8eb0638c0a99f6e8963f0841d74bc8`.
+The bundled installer contains the same fallback-only copy condition.
+
+Retained package directory:
+`rom/out/releases/M2/star2lte-1792852256-BVoh9H/`.
+Flashable ZIP SHA256 is
+`3871a5d696ce5ea55a299e723c54d6d6d22fe7ff995205ec3c97deaf7f2562ed`
+(5,529,949,917 bytes); target-files ZIP SHA256 is
+`d5abb6dc9264e9995b80247ba47555b3612348ef463640bd570fc7fc419d62ff`
+(5,928,295,860 bytes). The diagnostic DS-ACK BOOT is packaged; the selected
+production kernel remains unchanged. Build log:
+`logs/20261024-m2-integrated-build/attempt54.txt`; exit status is 0.
+
+Fresh install on G965F completed all eight verified TWRP32 stages with RC=0.
+USERDATA UUID changed; byte hashes for EFS/CPEFS/RADIO/RECOVERY/BOTA0/1/2
+matched prewrite values. BOOT matched the packaged diagnostic image. First boot
+reached `sys.boot_completed=1` after 204s; second boot reached it after 80.5s.
+ADB reported `device`; fresh values were `adb_enabled=1`,
+`development_settings_enabled=1`, `ro.adb.secure=0`, Rampart switch `0`, and
+SELinux Enforcing. `RangingService` registered and the earlier missing-RANGING
+permission failure did not recur. SystemServer PID/start count stayed stable
+through a 90-second second-boot sample.
+
+A temporary marker's SHA256 survived one controlled reboot on `/metadata`
+mounted from `/dev/block/sda21` as ext4; the marker was then removed. This
+verifies one-reboot persistence only, not CACHE clearing, OTA, staged flags or
+wider storage lifecycle behavior.
+
+Remaining failures are concrete: logcat lines 7840 and 7848 in
+`logs/20261025-m2-attempt54/boot2-logcat.txt` report `gpuMem.bpf` and
+`gpuWork.bpf: Invalid argument`; lines 164304–164367 and 181425–181482 show
+`com.samsung.android.kgclient` has no matching SELinux seapp context and each
+child zygote aborts with SIGABRT. At line 168661 the Bixby agent also throws
+`IllegalStateException: No matching ComponentResult found!`. These did not stop
+SystemServer from reaching boot completion, but they mean the build is not a
+stability or full hardware acceptance result.
+
+The expected cache logger did not run: the retained `build-config.sh` omits
+`EXYNOS9810_ENABLE_INIT_DEBUG`, build log `attempt54.txt` has no
+“Restoring final Exynos9810 CACHE init logger” entry, and live checks report
+`/vendor/etc/init/init.debug.rc` and `/vendor/bin/init_debug_log.sh` missing;
+`/cache/unica` is absent. Therefore this test did not validate patch0095's
+logger. A future logger probe must use a reviewed combined profile and confirm
+both files in the final VENDOR image before flash. Full local evidence is under
+`logs/20261025-m2-attempt54/`; it contains raw device logs and stays local.
+
+No M1/G965N, EFS/CPEFS/RADIO/RECOVERY/BOTA or bootloader write occurred. The
+selected production kernel remains unchanged.
+
+## Attempt55 — isolate the retained CACHE logger
+
+Patch0106 adds a parallel `m2-g965f-a376b-android16-runtime-init-debug.sh`
+profile. Its exported environment differs from attempt54's runtime profile only
+in `EXYNOS9810_ENABLE_INIT_DEBUG=false -> true`. The existing vendor logger
+from patch0095 is the sole added runtime behavior. Kernel, BPF objects,
+hardware/radio blobs and seapp policy are unchanged for this diagnostic.
+
+Affected files: the new profile, M1 profile diagnostic reset, existing work-tree
+cache key, config serialization and real-ext4 runtime image verifier. The
+logger flags are recorded in build-config and cache identity; final VENDOR
+verification requires exact staged logger bytes, modes, UID/GID and SELinux
+labels. Valid real-ext4 fixtures pass; missing logger, wrong GID and wrong
+label are rejected. Profile delta/reset and cache-key divergence pass. Complete
+source replay passes 96 patches / 79 paths byte-identically; old series hunks
+that use GNU patch fuzz are recorded in the replay JSON.
+
+The clean build uses the existing fork `make_rom.sh --clean-work-dir
+--no-target-files` while retained releases are moved and checksum-verified on
+the second NVMe. Packaging will use the existing `--package-staged
+--build-rom-zip` only after storage and compiled gates pass. Build/test evidence
+is private in `logs/20261025-m2-attempt55/`. No build or boot success is claimed
+by this entry.
+
+Read-only follow-up also narrows the kgclient problem: AZH4 already has
+`user=vendor_kg seinfo=platform name=com.samsung.android.kgclient domain=kg_app
+type=app_data_file levelFrom=user` in `system_ext_seapp_contexts`, and that line
+survives staging. Donor VENDOR passwd/group define vendor_kg as UID/GID5959;
+installed Hybrid VENDOR lacks those account rows and `id 5959` resolves to
+`oem_5959`. This is evidence for account-name/policy integration investigation,
+not a reason to broaden SELinux access. Attempt55 intentionally does not mix
+that prospective fix into the logger calibration. Live attempt54 stayed
+Enforcing with SystemServer PID1716/start_count1 at uptime1299.77s; this is an
+observed stability interval, not full hardware acceptance.
+
+
+### Independent BPF runtime evidence before attempt55 flash
+
+A temporary raw AArch64 test loaded the same return-0 two-instruction program
+as three program types on the running attempt54 kernel. Socket-filter control
+returned FD3 and a successful verifier log; TRACEPOINT and PERF_EVENT each
+returned -22 (EINVAL). All FDs were closed and the temporary executable removed;
+no program was attached or pinned and no config/policy/partition was changed.
+Source: diagnostics/bpf_prog_type_selftest.c. Evidence:
+logs/20261025-m2-attempt55/bpf-prog-type-selftest.txt.
+
+The live kernel has CONFIG_BPF_SYSCALL=y, CONFIG_KPROBES unset and no
+CONFIG_BPF_EVENTS. Pinned source include/linux/bpf_types.h gates tracepoint and
+perf-event program registration on CONFIG_BPF_EVENTS; kernel/trace/Kconfig
+requires probe events for that option. Thus the loader EINVAL is reproducible
+with a minimal program and is not explained solely by donor BPF instructions.
+This does not prove that enabling the option alone is sufficient: availability
+of the actual GPU tracepoints/helpers and libmeminfo map ABI still needs
+validation. Attempt55 retains the current diagnostic kernel to isolate logger
+behavior. A future kernel diagnostic must have its own provenance and tests.
+
+
+Attempt55 packaging correction: the first package pass exposed a real config
+regeneration bug. `package-first-buildenv.txt:16` recorded INIT_DEBUG=false
+after the second buildenv call, and vendor image verification omitted logger
+checks. No phone was flashed. That incomplete release was marked rejected.
+Patch0106 now also preserves the two explicitly selected diagnostic flags
+while buildenv clears old config variables. Actual repeated buildenv snapshots
+pass true/true/false/true (M2/M2/M1/M2); source replay now passes96patches /80
+paths. The compiled tree already contains the selected logger and all APK/JAR
+gates passed; repackaging uses the existing --package-staged path with a new
+unique release directory and an explicit post-buildenv true-flag assertion.
+This corrects build selection/audit; no additional runtime behavior is added.
+
+
+## Attempt55 completed — 25 October 2026
+
+The clean compile, corrected staged packaging, actual ext4/compiled gates and
+all eight signed ZIP32 install stages passed. The selected final config has
+INIT_DEBUG=true. Both logger files have exact bytes, UID/GID, modes and SELinux
+labels in final VENDOR; the installed VENDOR was checked again using ro,noload
+before reboot. All protected partition byte hashes matched across installation,
+USERDATA has a new UUID, and installed BOOT is the expected diagnostic hash.
+
+Retained release: `rom/out/releases/M2/star2lte-1792895273-SYRXCu/`.
+Full flashable ZIP: `UN1CA_1.4 (stable)-Unofficial-UN1CA 3.2.1_20261025_star2lte-sign.zip`,
+5,530,428,098 bytes, SHA256
+`a7a9ad8e54c56e3012497f1c1e4401c01efde62175c5500dce440e450dcecafd`.
+The eight signed ZIP32 stages and their manifest are in its `legacy/` directory.
+Package BOOT SHA256 is
+`6a6fe0cd652b22103e88547254c0b8b777aef9612b40309ab1150fe1d1ee410e`;
+installed full BOOT SHA256 is
+`55f3af8c3dc9c5115fd80f944849c8205c2d2bc5459bb2ecc7114d842669fe77`.
+This is the same existing WIPEONFORK diagnostic kernel/input as attempt54.
+No new kernel build or BPF/seapp/radio behavior fix was included.
+
+Fresh boot reached completed1 in180.7s; controlled second boot in79.7s, both
+Enforcing. Fresh values are adb_enabled=1, development_settings_enabled=1,
+ro.adb.secure=0 and secure rampart_main_switch_enabled=0. The user's prior
+functional ADB/Auto Blocker confirmation remains recorded; this trial checked
+fresh defaults and USB access rather than repeating every GUI toggle test.
+SystemServer stayed PID2057/start_count1 through first-boot uptime662.79s;
+second boot PID1688/start_count1 at uptime89.87s,121.61s and191.67s. These are bounded
+observations, not long-run stability acceptance. Camera/audio/phone services
+were found; full hardware acceptance does not follow from service registration.
+A unique temporary /metadata marker preserved its hash across the reboot on
+CACHE ext4 (/dev/block/sda21); it was removed and absence verified afterward.
+
+CACHE logger runtime result is PARTIAL, with two successful marker/logcat
+captures. Both boots wrote post-fs reached, post-fs-data reached and
+boot_completed=1. First-boot start/15s/60s logcat files were807124/1110540/7169624
+bytes; second-boot files810198/3708176/15322776 bytes. cmdline and partition
+snapshots were also nonempty. However props_start.txt and all three dmesg
+snapshots remain0bytes, and init_debug_start.txt contains only64bytes of
+headers. The JSON collector's PASS means markers plus logcat only, not all
+snapshot classes. Restarting the existing service late reproduced the gap.
+Read-only runcon tests under u:r:init:s0 reproduced empty date/getprop output
+with rc0 and toybox cat rc1; direct root ADB applets/dmesg produce output.
+No matching denial or complete root cause was established. No policy weakening,
+service relabel or kernel change was made to conceal this limitation.
+
+Remaining errors in `logs/20261025-m2-attempt55/boot2/logcat-all.txt`:
+
+- Line7879: `Error when loading /system/etc/bpf/gpuMem.bpf: Invalid argument (os error 22)`;
+  line7887 repeats this for gpuWork.bpf.
+- Line152556: `No match for app with uid 5959` for
+  com.samsung.android.kgclient, `username oem_5959`; line153275:
+  `Fatal signal 6 (SIGABRT)` in ch_zygote. A second pair is169261/169303.
+- Line156141: Bixby agent `IllegalStateException: No matching ComponentResult found!`.
+
+The separate raw BPF test proves TRACEPOINT/PERF_EVENT type EINVAL on the
+current config while SOCKET_FILTER succeeds. Donor/staged seapp already has
+the kgclient rule; the Hybrid Vendor account-name discrepancy is the next
+narrow integration hypothesis. Neither finding is fixed by this logger-only
+trial. Keep BPF capability/tracepoint/map ABI and account-name tests separate.
+
+Evidence is local under `logs/20261025-m2-attempt55/`: series-replay.json
+(96patches/80paths PASS), logger-final-image-audit.json,
+installed-logger-audit.json, install-complete.txt, boot-watch.json,
+boot1/runtime-summary.json, boot2-control.json, boot2/runtime-summary.json,
+boot2-stability-final.txt and the late/runcon control captures. Raw device logs
+and firmware outputs remain excluded from source publication. Phone remains
+in Android attempt55; no temporary metadata marker remains. G965N/M1 were
+untouched. Production kernel selection and M4/Android17 gates are unchanged.
+
+
+## Attempt56 preparation — account-name diagnosis, 25 October 2026
+
+Read-only capture from booted G965F confirms `uid=5959(oem_5959)` and
+`gid=5959(oem_5959)`, with SELinux Enforcing. The app is installed at
+`/system/priv-app/KnoxGuard/KnoxGuard.apk`; no kgclient/kg_app process survived
+at capture. `/system_ext/etc/selinux/system_ext_seapp_contexts:35` contains the
+exact `user=vendor_kg ... name=com.samsung.android.kgclient domain=kg_app` rule.
+The installed Hybrid Vendor has no account entry for name vendor_kg or ID5959.
+The pinned A37 donor files match full-file SHA256 and define one exact passwd and
+group row for vendor_kg at UID/GID5959; target staging has neither. This
+confirms the account lookup mismatch as the reason the observed rule cannot
+match, while the next runtime must still prove the fix end to end.
+
+Patch0107 modifies only the existing M2/G965F runtime compatibility stage to
+merge these two exact rows after vendor restoration; the rows are hash-pinned
+and any duplicate name/ID aborts the build. The image verifier now checks the
+actual vendor ext4 passwd/group bytes, owner, mode and SELinux label. Fixture
+checks prove the donor hashes, exact rows, idempotence, and collision rejection;
+syntax checks pass. The patch is recorded in `patches/fork/series` and
+`sources.lock.json`. A new clean build and live boot remain pending; attempt55
+is retained as rollback/reference. Files, reason, checks and rollback are in
+`docs/patch-matrix.md` under Patch0107. Full read-only captures stay local under
+`logs/20261025-kgclient-investigation/`.
+
+
+## Attempt56 completed — 25 October 2026
+
+Patch0107 addresses only the donor-pinned UID/GID account mapping. Its stated
+reason, affected files, checks and rollback are in `docs/patch-matrix.md` under
+Patch0107. It modifies the existing fork's M2 runtime adapter and donor lock,
+the vendor restore customizer, and the actual-ext4 verifier; the tracked patch
+and source-lock entry are in `patches/fork/0107-restore-a376b-vendor-kg-account-for-m2.patch`,
+`patches/fork/series` and `sources.lock.json`. It adds no sepolicy allow, kernel,
+radio or EFS changes.
+
+Build used the existing `make_rom.sh --clean-work-dir --no-target-files` compile
+and existing `--package-staged --build-rom-zip` packaging flow. The profile and
+final-image gates passed, including compiled ADB defaults, SELinux policy,
+ABI/runtime checks and the actual ext4 SYSTEM/VENDOR/ODM audits. Series replay
+passed 97 patches / 80 paths. The actual ext4 VENDOR audit confirms the exact
+donor-pinned passwd/group content and `vendor_configs_file` mode/label; the
+logger remains present. The signed flashable ZIP is retained at
+`rom/out/releases/M2/star2lte-1792900635-m9nN7O/`:
+
+- Flashable ZIP: 5,530,402,150 bytes, SHA256
+  `f6e4a1069cca283ef32751abace1aedc23222d9ea5eb002d9a78e19475ee5e15`.
+- Target-files ZIP SHA256:
+  `fe2a891ca884883290d41efa10338d4e2249469df23f45d5f78e40585386b708`.
+- Package BOOT payload SHA256:
+  `6a6fe0cd652b22103e88547254c0b8b777aef9612b40309ab1150fe1d1ee410e`.
+- All eight legacy sideload stages passed ZIP32/signature/CRC checks. The
+  release manifest and source hashes are under its `legacy/` directory.
+
+On the authorized G965F test target, installer preflight rechecked model,
+bootloader, TWRP, package/stage hashes and exact raw partition sizes. It saved
+the current BOOT before writing; stages1–8 each returned `RC=0`. USERDATA UUID
+changed after fresh format. Pre/post raw hashes for EFS, CPEFS, RADIO, RECOVERY
+and BOTA0/1/2 are identical. Installed BOOT matches the package diagnostic
+hash. The installed VENDOR was then mounted `ro,noload`; passwd/group/logger
+bytes, UID/GID, mode and SELinux labels passed before boot.
+
+Both first and controlled second boot reached `sys.boot_completed=1` with
+Enforcing SELinux. On both boots `id 5959` reports `uid=5959(vendor_kg)
+gid=5959(vendor_kg)`, and the live package process uses `u:r:kg_app`. A scan of
+`boot1/logcat-after-boot.txt` and `boot2/logcat-midwatch.txt` found zero
+`No match for app with uid 5959` and zero `Fatal signal 6 (SIGABRT)`. The
+second boot completed in83.5s; a temporary marker survived on ext4 `/metadata`
+and was removed by the test. `system_server` stayed at start_count1. Both
+`/cache/unica` captures contain post-fs, post-fs-data and boot-complete markers
+and nonempty logcat snapshots. Init-context dmesg and props snapshots remain
+empty; the collector PASS applies to the markers/logcat classes only.
+
+The remaining KnoxGuard problem is separate from account lookup. Boot1
+`logcat-after-boot.txt:253262,253958` and boot2
+`logcat-midwatch.txt:195922,195946` record one
+`LockedBootCompletedReceiver` ANR on each boot; boot2 line195989 says ActivityManager
+killed the process for `bg anr`. `boot2/kgclient-anr-trace2.txt:90-94` shows the
+main thread blocked in `IKnoxGuardManager.getTAInfo`. The same boot has
+`TLC_ERROR` at line35040 and `@TimeoutException: getTAInfo - null` at line204112;
+`dumpsys knoxguard_service` timed out after10s although `knoxguard_service` is
+registered. The package was later restarted and remained running under kg_app,
+but the TA path is not accepted as working. Do not disable KnoxGuard or infer a
+hardware fix from this trace alone.
+
+Other independent attempt56 errors remain: BPF `EINVAL` is logged at
+boot2 lines7875/7883, and Bixby logs `IllegalStateException: No matching
+ComponentResult found!` at line171618. The bounded stability monitor was
+stopped after reproducing the KnoxGuard ANR; this is not a long-run acceptance.
+Attempt55 remains retained. The G965F currently runs attempt56; M1/G965N were
+untouched, and no M4/Android17 or production-kernel gate is passed. Private raw
+evidence is under `logs/20261025-m2-attempt56/`.

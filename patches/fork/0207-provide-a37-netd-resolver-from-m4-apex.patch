@@ -1,0 +1,126 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] provide A37 netd resolver library from M4 tethering APEX
+
+# Reason: attempt0207 repeats `CANNOT LINK EXECUTABLE "/system/bin/netd": library "libnetd_resolv.so" not found`; target-files SYSTEM netd needs the DSO, while the S22-based diagnostic APEX composition omitted it. BZI6 contains the hash-pinned provider and its apex_manifest.pb exports it through provideNativeLibs.
+# Affected: diagnostic-only APEX composition helper and lock in the existing Exynos9810 restore module. Normal M4 profile and donor/native/RIL/vendor payloads remain unchanged.
+# Verify: exact donor lib hash; protobuf field-7 export; five-file-only payload diff; UID/GID/mode/SELinux metadata; ext4 roundtrip; AVB, v3, 4KiB alignment; repeat build exact APEX hash; postboot diagnostic verifier pins exact output. Device network behavior remains a separate runtime gate.
+# Rollback: reverse patch0207 and rebuild the previous M4 diagnostic artifact; retained attempt37 and attempt0207 remain unchanged. No kernel, modem, EFS or protected partition change.
+
+--- a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_network_native.py
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_network_native.py
+@@ -23,7 +23,56 @@
+ rel='lib64/libcom.android.tethering.connectivity_native.so'
+ old=O/'s22'/rel;new=O/'bzi6'/rel
+ assert sha(old)==LOCK['s22_native_sha256'] and sha(new)==LOCK['bzi6_native_sha256']
++resolv_rel='lib64/libnetd_resolv.so'
++resolv=O/'bzi6'/resolv_rel
++assert sha(resolv)==LOCK['stats_compat']['libnetd_resolv_sha256']
++manifest_rel='apex_manifest.pb'
++s22_manifest=O/'s22'/manifest_rel
++bzi6_manifest=O/'bzi6'/manifest_rel
++
++def protobuf_strings(data, field_number):
++ found=[];i=0
++ while i<len(data):
++  start=i;tag=0;shift=0
++  while True:
++   b=data[i];i+=1;tag|=(b&0x7f)<<shift
++   if not b&0x80:break
++   shift+=7
++  number,wire=tag>>3,tag&7
++  if wire==2:
++   length=0;shift=0
++   while True:
++    b=data[i];i+=1;length|=(b&0x7f)<<shift
++    if not b&0x80:break
++    shift+=7
++   value=data[i:i+length];i+=length
++   if number==field_number:found.append(value.decode())
++  elif wire==0:
++   while data[i]&0x80:i+=1
++   i+=1
++  elif wire==1:i+=8
++  elif wire==5:i+=4
++  else:raise ValueError('Unsupported APEX manifest protobuf wire type')
++  assert i>start
++ return found
++
++def encode_varint(value):
++ out=bytearray()
++ while value>0x7f:out.append((value&0x7f)|0x80);value>>=7
++ out.append(value);return bytes(out)
++
++s22_manifest_bytes=s22_manifest.read_bytes()
++bzi6_manifest_bytes=bzi6_manifest.read_bytes()
++assert 'libnetd_resolv.so' not in protobuf_strings(s22_manifest_bytes,7)
++assert 'libnetd_resolv.so' in protobuf_strings(bzi6_manifest_bytes,7)
+ merged=O/'merged';shutil.copytree(O/'s22',merged,symlinks=True);shutil.copyfile(new,merged/rel)
++shutil.copyfile(resolv,merged/resolv_rel)
++# APEX manifest field 7 is provideNativeLibs. Publish the added DSO in the
++# existing Tethering APEX namespace so linkerconfig can resolve netd's DT_NEEDED.
++resolv_name=b'libnetd_resolv.so'
++merged_manifest=s22_manifest_bytes+b'\x3a'+encode_varint(len(resolv_name))+resolv_name
++(merged/manifest_rel).write_bytes(merged_manifest)
++assert protobuf_strings(merged_manifest,7)==protobuf_strings(s22_manifest_bytes,7)+['libnetd_resolv.so']
+ java_report=None
+ if a.l4s_compat:
+  spec=importlib.util.spec_from_file_location('network_l4s',Path(__file__).with_name('a376b_android17_network_l4s.py'));java_mod=importlib.util.module_from_spec(spec);spec.loader.exec_module(java_mod)
+@@ -40,8 +89,9 @@
+ config=[];contexts=[];metadata={} 
+ for i,p in enumerate([merged]+sorted(merged.rglob('*'))):
+  r=str(p.relative_to(merged));r='' if r=='.' else r
+- st=run(['debugfs','-R','stat /'+r,O/'s22.img']);mode=re.search(r'Mode:\s+0*(\d+)',st).group(1);uid,gid=re.search(r'User:\s+(\d+)\s+Group:\s+(\d+)',st).groups()
+- label=O/f'label{i}';run(['debugfs','-R',f'ea_get -f "{label}" /{r} security.selinux',O/'s22.img']);assert label.is_file() and label.stat().st_size,r
++ source_img=O/'bzi6.img' if r==resolv_rel else O/'s22.img'
++ st=run(['debugfs','-R','stat /'+r,source_img]);mode=re.search(r'Mode:\s+0*(\d+)',st).group(1);uid,gid=re.search(r'User:\s+(\d+)\s+Group:\s+(\d+)',st).groups()
++ label=O/f'label{i}';run(['debugfs','-R',f'ea_get -f \"{label}\" /{r} security.selinux',source_img]);assert label.is_file() and label.stat().st_size,r
+  context=label.read_bytes().rstrip(b'\0').decode();config.append(f'{r or "/"} {uid} {gid} 0{mode}');contexts.append(re.escape('/'+r).replace(r'\-', '-')+' '+context);metadata[r]=(mode,uid,gid,context)
+ (O/'fs_config').write_text('\n'.join(config)+'\n');(O/'file_contexts').write_text('\n'.join(contexts)+'\n')
+ image=O/'composed.img';os.environ['MKE2FS_CONFIG']=str(T/'mke2fs.conf');os.environ['E2FSPROGS_FAKE_TIME']='1';uuid='b171b06f-3d8c-5a76-a035-835a00002717'
+@@ -53,15 +103,16 @@
+ verified=O/'verified';verified.mkdir();run(['debugfs','-R',f'rdump / "{verified}"',image])
+ assert {str(p.relative_to(merged)) for p in merged.rglob('*')}=={str(p.relative_to(verified)) for p in verified.rglob('*')}
+ changed=[]
+-for p in sorted((O/'s22').rglob('*')):
+- r=str(p.relative_to(O/'s22'));q=verified/r
++for r in sorted({str(p.relative_to(O/'s22')) for p in (O/'s22').rglob('*')} | {str(p.relative_to(merged)) for p in merged.rglob('*')}):
++ p=O/'s22'/r;q=verified/r
+  if p.is_symlink():assert q.is_symlink() and os.readlink(p)==os.readlink(q),r
+  elif p.is_file():
+   if p.read_bytes()!=q.read_bytes():changed.append(r)
+-assert changed==sorted([rel]+(['javalib/framework-connectivity.jar'] if a.l4s_compat else [])+(['javalib/framework-connectivity-t.jar'] if a.stats_compat else [])),changed;assert (verified/rel).read_bytes()==new.read_bytes()
++ elif not p.exists() and q.exists():changed.append(r)
++assert changed==sorted([rel,resolv_rel,manifest_rel]+(['javalib/framework-connectivity.jar'] if a.l4s_compat else [])+(['javalib/framework-connectivity-t.jar'] if a.stats_compat else [])),changed;assert (verified/rel).read_bytes()==new.read_bytes();assert sha(verified/resolv_rel)==LOCK['stats_compat']['libnetd_resolv_sha256'];assert protobuf_strings((verified/manifest_rel).read_bytes(),7)==protobuf_strings(s22_manifest_bytes,7)+['libnetd_resolv.so']
+ for r,expected in metadata.items():
+  st=run(['debugfs','-R','stat /'+r,image]);mode=re.search(r'Mode:\s+0*(\d+)',st).group(1);uid,gid=re.search(r'User:\s+(\d+)\s+Group:\s+(\d+)',st).groups();label=O/'verify-label';label.unlink(missing_ok=True);run(['debugfs','-R',f'ea_get -f "{label}" /{r} security.selinux',image]);assert label.exists();found=(mode,uid,gid,label.read_bytes().rstrip(b'\0').decode());assert found==expected,(r,found,expected)
+-salt=hashlib.sha256((O/'s22.img').read_bytes()+new.read_bytes()+((merged/'javalib/framework-connectivity.jar').read_bytes() if a.l4s_compat else b'')+((merged/'javalib/framework-connectivity-t.jar').read_bytes() if a.stats_compat else b'')).hexdigest();run([T/'avbtool','add_hashtree_footer','--do_not_generate_fec','--algorithm','SHA256_RSA4096','--key',K/'payload.pem','--prop','apex.key:com.android.tethering','--image',image,'--salt',salt,'--hash_algorithm','sha256']);run([T/'avbtool','verify_image','--image',image,'--key',K/'payload.pem'])
++salt=hashlib.sha256((O/'s22.img').read_bytes()+new.read_bytes()+resolv.read_bytes()+merged_manifest+((merged/'javalib/framework-connectivity.jar').read_bytes() if a.l4s_compat else b'')+((merged/'javalib/framework-connectivity-t.jar').read_bytes() if a.stats_compat else b'')).hexdigest();run([T/'avbtool','add_hashtree_footer','--do_not_generate_fec','--algorithm','SHA256_RSA4096','--key',K/'payload.pem','--prop','apex.key:com.android.tethering','--image',image,'--salt',salt,'--hash_algorithm','sha256']);run([T/'avbtool','verify_image','--image',image,'--key',K/'payload.pem'])
+ unsigned=O/'unsigned.apex';signed=O/'com.android.tethering.apex'
+ with zipfile.ZipFile(O/'s22.apex') as src,zipfile.ZipFile(unsigned,'w',compression=zipfile.ZIP_STORED) as dst:
+  for entry in src.infolist():
+@@ -81,5 +132,5 @@
+ expected=LOCK['stats_compat'] if a.stats_compat else LOCK['l4s_compat'] if a.l4s_compat else LOCK
+ if sha(signed)!=expected['output_sha256'] or signed.stat().st_size!=expected['output_bytes']:
+  raise RuntimeError('M4 native networking APEX reproducibility/hash gate failed')
+-report={'java_stats':stats_report,'java_l4s':java_report,'result':'PASS','changed_payload_files':changed,'metadata_paths_verified':len(metadata),'old_native_sha256':sha(old),'new_native_sha256':sha(new),'output_sha256':sha(signed),'bytes':signed.stat().st_size,'payload_avb':'PASS','container_v3':verification.strip(),'payload_zip_offset':offset,'other_container_metadata_unchanged':True,'signing_identity':'explicit existing local native32 diagnostic keys; not Samsung original signing','phone_deployed':False,'network_acceptance':False}
++report={'java_stats':stats_report,'java_l4s':java_report,'result':'PASS','changed_payload_files':changed,'metadata_paths_verified':len(metadata),'old_native_sha256':sha(old),'new_native_sha256':sha(new),'libnetd_resolv_sha256':sha(verified/resolv_rel),'apex_manifest_provided_libs':protobuf_strings((verified/manifest_rel).read_bytes(),7),'output_sha256':sha(signed),'bytes':signed.stat().st_size,'payload_avb':'PASS','container_v3':verification.strip(),'payload_zip_offset':offset,'other_container_metadata_unchanged':True,'signing_identity':'explicit existing local native32 diagnostic keys; not Samsung original signing','phone_deployed':False,'network_acceptance':False}
+ (O/'report.json').write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report,indent=2),flush=True)
+--- a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_network_native.lock.json
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_network_native.lock.json
+@@ -30,12 +30,13 @@
+     "java_jar_sha256": "91e443b8a6705ac3f20d986b70b449ceee604a821a43cbdb80ed07a2c4b4b4c7"
+   },
+   "stats_compat": {
+-    "scope": "diagnostic; donor stats overloads and complete shared transport/template/identity persistence unit; legacy entry points retained",
+-    "output_sha256": "f17fa222e1f127d349e61b592c705c127f682ad4d22dda164c03397857862cc6",
++    "scope": "diagnostic; donor stats overloads and complete shared transport/template/identity persistence unit; legacy entry points retained; adds BZI6 libnetd_resolv.so and APEX provideNativeLibs entry required by A37 netd",
++    "output_sha256": "03a0fbcdd952df34795a6b3648583ae7feb6b49ab785a3cd074db85f7fb2a2ba",
+     "output_bytes": 67911680,
+     "java_jar_sha256": {
+       "main": "cb000f867b4a969954b157f50a1c07920fc047a3232ee51086dc0fb0ace541f3",
+       "t": "bd65d527e221beec24f329ff0cb980a52c8a024075fb004121062bb1314bb7e8"
+-    }
++    },
++    "libnetd_resolv_sha256": "ccfa0d2f6c1d296daf7f5ce3d9087d70243d795c8dce508eafac1cf46fcfb849"
+   }
+ }

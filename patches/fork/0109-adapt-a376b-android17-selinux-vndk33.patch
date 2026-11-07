@@ -1,0 +1,268 @@
+From: Codex M4 Android17 SELinux compatibility
+Subject: [PATCH] Adapt BZI6 SELinux policy to Hybrid Vendor VNDK33
+
+Reason: BZI6 Android17's VNDK33 mapping expands 16 public aliases absent from
+our retained hybrid vendor, changes the telephony property label, and adds a
+system_ext proc label that conflicts with a stale vendor genfscon. The previous
+unmodified staged policy failed at system_ext mapping 33.0.cil:359; the exact
+adapter now yields a clean staged secilc compile.
+Files: add a narrowly scoped BZI6 policy adapter and call it after embedded
+SELinux compatibility rules in the existing Exynos9810 finalization module.
+Verification: helper self-test, wrong-VNDK reject, idempotent actual-workdir
+transformation, staged fork SELinux verifier PASS, bash syntax, and full pinned
+fork-series replay. No live policy load or device partition write.
+Rollback: remove this patch from patches/fork/series and restore the previous
+fork worktree; the original M2/AZH4 policy path is unchanged.
+
+diff --git a/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh b/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
+--- a/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
+@@ -7291,6 +7291,16 @@
+ _EXYNOS9810_FINAL_ENABLE_REPORTED_FEATURES || return 1
+ _EXYNOS9810_FINAL_CLEAN_GRAPHICS_STATE || return 1
+ _EXYNOS9810_FINAL_APPLY_EMBEDDED_SEPOLICY || return 1
++if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++    [ "$TARGET_CODENAME" = "star2lte" ] && [ "${ROM_MILESTONE:-}" = "M4" ] || {
++        LOGE "A376B Android17 SELinux compatibility is restricted to star2lte/M4"
++        return 1
++    }
++    # Run after embedded compatibility rules are appended so legacy property
++    # policy cannot reintroduce the Android16 telephony type into M4 output.
++    python3 "$SRC_DIR/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_selinux.py" \
++        apply --work-dir "$WORK_DIR" || return 1
++fi
+ _EXYNOS9810_FINAL_ENSURE_TARGET_IDENTITY
+ _EXYNOS9810_FINAL_VERIFY_ENFORCING_BOOT_STATE || return 1
+ _EXYNOS9810_FINAL_REMOVE_STALE_SYSTEM_BOOT_DEBUG
+diff --git a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_selinux.py b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_selinux.py
+new file mode 100644
+--- /dev/null
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_selinux.py
+@@ -0,0 +1,227 @@
++#!/usr/bin/env python3
++"""Adapt the pinned Exynos9810 VNDK33 SELinux layer to A37 Android 17.
++
++Reason: BZI6's system_ext compatibility map adds public VNDK33 aliases that
++the retained hybrid vendor does not declare, changes the telephony property
++label, and owns a proc genfscon label that conflicts with one stale vendor
++label. Apply only these exact, source-verified changes to the staged workdir.
++Files affected: vendor/etc/selinux/plat_pub_versioned.cil and
++vendor/etc/selinux/vendor_sepolicy.cil in the temporary ROM build workdir.
++Verify with this script's self-test and the fork's
++scripts/internal/verify_exynos9810_selinux.py; never load policy on-device here.
++"""
++from __future__ import annotations
++
++import argparse
++import os
++import re
++import tempfile
++from pathlib import Path
++
++
++OLD_TELEPHONY_RULE = "(allow vendor_init telephony_prop (property_service (set)))"
++NEW_TELEPHONY_RULE = "(allow vendor_init telephony_config_prop_33_0 (property_service (set)))"
++OLD_GENFSCON_RULE = '(genfscon proc "/sys/vm/compaction_proactiveness" (u object_r proc_compaction ((s0) (s0))))'
++NEW_GENFSCON_RULE = '(genfscon proc "/sys/vm/compaction_proactiveness" (u object_r proc_compaction_proactiveness ((s0) (s0))))'
++EXPECTED_PDA = "A376BXXU5BZI6"
++
++
++def validate_scope() -> None:
++    expected = {
++        "ROM_SOURCE_CONFIG": "essi_a376b_android17",
++        "ROM_MILESTONE": "M4",
++        "TARGET_CODENAME": "star2lte",
++    }
++    for key, value in expected.items():
++        if os.environ.get(key) != value:
++            raise ValueError(f"Unreviewed A376B Android17 SELinux scope: {key}")
++
++
++def _properties(path: Path) -> dict[str, str]:
++    result = {}
++    for line in path.read_text(errors="replace").splitlines():
++        line = line.strip()
++        if not line or line.startswith("#") or "=" not in line:
++            continue
++        key, value = line.split("=", 1)
++        result[key] = value
++    return result
++
++
++def _replace_exactly_once(text: str, old: str, new: str, label: str) -> tuple[str, bool]:
++    old_count, new_count = text.count(old), text.count(new)
++    if old_count == 1 and new_count == 0:
++        return text.replace(old, new, 1), True
++    if old_count == 0 and new_count == 1:
++        return text, False
++    raise ValueError(f"Expected exactly one original or adapted {label}; found old={old_count} new={new_count}")
++
++
++def _expanded_typeattributes(mappings: list[Path]) -> list[str]:
++    aliases: set[str] = set()
++    pattern = re.compile(r"\(expandtypeattribute\s+\(([^)]+)\)\s+true\)")
++    for path in mappings:
++        if path.is_file():
++            aliases.update(pattern.findall(path.read_text(errors="replace")))
++    return sorted(aliases)
++
++
++def _add_missing_typeattributes(text: str, aliases: list[str]) -> tuple[str, int]:
++    additions = []
++    for alias in aliases:
++        declaration = re.compile(rf"\((typeattribute|type)\s+{re.escape(alias)}(?:\s|\))")
++        found = declaration.findall(text)
++        if "type" in found:
++            raise ValueError(f"VNDK33 alias is already declared as a concrete type: {alias}")
++        if not found:
++            additions.append(alias)
++    if additions:
++        text = text.rstrip() + "\n" + "\n".join(f"(typeattribute {name})" for name in additions) + "\n"
++    return text, len(additions)
++
++
++def apply_policy(work: Path) -> tuple[int, int, int]:
++    system = work / "system/system"
++    platform_selinux = system / "etc/selinux"
++    system_ext_selinux = system / "system_ext/etc/selinux"
++    product_selinux = work / "system/product/etc/selinux"
++    vendor_selinux = work / "vendor/etc/selinux"
++    build_prop = system / "build.prop"
++    version_path = vendor_selinux / "plat_sepolicy_vers.txt"
++    pub_path = vendor_selinux / "plat_pub_versioned.cil"
++    vendor_path = vendor_selinux / "vendor_sepolicy.cil"
++
++    for path in (build_prop, version_path, pub_path, vendor_path,
++                 platform_selinux / "plat_property_contexts",
++                 platform_selinux / "mapping/33.0.cil",
++                 system_ext_selinux / "system_ext_sepolicy.cil",
++                 system_ext_selinux / "mapping/33.0.cil"):
++        if not path.is_file():
++            raise ValueError(f"Missing A376B Android17 SELinux input: {path}")
++
++    props = _properties(build_prop)
++    if (props.get("ro.build.PDA") != EXPECTED_PDA or
++            props.get("ro.build.version.sdk") != "37" or
++            props.get("ro.build.version.release") != "17"):
++        raise ValueError("Staged system build identity is not the audited BZI6 Android17 donor")
++    if version_path.read_text().strip() != "33.0":
++        raise ValueError("Target Hybrid Vendor SELinux version must remain VNDK33/plat 33.0")
++
++    property_contexts = (platform_selinux / "plat_property_contexts").read_text(errors="replace")
++    if not re.search(r"^ro\.telephony\.sim_slots\.count\s+u:object_r:telephony_config_prop:s0\b",
++                     property_contexts, re.MULTILINE):
++        raise ValueError("BZI6 telephony property context no longer matches the audited preimage")
++
++    system_ext_cil = (system_ext_selinux / "system_ext_sepolicy.cil").read_text(errors="replace")
++    if "(type knoxzt_service)" not in system_ext_cil:
++        raise ValueError("A17 system_ext no longer defines the KnoxZT service used by the vendor rule")
++    if "(allow teed_app knoxzt_service (service_manager (find)))" not in vendor_path.read_text(errors="replace"):
++        raise ValueError("Hybrid Vendor KnoxZT service rule changed; review before applying")
++    if NEW_GENFSCON_RULE not in system_ext_cil:
++        raise ValueError("A17 system_ext proc-compaction genfscon preimage changed")
++
++    mappings = [
++        platform_selinux / "mapping/33.0.cil",
++        system_ext_selinux / "mapping/33.0.cil",
++        product_selinux / "mapping/33.0.cil",
++    ]
++    aliases = _expanded_typeattributes(mappings)
++    if not aliases:
++        raise ValueError("No expanded VNDK33 compatibility attributes found")
++    pub_text, added = _add_missing_typeattributes(
++        pub_path.read_text(errors="replace"), aliases)
++
++    vendor_text = vendor_path.read_text(errors="replace")
++    vendor_text, telephony_changed = _replace_exactly_once(
++        vendor_text, OLD_TELEPHONY_RULE, NEW_TELEPHONY_RULE, "telephony property rule")
++    if "(typeattribute telephony_config_prop_33_0)" not in pub_text and \
++            "(type telephony_config_prop_33_0" not in pub_text:
++        raise ValueError("VNDK33 telephony_config_prop alias is not declared")
++    old_genfs_count = vendor_text.count(OLD_GENFSCON_RULE)
++    if old_genfs_count == 1:
++        vendor_text = vendor_text.replace(OLD_GENFSCON_RULE + "\n", "", 1)
++        if OLD_GENFSCON_RULE in vendor_text:
++            raise ValueError("A duplicate obsolete proc-compaction vendor genfscon remains")
++        genfscon_removed = 1
++    elif old_genfs_count == 0:
++        genfscon_removed = 0
++    else:
++        raise ValueError(f"Expected at most one obsolete proc-compaction genfscon; found {old_genfs_count}")
++    vendor_path.write_text(vendor_text)
++
++    if NEW_TELEPHONY_RULE not in vendor_text or OLD_GENFSCON_RULE in vendor_text:
++        raise ValueError("A17 vendor policy adaptation did not reach the required exact state")
++    if added:
++        pub_path.write_text(pub_text)
++    if telephony_changed or genfscon_removed:
++        vendor_path.write_text(vendor_text)
++    return added, int(telephony_changed), genfscon_removed
++
++
++def self_test() -> None:
++    with tempfile.TemporaryDirectory(prefix="a376b-android17-selinux-") as temp:
++        work = Path(temp)
++        system = work / "system/system"
++        platform = system / "etc/selinux"
++        ext = system / "system_ext/etc/selinux"
++        product = work / "system/product/etc/selinux"
++        vendor = work / "vendor/etc/selinux"
++        for path in (platform / "mapping", ext / "mapping", product / "mapping", vendor):
++            path.mkdir(parents=True, exist_ok=True)
++        (system / "build.prop").write_text(
++            "ro.build.PDA=A376BXXU5BZI6\nro.build.version.sdk=37\nro.build.version.release=17\n")
++        (platform / "plat_property_contexts").write_text(
++            "ro.telephony.sim_slots.count u:object_r:telephony_config_prop:s0 exact int\n")
++        (platform / "mapping/33.0.cil").write_text(
++            "(expandtypeattribute (platform_alias_33_0) true)\n")
++        (ext / "mapping/33.0.cil").write_text(
++            "(expandtypeattribute (system_ext_alias_33_0) true)\n")
++        (product / "mapping/33.0.cil").write_text("")
++        (ext / "system_ext_sepolicy.cil").write_text(
++            NEW_GENFSCON_RULE + "\n(type knoxzt_service)\n")
++        (vendor / "plat_sepolicy_vers.txt").write_text("33.0\n")
++        (vendor / "plat_pub_versioned.cil").write_text(
++            "(typeattribute telephony_config_prop_33_0)\n")
++        (vendor / "vendor_sepolicy.cil").write_text(
++            OLD_GENFSCON_RULE + "\n" + OLD_TELEPHONY_RULE + "\n"
++            "(allow teed_app knoxzt_service (service_manager (find)))\n")
++        first = apply_policy(work)
++        after = (vendor / "vendor_sepolicy.cil").read_bytes()
++        second = apply_policy(work)
++        if first != (2, 1, 1) or second != (0, 0, 0):
++            raise ValueError(f"Unexpected changes/idempotence result: {first}, {second}")
++        if (vendor / "vendor_sepolicy.cil").read_bytes() != after:
++            raise ValueError("A17 SELinux adaptation is not idempotent")
++        pub = (vendor / "plat_pub_versioned.cil").read_text()
++        if "(typeattribute platform_alias_33_0)" not in pub or "(typeattribute system_ext_alias_33_0)" not in pub:
++            raise ValueError("Missing VNDK33 compatibility attribute declarations")
++
++        (vendor / "plat_sepolicy_vers.txt").write_text("34.0\n")
++        try:
++            apply_policy(work)
++        except ValueError as error:
++            if "must remain VNDK33" not in str(error):
++                raise
++        else:
++            raise ValueError("Unexpected VNDK34 policy was accepted")
++    print("PASS BZI6 SELinux transformations, exact preimages, scope and idempotence")
++
++
++def main() -> None:
++    parser = argparse.ArgumentParser(description=__doc__)
++    sub = parser.add_subparsers(dest="command", required=True)
++    apply_parser = sub.add_parser("apply")
++    apply_parser.add_argument("--work-dir", type=Path, required=True)
++    sub.add_parser("self-test")
++    args = parser.parse_args()
++    if args.command == "self-test":
++        self_test()
++        return
++    validate_scope()
++    result = apply_policy(args.work_dir)
++    print(f"PASS BZI6 SELinux adaptation: added_typeattributes={result[0]} "
++          f"telephony_rule_updated={result[1]} stale_genfscon_removed={result[2]}")
++
++
++if __name__ == "__main__":
++    main()

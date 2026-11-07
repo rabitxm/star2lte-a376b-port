@@ -1,0 +1,218 @@
+# Reason: HFP-only FDF1 skipping failed; BZI6 still initializes the advertised DBFW+ command group on this controller.
+# Files: Bluetooth customize/helper/lock, composed FDF1/native-backend hash locks, M4 image gate.
+# Verify: exact setter store/branch and disabled path, donor/composition/idempotence/negative-context fixtures, final hash, real image, runtime stability/toggles.
+# Rollback: 26585f22 baseline JNI. Preserve SCO transport, keys, vendor/radio and kernel. Failed HFP-only experiment is archived under diagnostics, not active.
+--- a/unica/patches/bluetooth/customize.sh
++++ b/unica/patches/bluetooth/customize.sh
+@@ -196,4 +196,10 @@
+     python3 "$SRC_DIR/unica/patches/bluetooth/a376b_android17_fdf1_skip.py" \
+         apply --jni "$WORK_DIR/system/system/lib64/libbluetooth_jni.so" || \
+         ABORT "M4 BZI6 FDF1 sender preimage/scope verification failed"
+-fi
++    # BZI6 initializes several DBFW+ debug commands from its capability setter.
++    # The measured controller timeout requires its original unsupported path;
++    # pin the exact setter instead of masking individual startup commands.
++    python3 "$SRC_DIR/unica/patches/bluetooth/a376b_android17_dbfw_capability.py" \
++        apply --jni "$WORK_DIR/system/system/lib64/libbluetooth_jni.so" || \
++        ABORT "M4 BZI6 DBFW+ capability preimage/scope verification failed"
++fi
+--- a/scripts/internal/verify_m4_runtime_image.py
++++ b/scripts/internal/verify_m4_runtime_image.py
+@@ -27,6 +27,7 @@
+ KG30_HELPER = ROOT / "unica/patches/exynos9810_device_stack/exynos9810_finalization/a376b_android17_kg30_nonblocking.py"
+ BT_BACKEND_HELPER = ROOT / "unica/patches/bluetooth/a376b_android17_native_backend.py"
+ BT_FDF1_HELPER = ROOT / "unica/patches/bluetooth/a376b_android17_fdf1_skip.py"
++BT_CAPABILITY_HELPER = ROOT / "unica/patches/bluetooth/a376b_android17_dbfw_capability.py"
+ 
+ 
+ def metadata(partition, rel):
+@@ -162,6 +163,8 @@
+         bt_fdf1 = importlib.util.module_from_spec(spec)
+         spec.loader.exec_module(bt_fdf1)
+         bt_fdf1.verify(work / "system/system/lib64/libbluetooth_jni.so", expected_final_hash=True)
++        run(["python3", str(BT_CAPABILITY_HELPER), "verify", "--final-hash",
++             "--jni", str(work / "system/system/lib64/libbluetooth_jni.so")])
+     if partition == "system":
+         paths = [rel.removeprefix("system/") for rel in runtime.manifest()["files"]
+                  if rel.startswith("system/system/")]
+@@ -169,7 +172,8 @@
+         paths.extend(rel.removeprefix("system/") for rel in runtime.manifest()["runtime_patches"])
+         paths.extend(verify_nfc_apex(work, donor))
+         paths.append(runtime.manifest()["legacy_ion_context"]["path"].removeprefix("system/"))
+-        if os.environ.get("EXYNOS9810_M4_VAULTKEEPER_NATIVE_BACKEND") == "true":
++        if os.environ.get("EXYNOS9810_M4_VAULTKEEPER_NATIVE_BACKEND") == "true" or \
++                os.environ.get("EXYNOS9810_M4_SKIP_UNSUPPORTED_FDF1") == "true":
+             paths.append("system/lib64/libbluetooth_jni.so")
+         if os.environ.get("ROM_SOURCE_CONFIG") == "essi_a376b_android17":
+             if os.environ.get("EXYNOS9810_M4_RUNTIME_COMPAT") != "true":
+--- a/unica/patches/bluetooth/a376b_android17_fdf1_skip.lock.json
++++ b/unica/patches/bluetooth/a376b_android17_fdf1_skip.lock.json
+@@ -19,6 +19,6 @@
+   "send_call_preimage_hex": "f31f0d94",
+   "send_call_replacement_hex": "1f2003d5",
+   "context_output_sha256": "0c13e7ad71a51df2b82c2634b25bb349a7aa6fcb9d00199bcff311b34806dfed",
+-  "final_work_jni_sha256": "26585f22ffb02a294578e6b652f3c14ff238989ff674f98050c2aec135db0ecf",
++  "final_work_jni_sha256": "2b1f7bd88bdc01f8f227a6c6d24f1d87bb0857004d7533f541a7a9762d64571f",
+   "reason": "Attempt0222 runtime repeatedly timed out waiting for HCI opcode 0xfdf1. The M4 build log showed its Android16 signatures did not match BZI6; disassembly pins the still-active BZI6 call in StateOpened::OnEnter. Skip only this unsupported optional vendor-debug HCI send on the exact M4/G965F BZI6 profile; do not fabricate a reply or modify other Bluetooth operations."
+ }
+--- a/unica/patches/bluetooth/a376b_android17_native_backend.lock.json
++++ b/unica/patches/bluetooth/a376b_android17_native_backend.lock.json
+@@ -10,7 +10,7 @@
+   "donor_apex_sha256": "8f7d0753689594b0d1890647ca2213c3922e8e163b2e5982c48ddeaac075484b",
+   "donor_jni_sha256": "45cf1a8eb404dbafccf0ce74de725fcbaa926931daf17325dca7d0cfb88050aa",
+   "donor_native_output_sha256": "eb29ceb4eb948ee8ae8202020bbb5c0afbd1c57071984480e6ceb1ba93b30a9f",
+-  "final_work_jni_sha256": "26585f22ffb02a294578e6b652f3c14ff238989ff674f98050c2aec135db0ecf",
++  "final_work_jni_sha256": "2b1f7bd88bdc01f8f227a6c6d24f1d87bb0857004d7533f541a7a9762d64571f",
+   "gnu_build_id": "d98e0bf66e0d1c1cae5e2209c36e0462",
+   "branch_va": "0x7aac04",
+   "preimage_hex": "8816523948050037",
+--- /dev/null
++++ b/unica/patches/bluetooth/a376b_android17_dbfw_capability.py
+@@ -0,0 +1,126 @@
++#!/usr/bin/env python3
++"""Use BZI6's existing unsupported-DBFW+ path on the measured G965F controller.
++
++Reason: skipping individual FDF1 sends left the DBFW+ initializer active and
++attempt0223/HFP-only trial still hit its HCI timeout. This is the BZI6 equivalent
++of the fork's existing legacy DBFW+ capability quirk, not a transport change.
++Files: two instructions in the exact capability setter of Bluetooth JNI.
++Verify: Build ID/function hash, store/branch semantics, disabled-path context,
++composition with the old A2DP skip, negative fixtures and final image/runtime.
++"""
++from pathlib import Path
++import argparse
++import hashlib
++import importlib.util
++import json
++import os
++import struct
++
++HERE = Path(__file__).resolve().parent
++spec = importlib.util.spec_from_file_location('m4_fdf1', HERE / 'a376b_android17_fdf1_skip.py')
++fdf1 = importlib.util.module_from_spec(spec)
++spec.loader.exec_module(fdf1)
++LOCK = json.loads((HERE / 'a376b_android17_dbfw_capability.lock.json').read_text())
++
++
++def sha(data):
++    return hashlib.sha256(data).hexdigest()
++
++
++def signed(value, bits):
++    return value - (1 << bits) if value & (1 << (bits - 1)) else value
++
++
++def layout(data):
++    if fdf1.build_id(data) != LOCK['gnu_build_id']:
++        raise ValueError('DBFW+ quirk Build ID mismatch')
++    offset = fdf1.file_offset_for_va(data, int(LOCK['patch_va'], 16))
++    start = fdf1.file_offset_for_va(data, int(LOCK['context_start_va'], 16))
++    end = fdf1.file_offset_for_va(data, int(LOCK['context_end_va_exclusive'], 16) - 1) + 1
++    before = bytes.fromhex(LOCK['preimage_hex'])
++    after = bytes.fromhex(LOCK['replacement_hex'])
++    if len(before) != 8 or len(after) != 8:
++        raise ValueError('DBFW+ quirk must alter exactly two instructions')
++    store, tbz = struct.unpack('<II', before)
++    zero_store, branch = struct.unpack('<II', after)
++    if store & 31 or zero_store != store | 31:
++        raise ValueError('DBFW+ quirk must change only STRB w0 to STRB wzr')
++    if store & 0xfffffc00 != 0x39012000 or (store >> 5) & 31 != 20:
++        raise ValueError('DBFW+ capability destination is not the locked [x20,#0x48]')
++    if tbz & 0xfff8001f != 0x36000000 or branch & 0xfc000000 != 0x14000000:
++        raise ValueError('DBFW+ branch is not TBZ w0,#0 -> unconditional B')
++    branch_va = int(LOCK['patch_va'], 16) + 4
++    target = int(LOCK['disabled_path_va'], 16)
++    if branch_va + signed((tbz >> 5) & 0x3fff, 14) * 4 != target or branch_va + signed(branch & 0x3ffffff, 26) * 4 != target:
++        raise ValueError('DBFW+ quirk must use the original unsupported target')
++    disabled = fdf1.file_offset_for_va(data, target)
++    if data[disabled:disabled + 16].hex() != LOCK['disabled_path_first16_hex']:
++        raise ValueError('DBFW+ unsupported path no longer clears the secondary state')
++    return offset, start, end, before, after
++
++
++def patch_bytes(data):
++    offset, start, end, before, after = layout(data)
++    context = sha(data[start:end])
++    if data[offset:offset + 8] == after and context == LOCK['context_output_sha256']:
++        return data, 'already-patched'
++    if data[offset:offset + 8] != before or context != LOCK['context_preimage_sha256']:
++        raise ValueError('DBFW+ setter changed or contains the rejected HFP-only trial')
++    result = data[:offset] + after + data[offset + 8:]
++    if sha(result[start:end]) != LOCK['context_output_sha256']:
++        raise ValueError('DBFW+ patched function differs from lock')
++    return result, 'patched'
++
++
++def fixture():
++    fdf1.check_scope()
++    donor = fdf1.extract_donor_jni()
++    result, state = patch_bytes(donor)
++    assert state == 'patched' and sha(result) == LOCK['donor_quirk_sha256']
++    offset, start, _, _, _ = layout(donor)
++    assert result[:offset] == donor[:offset] and result[offset + 8:] == donor[offset + 8:]
++    assert patch_bytes(result) == (result, 'already-patched')
++    sender, _ = fdf1.patch_bytes(donor)
++    combined, _ = patch_bytes(sender)
++    assert sha(combined) == LOCK['donor_combined_sha256']
++    for where in [start, fdf1.file_offset_for_va(donor, 0x70c190)]:
++        wrong = bytearray(donor)
++        wrong[where] ^= 1
++        try:
++            patch_bytes(bytes(wrong))
++        except ValueError:
++            pass
++        else:
++            raise ValueError('Changed setter/HFP-only context was accepted')
++    print('PASS exact zero-store/original unsupported branch, two-instruction boundary, A2DP composition, idempotence and negative contexts')
++
++
++def main():
++    parser = argparse.ArgumentParser()
++    parser.add_argument('command', choices=['fixture', 'apply', 'verify'])
++    parser.add_argument('--jni', type=Path)
++    parser.add_argument('--final-hash', action='store_true')
++    args = parser.parse_args()
++    fdf1.check_scope()
++    if args.command == 'fixture':
++        fixture()
++        return
++    if args.jni.is_symlink() or not args.jni.is_file():
++        raise ValueError('DBFW+ JNI file missing or symlinked')
++    data = args.jni.read_bytes()
++    result, state = patch_bytes(data)
++    if args.command == 'apply' and state == 'patched':
++        temp = args.jni.with_name(args.jni.name + '.dbfw.tmp')
++        temp.write_bytes(result)
++        temp.chmod(args.jni.stat().st_mode & 0o777)
++        os.replace(temp, args.jni)
++    if args.command == 'verify':
++        if state != 'already-patched':
++            raise ValueError('DBFW+ unsupported capability quirk is absent')
++        if args.final_hash and sha(data) != LOCK['final_work_jni_sha256']:
++            raise ValueError('DBFW+ composed final JNI hash mismatch')
++    print('PASS locked BZI6 DBFW+ unsupported-capability path: ' + state)
++
++
++if __name__ == '__main__':
++    main()
+--- /dev/null
++++ b/unica/patches/bluetooth/a376b_android17_dbfw_capability.lock.json
+@@ -0,0 +1,18 @@
++{
++  "scope": "M4 G965F BZI6 existing FDF1 opt-in; controller BCM4361B2 observed DBFW+ timeout",
++  "gnu_build_id": "d98e0bf66e0d1c1cae5e2209c36e0462",
++  "patch_va": "0x70c0c8",
++  "context_start_va": "0x70c098",
++  "context_end_va_exclusive": "0x70c2f8",
++  "context_preimage_sha256": "234181b971cf1a0f1ad39eba93b0a9b0506d63ad782415c3aca512de33d930f0",
++  "context_output_sha256": "96e00a75caffeb85f5e32acdb5c6a7fbec770574279e3ad0cea206e4bfb39afe",
++  "preimage_hex": "80220139a00d0036",
++  "replacement_hex": "9f2201396d000014",
++  "disabled_path_va": "0x70c280",
++  "disabled_path_first16_hex": "284000b0e1031f2ae2031f2a1f310139",
++  "donor_quirk_sha256": "e66bbd7539757c84a54abc6a9f72d577133245249bc089a2b7e08d70c156236c",
++  "donor_combined_sha256": "8a57215f41fbb6ddee3de5cf185b00f9988c0c58a387bff7a5a595caedd0424b",
++  "final_work_jni_sha256": "2b1f7bd88bdc01f8f227a6c6d24f1d87bb0857004d7533f541a7a9762d64571f",
++  "previous_final_work_jni_sha256": "26585f22ffb02a294578e6b652f3c14ff238989ff674f98050c2aec135db0ecf",
++  "reason": "The setter stores unsupported DBFW+ capability to global+0x48 and enables a group of vendor-debug commands. Force the byte to zero and use the existing zero-capability branch, which clears secondary state+0x4c and passes disabled arguments. Keep original HFP call bodies and all non-debug transport behavior intact."
++}

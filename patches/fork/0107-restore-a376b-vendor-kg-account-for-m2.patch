@@ -1,0 +1,217 @@
+From: Codex M2 kgclient account integration
+Subject: [PATCH] Restore the donor-pinned vendor_kg account in M2 Hybrid Vendor
+
+Reason: attempt55's SELinux lookup reports UID 5959 as oem_5959, while the
+retained donor seapp rule requires vendor_kg for KnoxGuard. The Hybrid Vendor
+passwd/group lack the exact A37 donor entries.
+Files: G965F M2 runtime compatibility applier/lock, final vendor restore
+customizer and actual-ext4 image verifier.
+Verification: locked donor hashes/rows, unique UID/GID and name, idempotent
+fixture merge, collision rejection, exact final image metadata, source replay
+and M2 runtime `id 5959`/seapp/SIGABRT check. No SELinux allow rule or kernel
+change. Rollback by selecting the retained attempt55 profile/package.
+
+diff --git a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_runtime_compat.py b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_runtime_compat.py
+--- a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_runtime_compat.py
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_runtime_compat.py
+@@ -1,15 +1,88 @@
+ #!/usr/bin/env python3
+-"""Stage and verify the minimal runtime inputs already boot-tested on G965F.
+-Reason: A37 25Q4 BPF loader rejects4.9 and retained gralloctypes needs V6.
+-Files: existing system Tethering APEX plus one system64 interface only.
+-Verify final hashes, selected G965F-only kernel ZIP, persistent metadata and
+-compiled Camera enum; ordinary M1/M2 defaults remain independent.
++"""Stage and verify reviewed M2 compatibility inputs for G965F.
++Reason: A37 Tethering/V6 need retained donor inputs; kgclient seapp requires
++the donor-pinned vendor_kg account name for UID/GID 5959.
++Files: retained system inputs and only the exact donor account rows.
++Verify source hashes, collision-free account merge, final ext4 metadata,
++selected diagnostic kernel, persistent metadata and compiled Camera enum.
+ """
+ from pathlib import Path
+ import argparse, hashlib, importlib.util, json, os, re, shutil
+ HERE=Path(__file__).resolve().parent
+ def lock():return json.loads((HERE/'a376b_runtime_compat.lock.json').read_text())
+ def digest(p):return hashlib.sha256(p.read_bytes()).hexdigest()
++
++def donor_kg_rows(vendor):
++    """Read only the A37-pinned vendor accounts needed by the retained seapp rule."""
++    expected=lock()['vendor_kg_accounts'];rows={}
++    for kind in ('passwd','group'):
++        path=vendor/'etc'/kind
++        if digest(path)!=expected[kind+'_sha256']:
++            raise ValueError('A376B vendor '+kind+' source hash mismatch')
++        lines=path.read_text().splitlines();wanted=expected[kind+'_line']
++        named=[line for line in lines if line.split(':',1)[0]=='vendor_kg']
++        identified=[]
++        for line in lines:
++            fields=line.split(':')
++            try:account_id=int(fields[2])
++            except (IndexError,ValueError):continue
++            if account_id==5959:identified.append(line)
++        if named!=[wanted] or identified!=[wanted]:
++            raise ValueError('A376B vendor '+kind+' must contain exactly the locked vendor_kg UID/GID 5959 row')
++        rows[kind]=wanted
++    return rows
++
++def merge_vendor_account(path,kind,wanted):
++    """Idempotently add one locked account; reject any duplicate name or ID."""
++    lines=path.read_text().splitlines() if path.exists() else []
++    named=[];identified=[]
++    for line in lines:
++        fields=line.split(':')
++        try:account_id=int(fields[2])
++        except (IndexError,ValueError):continue
++        if fields[0]=='vendor_kg':named.append(line)
++        if account_id==5959:identified.append(line)
++    if named or identified:
++        if named==[wanted] and identified==[wanted]:return
++        raise ValueError('Hybrid Vendor '+kind+' has a conflicting vendor_kg name or UID/GID 5959')
++    prefix='\n' if lines and path.read_bytes()[-1:]!=b'\n' else ''
++    path.parent.mkdir(parents=True,exist_ok=True)
++    with path.open('a') as output:output.write(prefix+wanted+'\n')
++
++def verify_vendor_kg(work):
++    expected=lock()['vendor_kg_accounts']
++    for kind in ('passwd','group'):
++        lines=(work/'vendor/etc'/kind).read_text().splitlines();wanted=expected[kind+'_line']
++        named=[line for line in lines if line.split(':',1)[0]=='vendor_kg'];identified=[]
++        for line in lines:
++            fields=line.split(':')
++            try:account_id=int(fields[2])
++            except (IndexError,ValueError):continue
++            if account_id==5959:identified.append(line)
++        if named!=[wanted] or identified!=[wanted]:
++            raise ValueError('Final Hybrid Vendor '+kind+' has missing, duplicate or conflicting vendor_kg UID/GID 5959')
++
++def self_test(vendor):
++    rows=donor_kg_rows(vendor)
++    import tempfile
++    with tempfile.TemporaryDirectory(prefix='a376b-vendor-kg-') as td:
++        root=Path(td);(root/'vendor/etc').mkdir(parents=True)
++        for kind in ('passwd','group'):
++            path=root/'vendor/etc'/kind
++            other='existing_test::5900:5900::/:/bin/sh\n' if kind=='passwd' else 'existing_test::5900:\n'
++            path.write_text(other);merge_vendor_account(path,kind,rows[kind]);first=path.read_bytes()
++            merge_vendor_account(path,kind,rows[kind])
++            if path.read_bytes()!=first:raise ValueError('vendor_kg merge is not idempotent')
++        verify_vendor_kg(root)
++        for kind in ('passwd','group'):
++            path=root/'vendor/etc'/kind
++            other='other_test::5959:5959::/:/bin/sh\n' if kind=='passwd' else 'other_test::5959:\n'
++            path.write_text(other)
++            try:merge_vendor_account(path,kind,rows[kind])
++            except ValueError:pass
++            else:raise ValueError('vendor_kg UID/GID collision accepted for '+kind)
++    print('PASS donor hashes, exact rows, idempotent merge and UID/GID collision rejection')
++
+ def scope():
+     expected={'ROM_SOURCE_CONFIG':'essi_a376b_android16','ROM_MILESTONE':'M2',
+         'TARGET_CODENAME':'star2lte','STAR2LTE_BUILD_MODEL':'SM-G965F',
+@@ -21,7 +94,7 @@
+         raise ValueError('Do not mix the earlier bootstrap swap with the proven runtime kernel')
+     if digest(Path(os.environ['EXYNOS9810_KERNEL_ZIP']))!=lock()['kernel_zip_sha256']:
+         raise ValueError('Wrong runtime diagnostic kernel archive')
+-def apply(work,compat):
++def apply(work,compat,account_vendor):
+     scope();m=lock();system=work/'system/system'
+     for rel,h in m['files'].items():
+         if digest(compat/rel)!=h:raise ValueError('Unreviewed runtime source: '+rel)
+@@ -37,9 +110,14 @@
+     rc=system/'etc/init/aconfigd.rc'
+     if digest(rc)!=m['aconfigd_original_sha256']:
+         raise ValueError('Unreviewed donor aconfigd init file')
+-    print('PASS staged pinned M2 Tethering, graphics V6 and persistent metadata path')
++    rows=donor_kg_rows(account_vendor)
++    for kind in ('passwd','group'):
++        merge_vendor_account(work/'vendor/etc'/kind,kind,rows[kind])
++    verify_vendor_kg(work)
++    print('PASS staged pinned M2 Tethering, graphics V6, vendor_kg account and persistent metadata path')
+ def verify(work,tools):
+     scope();m=lock();system=work/'system/system'
++    verify_vendor_kg(work)
+     for rel,h in m['files'].items():
+         if digest(system/rel)!=h:raise ValueError('Final runtime file mismatch: '+rel)
+     if digest(system/'bin/cameraserver')!=m['cameraserver_sha256']:
+@@ -74,14 +152,18 @@
+     body=checker.method(text,'a(I)Lx1/k;').group()
+     if not re.search(r'const v0, 0x13a74\s+if-ne p0, v0, (:\w+)\s+sget-object v0, Lx1/k;->V8_0:Lx1/k;\s+return-object v0\s+\1\s+invoke-static',body):
+         raise ValueError('Compiled Camera80500 branch lost')
+-    print('PASS final M2 runtime inputs, kernel selection, camera compiled enum and persistent metadata')
++    print('PASS final M2 runtime inputs, vendor_kg account, kernel selection, camera compiled enum and persistent metadata')
+ if __name__=='__main__':
+-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('mode',choices=['apply','verify'])
++    p=argparse.ArgumentParser(description=__doc__);p.add_argument('mode',choices=['apply','verify','self-test'])
+     p.add_argument('--work-dir',type=Path,required=True);p.add_argument('--compat-root',type=Path);p.add_argument('--tools-dir',type=Path)
++    p.add_argument('--account-vendor-root',type=Path)
+     a=p.parse_args()
+     if a.mode=='apply':
+-        if a.compat_root is None:p.error('apply needs compat-root')
+-        apply(a.work_dir,a.compat_root)
++        if a.compat_root is None or a.account_vendor_root is None:p.error('apply needs compat-root and account-vendor-root')
++        apply(a.work_dir,a.compat_root,a.account_vendor_root)
++    elif a.mode=='self-test':
++        if a.account_vendor_root is None:p.error('self-test needs account-vendor-root')
++        self_test(a.account_vendor_root)
+     else:
+         if a.tools_dir is None:p.error('verify needs tools-dir')
+         verify(a.work_dir,a.tools_dir)
+diff --git a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_runtime_compat.lock.json b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_runtime_compat.lock.json
+--- a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_runtime_compat.lock.json
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_runtime_compat.lock.json
+@@ -13,5 +13,12 @@
+   "original_a37_tethering_sha256": "b2a8b33db76cc9895ffcbb96bfdc24a085c23e52cf2a3b9e26f953cf6343ff22",
+   "cameraserver_sha256": "73cba451858345a2860966cb0a7e7faff64abb4f4946193956571476e0ddad7b",
+   "aconfigd_original_sha256": "78d6bb311aa7126384da4b59780d4a87d9b321c4fd211d04e1339fbd8975447b",
+-  "aconfigd_diagnostic_sha256": "822b51c7e9d748bceed9aab50a504efd0b43e7c1ca15aa62bdab24bf95222357"
++  "aconfigd_diagnostic_sha256": "822b51c7e9d748bceed9aab50a504efd0b43e7c1ca15aa62bdab24bf95222357",
++  "vendor_kg_accounts": {
++    "source": "SM-A376B_XXV/vendor/etc",
++    "passwd_sha256": "a14026a68a5674d57d5a2c77b5900a3702390bc622ed658683893a2a1b5717b8",
++    "group_sha256": "1b25c9cf8338905b5d71f3154e83030589fa4fadcbf5a91236cd90cb9cf0a5ba",
++    "passwd_line": "vendor_kg::5959:5959::/:/bin/sh",
++    "group_line": "vendor_kg::5959:"
++  }
+ }
+diff --git a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/customize.sh b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/customize.sh
+--- a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/customize.sh
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/customize.sh
+@@ -1980,7 +1980,10 @@
+ _EXYNOS9810_RESTORE_GRAPHICS_MAPPER_COMPAT || return 1
+ if [ "${EXYNOS9810_M2_RUNTIME_COMPAT:-false}" = "true" ]; then
+     python3 "$MODPATH/a376b_runtime_compat.py" apply --work-dir "$WORK_DIR" \
+-        --compat-root "$FW_DIR/SM-S901B_EUX/system/system" || return 1
++        --compat-root "$FW_DIR/SM-S901B_EUX/system/system" \
++        --account-vendor-root "$FW_DIR/SM-A376B_XXV/vendor" || return 1
++    _EXYNOS9810_SET_METADATA_SAFE vendor vendor/etc/passwd 0 0 644 "u:object_r:vendor_configs_file:s0"
++    _EXYNOS9810_SET_METADATA_SAFE vendor vendor/etc/group 0 0 644 "u:object_r:vendor_configs_file:s0"
+     _EXYNOS9810_SET_METADATA_SAFE system system/apex/com.google.android.tethering_compressed.apex \
+         0 0 644 "u:object_r:system_file:s0"
+     _EXYNOS9810_SET_METADATA_SAFE system system/lib64/android.hardware.graphics.common-V6-ndk.so \
+diff --git a/scripts/internal/verify_m2_runtime_image.py b/scripts/internal/verify_m2_runtime_image.py
+--- a/scripts/internal/verify_m2_runtime_image.py
++++ b/scripts/internal/verify_m2_runtime_image.py
+@@ -5,7 +5,7 @@
+ Verify exact staging bytes plus selected mode/UID/GID/SELinux labels; fail closed.
+ """
+ from pathlib import Path
+-import argparse, subprocess, tempfile, re, os, json, hashlib
++import argparse, subprocess, tempfile, re, os, json, hashlib, importlib.util
+ 
+ def verify(image,partition,work):
+     if os.environ.get('EXYNOS9810_M2_RUNTIME_COMPAT','false')!='true':
+@@ -35,6 +35,14 @@
+                        'service unica9810_init_debug /vendor/bin/init_debug_log.sh'):
+             if marker not in rc:raise ValueError('Missing CACHE init logger trigger/service: '+marker)
+         if 'OUT=/cache/unica' not in logger:raise ValueError('CACHE logger output changed')
++    if partition=='vendor':
++        adapter=Path(__file__).resolve().parents[2]/'unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_runtime_compat.py'
++        spec=importlib.util.spec_from_file_location('m2_runtime_compat',adapter)
++        runtime=importlib.util.module_from_spec(spec);spec.loader.exec_module(runtime)
++        runtime.verify_vendor_kg(work)
++        entries['vendor'].extend([
++          ('etc/passwd',0o644,'vendor_configs_file'),
++          ('etc/group',0o644,'vendor_configs_file')])
+     def cmd(text):
+         r=subprocess.run(['debugfs','-R',text,str(image)],capture_output=True,text=True,check=True)
+         return r.stdout+r.stderr

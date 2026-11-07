@@ -1,0 +1,37 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] review bzi6 secure folder configuration desktop check
+
+# Reason: finalization-preflight-0172.txt fails legacy LockTypePreferenceData lookup. BZI6 renamed the package and removed isDexOnPcMode entirely: its wrapper uses Configuration fields, with no legacy optional desktopmode-service lookup. Hash-pin and retain that donor implementation.
+# Affected: exynos9810_finalization/customize.sh Secure Folder desktop compatibility function
+# Verify: Actual LockTypePreferenceData/DesktopModeWrapperImpl inspected and hash-pinned; exact M4 scope, final-stage continuation and clean build. Secure Folder UI still requires runtime test.
+# Rollback: Remove0173 to restore previous compatibility route; M1/M2 unchanged.
+
+--- a/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
+@@ -686,6 +686,26 @@
+ 
+     LOG "- Patching Secure Folder settings for devices without desktopmode"
+     DECODE_APK "system" "$APK_REL" || return 1
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++        python3 - "$APK_DIR" "$SRC_DIR" <<'PY_CHECK' || return 1
++from pathlib import Path
++from hashlib import sha256
++import importlib.util
++import sys
++root, source = map(Path, sys.argv[1:])
++spec = importlib.util.spec_from_file_location("bzi6_product", source / "unica/patches/product_feature/a376b_android17_product.py")
++product = importlib.util.module_from_spec(spec)
++spec.loader.exec_module(product)
++product.scope()
++# BZI6 has no legacy isDexOnPcMode service lookup. Its new wrapper uses
++# Configuration.semDesktopModeEnabled/dexMode, so preserve that donor flow.
++for rel, digest in {'smali/com/samsung/knox/securefolder/settings/preference/data/preference/LockTypePreferenceData.smali': '2a04a018622aad33d13d5325e4768333b104dfca287fb19051ad59ae249f9d83', 'smali/com/samsung/knox/securefolder/common/wrapper/android/DesktopModeWrapperImpl.smali': '282d9978221dacb40f917f1766e41d22b23df98f084f45be538d82611b12757d'}.items():
++    if sha256((root / rel).read_bytes()).hexdigest() != digest:
++        raise SystemExit("Unreviewed BZI6 Secure Folder desktop-mode implementation: " + rel)
++print("PASS BZI6 Secure Folder: reviewed Configuration-based desktop check; no legacy service patch")
++PY_CHECK
++        return 0
++    fi
+     SMALI="$(find "$APK_DIR" -type f \
+         -path '*/com/samsung/knox/settings/securefolder/preference/data/preference/LockTypePreferenceData.smali' \
+         -print -quit)"

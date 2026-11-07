@@ -1,0 +1,120 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] pin native bzi6 apps before s22 only workarounds
+
+# Reason: Sequential finalization diagnostics0175 fail removed S22 PhotoPresenter/ObjectCaptureImpl/VizManager/Rubin37 classes and PhotoEditor_AIFull/Moments packages. BZI6 source has native PhotoEditor_Full, Rubin38 and new Smart Suggestions Brief components, without Moments. Preserve full native camera/wallpaper/classifier/database apps pending runtime evidence; do not weaken donor database encryption.
+# Affected: finalization/customize.sh and verify_bzi6_final_apps.py; six APK input hashes locked
+# Verify: Actual donor APK hashes, full M4 scope, selectors and required permission/library checks; negative payload/scope fixtures, sequential finalization and clean build. These optional behaviors need M4 runtime tests.
+# Rollback: Remove0176 and restore previous routes; M1/M2 unchanged.
+
+--- /dev/null
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/verify_bzi6_final_apps.py
+@@ -0,0 +1,24 @@
++#!/usr/bin/env python3
++"""Verify the exact native BZI6 apps before bypassing S22-only workarounds."""
++from pathlib import Path
++from hashlib import sha256
++import importlib.util
++import sys
++SPEC = importlib.util.spec_from_file_location("bzi6_product", Path(__file__).resolve().parents[2] / "product_feature/a376b_android17_product.py")
++PRODUCT = importlib.util.module_from_spec(SPEC)
++SPEC.loader.exec_module(PRODUCT)
++LOCKS = {'SamsungCamera': ('priv-app/SamsungCamera/SamsungCamera.apk', '21a830e6d2f4d73456f6837a73edf8170ddc84222ff710b71fb1318ae7fc61c1'), 'DressRoom': ('priv-app/DressRoom/DressRoom.apk', '8170f83056eb897f2d7d4bb4b90e683df11e0166383369e78ac7dccc11c64ac1'), 'IPService': ('priv-app/IPService/IPService.apk', 'e4b2bbd84701483d1c34cfa70779e0887cc0a2c4abc41955c34ef439d9ad4875'), 'RubinVersion38': ('priv-app/RubinVersion38/RubinVersion38.apk', 'f06ac40479edc764a0b0fa98c4a4c885133d5d4d47861ad1510ada1c4754a4e8'), 'SamsungSmartSuggestions': ('priv-app/SamsungSmartSuggestions/SamsungSmartSuggestions.apk', 'ef2a4fdb52d8ec46084cd443999f605189761858d456d9cb8444b43713901ab9'), 'PhotoEditor_Full': ('priv-app/PhotoEditor_Full/PhotoEditor_Full.apk', '4f60668935b59bda60b2c4521447cc5051b0fc1c30f21fcaaf8677582061b411')}
++
++def verify(work, names):
++    PRODUCT.scope()
++    if not names:
++        raise RuntimeError("No BZI6 app selection")
++    for name in names:
++        rel, digest = LOCKS[name]
++        path = work / "system/system" / rel
++        if sha256(path.read_bytes()).hexdigest() != digest:
++            raise RuntimeError("Unexpected BZI6 native app payload: " + name)
++    print("PASS locked native BZI6 apps: " + ", ".join(names))
++
++if __name__ == "__main__":
++    verify(Path(sys.argv[1]), sys.argv[2:])
+--- a/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
+@@ -3942,6 +3942,10 @@
+     if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
+         PHOTO_APK="system/system/priv-app/PhotoEditor_Full/PhotoEditor_Full.apk"
+     fi
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++        python3 "$MODPATH/verify_bzi6_final_apps.py" "$WORK_DIR" PhotoEditor_Full || return 1
++        PHOTO_APK="system/system/priv-app/PhotoEditor_Full/PhotoEditor_Full.apk"
++    fi
+     local ARC_PUBLIC="$WORK_DIR/system/system/etc/public.libraries-arcsoft.txt"
+     local PHOTO_PERMS="$WORK_DIR/system/system/etc/permissions/privapp-permissions-com.sec.android.mimage.photoretouching.xml"
+     local CLOUD_PERMS="$WORK_DIR/system/system/etc/permissions/signature-permissions-com.samsung.android.visual.cloudcore.xml"
+@@ -5367,6 +5371,11 @@
+ 
+ _EXYNOS9810_FINAL_PATCH_CAMERA_QR_POPUP_CRASH()
+ {
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++        python3 "$MODPATH/verify_bzi6_final_apps.py" "$WORK_DIR" SamsungCamera || return 1
++        LOGW "Retaining reviewed BZI6 donor behavior; S22-only workaround awaits matching M4 runtime evidence"
++        return 0
++    fi
+     # Three related QR-code fixes in SamsungCamera.apk:
+     #
+     # (1) Enable QR scanning. The camera detects QR codes entirely in software:
+@@ -5641,6 +5650,11 @@
+ 
+ _EXYNOS9810_FINAL_FIX_WALLPAPER_OBJECTCAPTURE()
+ {
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++        python3 "$MODPATH/verify_bzi6_final_apps.py" "$WORK_DIR" DressRoom || return 1
++        LOGW "Retaining reviewed BZI6 donor behavior; S22-only workaround awaits matching M4 runtime evidence"
++        return 0
++    fi
+     if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
+         LOGW "AZH4 uses a different object-capture implementation; retaining donor behavior pending M2 runtime logs"
+         return 0
+@@ -5750,6 +5764,11 @@
+ 
+ _EXYNOS9810_FINAL_PATCH_ONEUI8_IPSERVICE()
+ {
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++        python3 "$MODPATH/verify_bzi6_final_apps.py" "$WORK_DIR" IPService || return 1
++        LOGW "Retaining reviewed BZI6 donor behavior; S22-only workaround awaits matching M4 runtime evidence"
++        return 0
++    fi
+     if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
+         LOGW "AZH4 IPService differs from the S22 VizManager; retaining donor classifier pending M2 runtime logs"
+         return 0
+@@ -5812,6 +5831,11 @@
+ 
+ _EXYNOS9810_FINAL_PATCH_PERSONALIZATION_DATABASE_KEYS()
+ {
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++        python3 "$MODPATH/verify_bzi6_final_apps.py" "$WORK_DIR" RubinVersion38 SamsungSmartSuggestions || return 1
++        LOGW "Retaining reviewed BZI6 donor behavior; S22-only workaround awaits matching M4 runtime evidence"
++        return 0
++    fi
+     if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
+         LOGW "AZH4 Rubin38 key management differs; retaining donor database encryption pending M2 runtime logs"
+         return 0
+@@ -6301,6 +6325,10 @@
+         RUBIN_PACKAGE="RubinVersion38"
+     fi
+ 
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++        python3 "$MODPATH/verify_bzi6_final_apps.py" "$WORK_DIR" DressRoom IPService RubinVersion38 SamsungSmartSuggestions || return 1
++        RUBIN_PACKAGE="RubinVersion38"
++    fi
+     LOG "- Verifying One UI 8 wallpaper and Now Brief packages"
+     for REL in \
+         system/priv-app/DressRoom/DressRoom.apk \
+@@ -6309,6 +6337,12 @@
+         "system/priv-app/$RUBIN_PACKAGE/$RUBIN_PACKAGE.apk" \
+         system/priv-app/SamsungSmartSuggestions/SamsungSmartSuggestions.apk \
+         system/priv-app/SpriteWallpaper/SpriteWallpaper.apk; do
++        # BZI6 has no Moments APK; native Brief components live in Smart
++        # Suggestions, verified above. Keep all other package requirements.
++        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ] && \
++                [ "$REL" = "system/priv-app/Moments/Moments.apk" ]; then
++            continue
++        fi
+         [ -f "$WORK_DIR/system/$REL" ] || {
+             LOGE "Required One UI 8 package is missing: /$REL"
+             return 1

@@ -1,0 +1,265 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] relocate BZI6 resolver to matching SYSTEM dependency namespace
+
+# Reason: patch0210 device logcat:10639 cannot resolve fmt::v12::vformat from BZI6 resolver in S22 Tethering namespace. SYSTEM libbase and its BZI6 dependency group supply the required API; replacing S22 libbase would break its older consumers.
+# Affected: existing diagnostic APEX builder/lock, postboot staging helper, finalizer metadata and real ext4 image gate. Selected mode removes the resolver/TLS transplant from APEX, stages the same pinned resolver in SYSTEM, and moves exactly one linker.config.pb declaration from requireLibs(field4) to provideLibs(field3). Normal profile/kernel/vendor/radio unchanged.
+# Verify: matched inner/outer manifests, exact payload allowlist, AVB/v3/alignment and two identical selected APEX outputs; fourteen exact SYSTEM provider pins plus statsd; positive and mutated-provider work fixtures; namespace-aware static audit rejects old fmt mismatch and accepts SYSTEM closure. Real device boot is still a separate gate.
+# Rollback: restore backed-up APEX and linker.config.pb, remove the added SYSTEM resolver; reverse0211 for source. Preserve protected raw hashes, no BOOT/radio writes.
+
+--- a/scripts/internal/verify_m4_runtime_image.py
++++ b/scripts/internal/verify_m4_runtime_image.py
+@@ -36,6 +36,8 @@
+             "system/lib64/android.hardware.graphics.common-V7-ndk.so": (0o644, (0, 0), "system_lib_file"),
+             "system/apex/com.google.android.tethering_compressed.apex": (0o644, (0, 0), "system_file"),
+             "system/lib64/libmeminfo.so": (0o644, (0, 0), "system_lib_file"),
++            "system/lib64/libnetd_resolv.so": (0o644, (0, 0), "system_lib_file"),
++            "system/etc/linker.config.pb": (0o644, (0, 0), "system_file"),
+             "system/priv-app/SamsungDeviceHealthManagerService/SamsungDeviceHealthManagerService.apk": (0o644, (0, 0), "system_file"),
+             "system_ext/priv-app/SystemUI/SystemUI.apk": (0o644, (0, 0), "system_file"),
+             "system/apex/com.android.nfcservices.capex": (0o644, (0, 0), "system_file"),
+--- a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_network_native.lock.json
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_network_native.lock.json
+@@ -43,5 +43,31 @@
+     "lib64/libnetd_resolv.so": "ccfa0d2f6c1d296daf7f5ce3d9087d70243d795c8dce508eafac1cf46fcfb849",
+     "lib64/libcrypto.so": "2104e13a52b6188843f9d261430e0ba990bb3662b5fa94d7546ee4623aecaef6",
+     "lib64/libssl.so": "e09adfa93abbbbccbf5c0bda0f3d8c6418e71dfca1aa0109e93e19f33bfa79e8"
++  },
++  "system_resolver": {
++    "scope": "M4 G965F diagnostic; BZI6 resolver in default SYSTEM namespace; no resolver/TLS transplant in S22 APEX",
++    "output_sha256": "650f75fa946ee5fbe44e38418c4581738e7654abcea527832c97d092d6d7671d",
++    "output_bytes": 67911680,
++    "resolver_sha256": "ccfa0d2f6c1d296daf7f5ce3d9087d70243d795c8dce508eafac1cf46fcfb849",
++    "linker_config_source_sha256": "94c9b524a3f7a0879b76bc2af6f53e4cb45fd0e3d035342608f6b76d4e81b94c",
++    "linker_config_output_sha256": "0eb6fef30c067a54638019471c75bb5cb408955b38e4727eebfe61524963c480",
++    "linker_config_transform": "one exact libnetd_resolv.so entry moves requireLibs field4 to provideLibs field3; all other bytes unchanged",
++    "system_dependencies": {
++      "system/system/lib64/libbase.so": "6c328ad4107810fa7a5e3f58e06c3e9142af1aabe159c6c51ec08b83296aacc2",
++      "system/system/lib64/liblog.so": "93709fd7bf5514343152bb47245101f8b90d11a1961605623f0b3599874c936a",
++      "system/system/lib64/libc++.so": "cb118e98c74d3454858921123b9b51ba13df9cad7dfa141dd892c453661a4d78",
++      "system/system/lib64/ld-android.so": "80521b42df49619e9f9e4d20e9f4db87af7b012b83e81125df47cb9e08bf35aa",
++      "system/system/lib64/libbinder_ndk.so": "035395be52c63c9c6c0d00df93bbe009175b17d3a0f149cf9af6cf23821b5b6f",
++      "system/system/lib64/libbinder.so": "f0a1fa39db143004aa95a8b5294f9e48389d703099b744bb069650929cbdc9ff",
++      "system/system/lib64/libcutils.so": "08db43c44cda1ff5d1d93778a4aadccee408379b53655640388e6622c01c6cb9",
++      "system/system/lib64/libutils.so": "e1eb96ad194e2b2191c3a2a11d7f2d876fd57b30583d9fdaee1da001ba5b5e23",
++      "system/system/lib64/libvndksupport.so": "6025f720a98867740b6981d8a6367e3c62833214d00dfa8c256e613624b33097",
++      "system/system/lib64/libapexsupport.so": "c2839d028861cfb834272d862fe582c4b54535d67137a9b9a232c8ea360600b1",
++      "system/system/lib64/libprocessgroup.so": "148f9eba8da9ddbf50e9bd01d5bccc70276c63adfd279257735eb20e59485d16",
++      "system/system/lib64/libcrypto.so": "da26104a7725f09373526a17be278197208953328b038b02ff9cbf646a681577",
++      "system/system/lib64/libnetdutils.so": "d8de5836feb145371269e0c7f66a993bb7b1e275771efa3cbf89c4ed68183780",
++      "system/system/lib64/libssl.so": "83449191d93336dbb0691ddc602e69f5770c7edfc51756e741838404124963cc"
++    },
++    "statsd_capex_sha256": "a108bbd88cf4f4497ddf15e86b0d29f3c2654563d92167c338c75f6d8e80990e"
+   }
+ }
+--- a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_network_native.py
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_network_native.py
+@@ -10,7 +10,7 @@
+ module=F/'unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_native32.py'
+ spec=importlib.util.spec_from_file_location('native32',module);native=importlib.util.module_from_spec(spec);spec.loader.exec_module(native)
+ run=native.run;sha=native.digest
+-P=argparse.ArgumentParser();P.add_argument('output',type=Path);P.add_argument('--l4s-compat',action='store_true');P.add_argument('--stats-compat',action='store_true');a=P.parse_args();a.l4s_compat=a.l4s_compat or a.stats_compat;O=a.output.resolve();O.mkdir(parents=True,exist_ok=False)
++P=argparse.ArgumentParser();P.add_argument('output',type=Path);P.add_argument('--l4s-compat',action='store_true');P.add_argument('--stats-compat',action='store_true');P.add_argument('--system-resolver',action='store_true');a=P.parse_args();a.stats_compat=a.stats_compat or a.system_resolver;a.l4s_compat=a.l4s_compat or a.stats_compat;O=a.output.resolve();O.mkdir(parents=True,exist_ok=False)
+ inputs={tag:(F/entry['path'],entry['sha256']) for tag,entry in LOCK['inputs'].items()}
+ assert sha(K/'apex_pubkey')=='fedf8b2943754e4848f9d3edb25f228adec6a6e26d5b7fa8816851c0cd7155dd'
+ assert sha(K/'container.x509.pem')=='ee98540809da3112f84e0e3ab1ae13b9108b5121dd5c2f0c7bea8851e2cf272a'
+@@ -71,15 +71,17 @@
+ assert 'libnetd_resolv.so' in protobuf_strings(bzi6_manifest_bytes,7)
+ merged=O/'merged';shutil.copytree(O/'s22',merged,symlinks=True);shutil.copyfile(new,merged/rel)
+ # Keep the resolver with its same-build private TLS providers inside this namespace.
+-for member in resolver_members:shutil.copyfile(O/'bzi6'/member,merged/member)
++active_members={} if a.system_resolver else resolver_members
++for member in active_members:shutil.copyfile(O/'bzi6'/member,merged/member)
+ # APEX manifest field 7 is provideNativeLibs. Publish the added DSO in the
+ # existing Tethering APEX namespace so linkerconfig can resolve netd's DT_NEEDED.
+ resolv_name=b'libnetd_resolv.so'
+-merged_manifest=s22_manifest_bytes+b'\x3a'+encode_varint(len(resolv_name))+resolv_name
++provided_expected=protobuf_strings(s22_manifest_bytes,7)+([] if a.system_resolver else ['libnetd_resolv.so'])
++merged_manifest=s22_manifest_bytes if a.system_resolver else s22_manifest_bytes+b'\x3a'+encode_varint(len(resolv_name))+resolv_name
+ (merged/manifest_rel).write_bytes(merged_manifest)
+-assert protobuf_strings(merged_manifest,7)==protobuf_strings(s22_manifest_bytes,7)+['libnetd_resolv.so']
++assert protobuf_strings(merged_manifest,7)==provided_expected
+ # Every transitive DT_NEEDED must resolve internally or be an explicit APEX import.
+-required=set(protobuf_strings(merged_manifest,8));closure={};pending=list(resolver_members)
++required=set(protobuf_strings(merged_manifest,8));closure={};pending=list(active_members)
+ while pending:
+  member=pending.pop()
+  if member in closure:continue
+@@ -105,7 +107,7 @@
+ config=[];contexts=[];metadata={} 
+ for i,p in enumerate([merged]+sorted(merged.rglob('*'))):
+  r=str(p.relative_to(merged));r='' if r=='.' else r
+- source_img=O/'bzi6.img' if r in resolver_members else O/'s22.img'
++ source_img=O/'bzi6.img' if r in active_members else O/'s22.img'
+  st=run(['debugfs','-R','stat /'+r,source_img]);mode=re.search(r'Mode:\s+0*(\d+)',st).group(1);uid,gid=re.search(r'User:\s+(\d+)\s+Group:\s+(\d+)',st).groups()
+  label=O/f'label{i}';run(['debugfs','-R',f'ea_get -f \"{label}\" /{r} security.selinux',source_img]);assert label.is_file() and label.stat().st_size,r
+  context=label.read_bytes().rstrip(b'\0').decode();config.append(f'{r or "/"} {uid} {gid} 0{mode}');contexts.append(re.escape('/'+r).replace(r'\-', '-')+' '+context);metadata[r]=(mode,uid,gid,context)
+@@ -125,11 +127,13 @@
+  elif p.is_file():
+   if p.read_bytes()!=q.read_bytes():changed.append(r)
+  elif not p.exists() and q.exists():changed.append(r)
+-assert changed==sorted([rel,manifest_rel]+list(resolver_members)+(['javalib/framework-connectivity.jar'] if a.l4s_compat else [])+(['javalib/framework-connectivity-t.jar'] if a.stats_compat else [])),changed;assert (verified/rel).read_bytes()==new.read_bytes();assert sha(verified/resolv_rel)==LOCK['stats_compat']['libnetd_resolv_sha256'];assert protobuf_strings((verified/manifest_rel).read_bytes(),7)==protobuf_strings(s22_manifest_bytes,7)+['libnetd_resolv.so']
+-for member,digest in resolver_members.items():assert sha(verified/member)==digest,member
++assert changed==sorted([rel]+([] if a.system_resolver else [manifest_rel])+list(active_members)+(['javalib/framework-connectivity.jar'] if a.l4s_compat else [])+(['javalib/framework-connectivity-t.jar'] if a.stats_compat else [])),changed;assert (verified/rel).read_bytes()==new.read_bytes();assert a.system_resolver or sha(verified/resolv_rel)==LOCK['stats_compat']['libnetd_resolv_sha256'];assert protobuf_strings((verified/manifest_rel).read_bytes(),7)==provided_expected
++for member,digest in active_members.items():assert sha(verified/member)==digest,member
++if a.system_resolver:
++ assert not any((verified/member).exists() for member in resolver_members)
+ for r,expected in metadata.items():
+  st=run(['debugfs','-R','stat /'+r,image]);mode=re.search(r'Mode:\s+0*(\d+)',st).group(1);uid,gid=re.search(r'User:\s+(\d+)\s+Group:\s+(\d+)',st).groups();label=O/'verify-label';label.unlink(missing_ok=True);run(['debugfs','-R',f'ea_get -f "{label}" /{r} security.selinux',image]);assert label.exists();found=(mode,uid,gid,label.read_bytes().rstrip(b'\0').decode());assert found==expected,(r,found,expected)
+-salt=hashlib.sha256((O/'s22.img').read_bytes()+new.read_bytes()+b''.join((merged/member).read_bytes() for member in sorted(resolver_members))+merged_manifest+((merged/'javalib/framework-connectivity.jar').read_bytes() if a.l4s_compat else b'')+((merged/'javalib/framework-connectivity-t.jar').read_bytes() if a.stats_compat else b'')).hexdigest();run([T/'avbtool','add_hashtree_footer','--do_not_generate_fec','--algorithm','SHA256_RSA4096','--key',K/'payload.pem','--prop','apex.key:com.android.tethering','--image',image,'--salt',salt,'--hash_algorithm','sha256']);run([T/'avbtool','verify_image','--image',image,'--key',K/'payload.pem'])
++salt=hashlib.sha256((O/'s22.img').read_bytes()+new.read_bytes()+b''.join((merged/member).read_bytes() for member in sorted(active_members))+merged_manifest+((merged/'javalib/framework-connectivity.jar').read_bytes() if a.l4s_compat else b'')+((merged/'javalib/framework-connectivity-t.jar').read_bytes() if a.stats_compat else b'')).hexdigest();run([T/'avbtool','add_hashtree_footer','--do_not_generate_fec','--algorithm','SHA256_RSA4096','--key',K/'payload.pem','--prop','apex.key:com.android.tethering','--image',image,'--salt',salt,'--hash_algorithm','sha256']);run([T/'avbtool','verify_image','--image',image,'--key',K/'payload.pem'])
+ unsigned=O/'unsigned.apex';signed=O/'com.android.tethering.apex'
+ with zipfile.ZipFile(O/'s22.apex') as src,zipfile.ZipFile(unsigned,'w',compression=zipfile.ZIP_STORED) as dst:
+  for entry in src.infolist():
+@@ -141,7 +145,7 @@
+ verification=run(['java','--class-path',T/'signapk.jar',java,signed])
+ with zipfile.ZipFile(signed) as z:
+  assert z.read('apex_manifest.pb')==(verified/manifest_rel).read_bytes()
+- assert protobuf_strings(z.read('apex_manifest.pb'),7)==protobuf_strings(s22_manifest_bytes,7)+['libnetd_resolv.so']
++ assert protobuf_strings(z.read('apex_manifest.pb'),7)==provided_expected
+  i=z.getinfo('apex_payload.img')
+  with signed.open('rb') as f:f.seek(i.header_offset+26);n,e=struct.unpack('<HH',f.read(4))
+  offset=i.header_offset+30+n+e;assert offset%4096==0 and i.compress_type==0
+@@ -149,8 +153,8 @@
+   for entry in src.infolist():
+    if entry.filename=='apex_manifest.pb':assert z.read(entry.filename)==(verified/manifest_rel).read_bytes()
+    elif not entry.filename.startswith('META-INF/') and entry.filename not in ('apex_payload.img','apex_pubkey'):assert z.read(entry.filename)==src.read(entry.filename),entry.filename
+-expected=LOCK['stats_compat'] if a.stats_compat else LOCK['l4s_compat'] if a.l4s_compat else LOCK
++expected=LOCK['system_resolver'] if a.system_resolver else LOCK['stats_compat'] if a.stats_compat else LOCK['l4s_compat'] if a.l4s_compat else LOCK
+ if sha(signed)!=expected['output_sha256'] or signed.stat().st_size!=expected['output_bytes']:
+  raise RuntimeError('M4 native networking APEX reproducibility/hash gate failed')
+-report={'java_stats':stats_report,'java_l4s':java_report,'result':'PASS','changed_payload_files':changed,'resolver_members':{member:sha(verified/member) for member in resolver_members},'resolver_dependency_closure':closure,'resolver_dependency_gate':'PASS','metadata_paths_verified':len(metadata),'old_native_sha256':sha(old),'new_native_sha256':sha(new),'libnetd_resolv_sha256':sha(verified/resolv_rel),'apex_manifest_provided_libs':protobuf_strings((verified/manifest_rel).read_bytes(),7),'container_manifest_matches_payload':'PASS','output_sha256':sha(signed),'bytes':signed.stat().st_size,'payload_avb':'PASS','container_v3':verification.strip(),'payload_zip_offset':offset,'other_container_metadata_unchanged':True,'signing_identity':'explicit existing local native32 diagnostic keys; not Samsung original signing','phone_deployed':False,'network_acceptance':False}
++report={'java_stats':stats_report,'java_l4s':java_report,'result':'PASS','changed_payload_files':changed,'resolver_members':{member:sha(verified/member) for member in active_members},'resolver_dependency_closure':closure,'resolver_dependency_gate':'SYSTEM_GATE_REQUIRED' if a.system_resolver else 'PASS','metadata_paths_verified':len(metadata),'old_native_sha256':sha(old),'new_native_sha256':sha(new),'libnetd_resolv_sha256':sha(resolv),'resolver_namespace':'SYSTEM' if a.system_resolver else 'APEX','apex_manifest_provided_libs':protobuf_strings((verified/manifest_rel).read_bytes(),7),'container_manifest_matches_payload':'PASS','output_sha256':sha(signed),'bytes':signed.stat().st_size,'payload_avb':'PASS','container_v3':verification.strip(),'payload_zip_offset':offset,'other_container_metadata_unchanged':True,'signing_identity':'explicit existing local native32 diagnostic keys; not Samsung original signing','phone_deployed':False,'network_acceptance':False}
+ (O/'report.json').write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report,indent=2),flush=True)
+--- a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_postboot_diagnostic.py
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_postboot_diagnostic.py
+@@ -28,6 +28,8 @@
+ MEMINFO_LOCK = HERE / "a376b_android17_meminfo.lock.json"
+ APEX_REL = Path("system/system/apex/com.google.android.tethering_compressed.apex")
+ MEMINFO_REL = Path("system/system/lib64/libmeminfo.so")
++RESOLVER_REL = Path("system/system/lib64/libnetd_resolv.so")
++LINKER_REL = Path("system/system/etc/linker.config.pb")
+ 
+ 
+ def sha(path):
+@@ -78,8 +80,36 @@
+     return donor_apex, donor_meminfo, runtime_lock, net_lock, mem_lock
+ 
+ 
++def resolver_linker_config(donor, network_lock):
++    lock = network_lock["system_resolver"]
++    source = Path(donor) / LINKER_REL
++    if sha(source) != lock["linker_config_source_sha256"]:
++        raise ValueError("BZI6 system linker configuration changed")
++    data = source.read_bytes()
++    name = b"libnetd_resolv.so"
++    required = bytes([0x22, len(name)]) + name
++    provided = bytes([0x1a, len(name)]) + name
++    if data.count(required) != 1 or provided in data:
++        raise ValueError("Expected exactly one resolver requireLibs declaration")
++    output = data.replace(required, provided)
++    if hashlib.sha256(output).hexdigest() != lock["linker_config_output_sha256"]:
++        raise ValueError("Resolver linker declaration output hash mismatch")
++    return output
++
++
++def verify_system_resolver_dependencies(work, donor, network_lock):
++    lock = network_lock["system_resolver"]
++    files = dict(lock["system_dependencies"])
++    files["system/system/apex/com.google.android.os.statsd_compressed.apex"] = lock["statsd_capex_sha256"]
++    for rel, digest in files.items():
++        for tree in (Path(work), Path(donor)):
++            path = tree / rel
++            if not path.is_file() or path.is_symlink() or sha(path) != digest:
++                raise ValueError("SYSTEM resolver dependency byte mismatch: " + str(path))
++
++
+ def image_paths():
+-    return [str(APEX_REL.relative_to("system")), str(MEMINFO_REL.relative_to("system"))]
++    return [str(rel.relative_to("system")) for rel in (APEX_REL, MEMINFO_REL, RESOLVER_REL, LINKER_REL)]
+ 
+ 
+ def verify(work, donor):
+@@ -87,9 +117,13 @@
+     _, _, runtime_lock, network_lock, meminfo_lock = verify_donor(donor)
+     work = Path(work)
+     expected = {
+-        APEX_REL: network_lock["stats_compat"]["output_sha256"],
++        APEX_REL: network_lock["system_resolver"]["output_sha256"],
+         MEMINFO_REL: meminfo_lock["output_sha256"],
++        RESOLVER_REL: network_lock["system_resolver"]["resolver_sha256"],
++        LINKER_REL: network_lock["system_resolver"]["linker_config_output_sha256"],
+     }
++    verify_system_resolver_dependencies(work, donor, network_lock)
++    resolver_linker_config(donor, network_lock)
+     for rel, digest in expected.items():
+         path = work / rel
+         if not path.is_file() or path.is_symlink() or sha(path) != digest:
+@@ -108,12 +142,19 @@
+     scratch_root = Path(scratch_root)
+     if not scratch_root.is_dir() or scratch_root.is_symlink():
+         raise ValueError("M4 post-boot diagnostic scratch root must be an existing real directory")
++    verify_system_resolver_dependencies(work, donor, network_lock)
++    resolver_config = resolver_linker_config(donor, network_lock)
++    current_resolver = work / RESOLVER_REL
++    if current_resolver.exists() or current_resolver.is_symlink():
++        if current_resolver.is_symlink() or not current_resolver.is_file() or sha(current_resolver) != network_lock["system_resolver"]["resolver_sha256"]:
++            raise ValueError("Refusing unreviewed SYSTEM resolver destination")
+     targets = {
+         APEX_REL: (donor_apex, network_lock["inputs"]["bzi6"]["sha256"],
+-                   network_lock["stats_compat"]["output_sha256"]),
++                   network_lock["system_resolver"]["output_sha256"]),
+         MEMINFO_REL: (donor_meminfo, meminfo_lock["source_sha256"],
+                       meminfo_lock["output_sha256"]),
+     }
++    targets[LINKER_REL] = (Path(donor) / LINKER_REL, network_lock["system_resolver"]["linker_config_source_sha256"], network_lock["system_resolver"]["linker_config_output_sha256"])
+     for rel, (source, source_hash, output_hash) in targets.items():
+         current = work / rel
+         if not current.is_file() or current.is_symlink() or sha(current) not in (source_hash, output_hash):
+@@ -124,11 +165,11 @@
+         temp = Path(temp_name)
+         network_out = temp / "network"
+         result = subprocess.run(
+-            [sys.executable, str(NETWORK), str(network_out), "--stats-compat"],
++            [sys.executable, str(NETWORK), str(network_out), "--system-resolver"],
+             check=True, capture_output=True, text=True)
+         (temp / "network-builder.json").write_text(result.stdout)
+         apex_out = network_out / "com.android.tethering.apex"
+-        if not apex_out.is_file() or sha(apex_out) != network_lock["stats_compat"]["output_sha256"]:
++        if not apex_out.is_file() or sha(apex_out) != network_lock["system_resolver"]["output_sha256"]:
+             raise ValueError("Measured M4 Tethering APEX builder output mismatch")
+ 
+         meminfo_out = temp / "libmeminfo.so"
+@@ -141,6 +182,11 @@
+             check=True, capture_output=True, text=True)
+         if sha(meminfo_out) != meminfo_lock["output_sha256"]:
+             raise ValueError("Measured M4 libmeminfo builder output mismatch")
++        resolver_out = network_out / "bzi6/lib64/libnetd_resolv.so"
++        if sha(resolver_out) != network_lock["system_resolver"]["resolver_sha256"]:
++            raise ValueError("BZI6 SYSTEM resolver hash mismatch")
++        shutil.copyfile(resolver_out, work / RESOLVER_REL)
++        (work / LINKER_REL).write_bytes(resolver_config)
+         shutil.copyfile(apex_out, work / APEX_REL)
+         shutil.copyfile(meminfo_out, work / MEMINFO_REL)
+ 
+@@ -148,6 +194,8 @@
+     print(json.dumps({"result": "PASS", "profile": "M4/G965F diagnostic only",
+                       "network_apex_sha256": outputs[str(APEX_REL)],
+                       "libmeminfo_sha256": outputs[str(MEMINFO_REL)],
++                      "system_resolver_sha256": outputs[str(RESOLVER_REL)],
++                      "system_linker_config_sha256": outputs[str(LINKER_REL)],
+                       "normal_profile_changed": False}, sort_keys=True))
+ 
+ 
+--- a/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
+@@ -7573,6 +7573,10 @@
+         0 0 644 "u:object_r:system_file:s0"
+     _EXYNOS9810_SET_METADATA_SAFE "system" "system/lib64/libmeminfo.so" \
+         0 0 644 "u:object_r:system_lib_file:s0"
++    _EXYNOS9810_SET_METADATA_SAFE "system" "system/lib64/libnetd_resolv.so" \
++        0 0 644 "u:object_r:system_lib_file:s0"
++    _EXYNOS9810_SET_METADATA_SAFE "system" "system/etc/linker.config.pb" \
++        0 0 644 "u:object_r:system_file:s0"
+     python3 "$SRC_DIR/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_postboot_diagnostic.py" \
+         verify --work-dir "$WORK_DIR" --donor-root "$FW_DIR/$EXYNOS9810_SOURCE_CACHE_KEY" || return 1
+     # The PHN JNI's Java contract differs from the BZI6 NativeNfcManager.

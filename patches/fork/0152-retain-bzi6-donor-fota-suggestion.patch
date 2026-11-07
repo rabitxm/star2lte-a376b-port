@@ -1,0 +1,32 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] Retain BZI6 donor FOTA suggestion behavior
+
+# Reason: attempt24 line1179 shows the optional legacy UN1CA Updates suggestion patch expects Settings$FOTASuggestionActivity in smali_classes2, but BZI6 relocates the class to smali. The shortcut is optional and retaining donor behavior avoids an unreviewed Android17 Settings edit.
+# Affected: scripts/internal/apply_modules.sh.
+# Verify: exact M4/G965F/BZI6 branch skips this one patch; wrong model/milestone/donor fail closed; unrelated and AZH4 routes retain existing behavior; shell syntax and dispatcher tests pass; clean attempt25.
+# Rollback: remove patch0152 from patches/fork/series and sources.lock.json, then restore the previous module dispatcher.
+
+--- a/scripts/internal/apply_modules.sh
++++ b/scripts/internal/apply_modules.sh
+@@ -194,6 +194,21 @@
+         if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] && \
+                 [[ "$p" == */choidujour/smali/system/priv-app/SecSettings/SecSettings.apk/0001-Launch-UN1CA-Updates-from-suggestions.patch ]]; then
+             LOGW "A376B AZH4 has no legacy FOTA suggestion activity; skipping only the UN1CA Updates suggestion shortcut"
++            continue
++        fi
++        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ] && \
++                [[ "$p" == */choidujour/smali/system/priv-app/SecSettings/SecSettings.apk/0001-Launch-UN1CA-Updates-from-suggestions.patch ]]; then
++            if [ "${ROM_MILESTONE:-}" != M4 ] || [ "${TARGET_CODENAME:-}" != star2lte ] || \
++                    [ "${STAR2LTE_BUILD_MODEL:-}" != SM-G965F ] || \
++                    [ "${SOURCE_PLATFORM_SDK_VERSION:-}" != 37 ] || \
++                    [ "${TARGET_PLATFORM_SDK_VERSION:-}" != 31 ] || \
++                    [ "${TARGET_BOARD_API_LEVEL:-}" != 33 ] || \
++                    [ "${SOURCE_FIRMWARE_CACHE_SUFFIX:-}" != A376BXXU5BZI6 ] || \
++                    [ "${SOURCE_FIRMWARE:-}" != SM-A376B/XXV/LOCAL ]; then
++                LOGE "Unreviewed BZI6 UN1CA suggestion shortcut scope"
++                return 1
++            fi
++            LOGW "BZI6 SecSettings relocates FOTA suggestion DEX; retaining donor behavior and skipping the optional UN1CA shortcut"
+             continue
+         fi
+         if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] && \

@@ -1,0 +1,117 @@
+--- a/unica/patches/product_feature/customize.sh
++++ b/unica/patches/product_feature/customize.sh
+@@ -786,7 +786,16 @@
+ fi
+ 
+ # SEC_PRODUCT_FEATURE_RIL_SIM_CONFIG_MULTISIM_TRAYCOUNT
+-if [[ "$SOURCE_RIL_SIM_CONFIG_MULTISIM_TRAYCOUNT" != "$TARGET_RIL_SIM_CONFIG_MULTISIM_TRAYCOUNT" ]]; then
++if [[ "$SOURCE_RIL_SIM_CONFIG_MULTISIM_TRAYCOUNT" == "none" ]]; then
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ] && \
++            [ "${ROM_MILESTONE:-}" = "M4" ] && [ "$TARGET_CODENAME" = "star2lte" ]; then
++        python3 "$MODPATH/a376b_android17_sim.py" verify "$APKTOOL_DIR" || return 1
++        LOGW "BZI6 has no static SIM-tray count; retaining its reviewed runtime modem/slot detector for star2lte"
++    else
++        LOGE "Unknown SIM-tray count is only reviewed for BZI6 M4 star2lte"
++        return 1
++    fi
++elif [[ "$SOURCE_RIL_SIM_CONFIG_MULTISIM_TRAYCOUNT" != "$TARGET_RIL_SIM_CONFIG_MULTISIM_TRAYCOUNT" ]]; then
+     if [[ "$SOURCE_RIL_SIM_CONFIG_MULTISIM_TRAYCOUNT" == "1" ]] && \
+             [[ "$TARGET_RIL_SIM_CONFIG_MULTISIM_TRAYCOUNT" != "1" ]]; then
+         SMALI_PATCH "system" "system/framework/framework.jar" \
+--- /dev/null
++++ b/unica/patches/product_feature/a376b_android17_sim.py
+@@ -0,0 +1,94 @@
++#!/usr/bin/env python3
++"""Verify and preserve BZI6's runtime SIM-tray detection for star2lte M4."""
++
++from hashlib import sha256
++from pathlib import Path
++import os
++import re
++import sys
++
++
++EXPECTED = {
++    "ROM_SOURCE_CONFIG": "essi_a376b_android17",
++    "ROM_MILESTONE": "M4",
++    "TARGET_CODENAME": "star2lte",
++    "SOURCE_RIL_SIM_CONFIG_MULTISIM_TRAYCOUNT": "none",
++    "TARGET_RIL_SIM_CONFIG_MULTISIM_TRAYCOUNT": "1",
++}
++
++METHOD_HASHES = {
++    "framework.jar": {
++        "com/android/internal/telephony/TelephonyFeatures.smali": {
++            "isOneTray()Z": "fd17565ff6ced93fffdbbd7664a296ddb0a80ebb74c35c65bd3ce5969748e869",
++        },
++    },
++    "telephony-common.jar": {
++        "com/android/internal/telephony/uicc/UiccController.smali": {
++            "sendIntentForTrayProtectionPopup(IZ)V": "164ae82841ab2b2c3f1ba3075a79bf123d8d35dd9ce9cb18a7597b15ae987a7c",
++        },
++    },
++}
++
++
++def _method(text, signature):
++    matches = list(re.finditer(
++        r"(?ms)^\.method[^\n]* " + re.escape(signature) + r"\n.*?^\.end method$",
++        text,
++    ))
++    if len(matches) != 1:
++        raise ValueError(f"expected one BZI6 method {signature}; found {len(matches)}")
++    return matches[0].group()
++
++
++def verify(root):
++    for key, expected in EXPECTED.items():
++        if os.environ.get(key) != expected:
++            raise ValueError(f"unreviewed BZI6 SIM policy scope: {key}")
++
++    root = Path(root)
++    found = {}
++    for jar, files in METHOD_HASHES.items():
++        for relative, methods in files.items():
++            paths = list((root / "system" / "framework" / jar).glob("smali*/" + relative))
++            if len(paths) != 1:
++                raise ValueError(f"expected one BZI6 class {jar}/{relative}; found {len(paths)}")
++            text = paths[0].read_text()
++            for signature, expected_hash in methods.items():
++                body = _method(text, signature)
++                actual_hash = sha256(body.encode()).hexdigest()
++                if actual_hash != expected_hash:
++                    raise ValueError(f"BZI6 method hash changed: {jar}/{relative} {signature}")
++                found[signature] = body
++
++    tray = found["isOneTray()Z"]
++    for token in ("getActiveModemCount()I", '"ril.simslottype1"', '"ril.simslottype2"'):
++        if token not in tray:
++            raise ValueError(f"BZI6 runtime tray detector missing {token}")
++
++    popup = found["sendIntentForTrayProtectionPopup(IZ)V"]
++    if 'const-string v2, "waterproof"' not in popup or "const/4 v3, 0x1" not in popup:
++        raise ValueError("BZI6 waterproof-tray extra no longer matches reviewed target behavior")
++
++    print("PASS BZI6 runtime isOneTray retained; waterproof-tray support matches target")
++
++
++def self_test():
++    text = ".method public test()V\n    return-void\n.end method"
++    if _method(text, "test()V") != text:
++        raise ValueError("method parser fixture failed")
++    try:
++        _method(text, "missing()V")
++    except ValueError:
++        pass
++    else:
++        raise ValueError("method parser accepted a missing method")
++    print("PASS BZI6 SIM helper method parser")
++
++
++if __name__ == "__main__":
++    if len(sys.argv) == 2 and sys.argv[1] == "self-test":
++        self_test()
++    elif len(sys.argv) == 3 and sys.argv[1] == "verify":
++        verify(sys.argv[2])
++    else:
++        raise SystemExit("usage: a376b_android17_sim.py self-test | verify APKTOOL_DIR")

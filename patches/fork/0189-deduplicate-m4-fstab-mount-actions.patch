@@ -1,0 +1,96 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] give M4 canonical hw init sole ownership of fstab mounts
+
+# Reason: M4 probe13 boot6 parses both vendor init variants and the second mount_all reports EBUSY and fs_mgr_mount_all error. Preserve all other legacy actions while mounting only in hw init.
+# Affected: a376b_metadata_bind.py and a376b_android17_runtime_compat.py; M4 only, M2 path preserved.
+# Verify: real installed rc fixtures, idempotence, rejection of extra/missing mounts, M2 byte preservation, complete runtime self-test, final runtime/ext4 gates; device diagnostic with logcat and rollback required.
+# Rollback: revert patch and rebuild; restore saved VENDOR and original BOOT after the controlled device test.
+
+--- a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_metadata_bind.py
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_metadata_bind.py
+@@ -13,6 +13,37 @@
+     mount none /cache/metadata /metadata bind
+     restorecon_recursive /metadata
+ """
++def single_mounts(canonical, secondary, apply=False):
++    """Keep both legacy rc variants but only the imported hw rc mounts fstab.
++
++    M4 runtime proof: both rc files are parsed and the second mount_all fails
++    with EBUSY. Preserve every other command, including variant differences.
++    """
++    result = secondary
++    for phase in ("early", "late"):
++        command = f"    mount_all /vendor/etc/fstab.${{ro.hardware}} --{phase}\n"
++        marker = f"    # UN1CA M4: --{phase} mount_all is owned by the hw init rc.\n"
++        if canonical.count(command) != 1:
++            raise ValueError("Unreviewed M4 canonical mount_all: " + phase)
++        count, done = result.count(command), result.count(marker)
++        if apply and count == 1 and done == 0:
++            result = result.replace(command, marker, 1)
++        elif count != 0 or done != 1:
++            raise ValueError("Unreviewed M4 secondary mount_all: " + phase)
++    # Reject alternate spellings or additional fstab mounts rather than ignore
++    # a donor/baseline change outside the two reviewed lines.
++    if re.search(r"(?m)^\s*mount_all\s", result):
++        raise ValueError("Unexpected M4 secondary mount_all command")
++    if len(re.findall(r"(?m)^\s*mount_all\s", canonical)) != 2:
++        raise ValueError("Unexpected M4 canonical mount_all command")
++    return result
++
++def verify_single_mounts(root):
++    root = Path(root)
++    canonical = (root/"vendor/etc/init/hw/init.samsungexynos9810.rc").read_text()
++    secondary = (root/"vendor/etc/init/init.samsungexynos9810.rc").read_text()
++    single_mounts(canonical, secondary)
++
+ def markers(milestone):
+     if milestone not in ("M2", "M4"):
+         raise ValueError("Unsupported CACHE metadata profile")
+@@ -27,13 +58,19 @@
+     updates={}
+     for path in (hw, duplicate):
+         text=path.read_text()
+-        if text.count(ANCHOR)!=1:raise ValueError(f"Unreviewed init mount_all anchor: {path}")
++        already_single = (milestone == "M4" and path == duplicate and
++                          text.count(ANCHOR) == 0 and
++                          text.count("    # UN1CA M4: --early mount_all is owned by the hw init rc.\n") == 1)
++        if text.count(ANCHOR)!=1 and not already_single:
++            raise ValueError(f"Unreviewed init mount_all anchor: {path}")
+         # Remove only this fork's exact block, including a pre-restore copy.
+         text=text.replace(BIND, "")
+         if "mount none /cache/metadata /metadata bind" in text:
+             raise ValueError(f"Unreviewed metadata mount: {path}")
+         if path==hw:text=text.replace(ANCHOR, ANCHOR+BIND,1)
+         updates[path]=text
++    if milestone == "M4":
++        updates[duplicate] = single_mounts(updates[hw], updates[duplicate], apply=True)
+     text=fc.read_text()
+     for selected in ("M2", "M4"):
+         old_start,old_end=markers(selected)
+--- a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_runtime_compat.py
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_runtime_compat.py
+@@ -240,6 +240,11 @@
+         raise ValueError("Final M4 persistent CACHE metadata bind missing or duplicated")
+     if bind in secondary.read_text():
+         raise ValueError("Final M4 secondary vendor init duplicates metadata bind")
++    metadata_spec = importlib.util.spec_from_file_location(
++        "m4_metadata_mount_gate", HERE / "a376b_metadata_bind.py")
++    metadata_module = importlib.util.module_from_spec(metadata_spec)
++    metadata_spec.loader.exec_module(metadata_module)
++    metadata_module.verify_single_mounts(work)
+     contexts = (work / "system/system/etc/selinux/plat_file_contexts").read_text()
+     if "# UN1CA M4 CACHE metadata label aliases BEGIN" not in contexts or \
+             "# UN1CA M4 CACHE metadata label aliases END" not in contexts:
+@@ -262,9 +267,10 @@
+         canonical = root / "vendor/etc/init/hw/init.samsungexynos9810.rc"
+         secondary = root / "vendor/etc/init/init.samsungexynos9810.rc"
+         canonical.parent.mkdir(parents=True, exist_ok=True)
+-        canonical.write_text("on fs\n" + anchor)
++        init_fixture = "on fs\n" + anchor + "on late-fs\n" + anchor.replace("--early", "--late")
++        canonical.write_text(init_fixture)
+         secondary.parent.mkdir(parents=True, exist_ok=True)
+-        secondary.write_text("on fs\n" + anchor)
++        secondary.write_text(init_fixture)
+         contexts = root / "system/system/etc/selinux/plat_file_contexts"
+         contexts.parent.mkdir(parents=True, exist_ok=True)
+         shutil.copyfile(donor / "system/system/etc/selinux/plat_file_contexts", contexts)

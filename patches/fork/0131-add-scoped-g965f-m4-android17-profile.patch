@@ -1,0 +1,29 @@
+--- /dev/null
++++ b/target/star2lte/profiles/m4-g965f-a376b-android17-no-ksu.sh
+@@ -0,0 +1,26 @@
++#!/usr/bin/env bash
++# Source this profile before buildenv.sh for the first M4 experiment on G965F.
++# Keep the selected duhansysl DS-ACK prebuilt; do not build or alter the kernel.
++# Source/image/runtime reasons and verification: docs/m4-plan.md, checkpoint0131.
++source "$(dirname -- "${BASH_SOURCE[0]}")/m1-g965f-no-ksu.sh" || return 1
++
++export ROM_MILESTONE="M4"
++export UN1CA_DONOR_CONFIG="essi_a376b_android17"
++# target config validates this before the donor config is loaded by gen_config_file.
++export SOURCE_FIRMWARE_CACHE_SUFFIX="A376BXXU5BZI6"
++export STAR2LTE_BUILD_MODEL="SM-G965F"
++export EXYNOS9810_BUILD_KERNELSU_RUNTIME="false"
++export EXYNOS9810_ENABLE_KERNELSU_RUNTIME="false"
++export EXYNOS9810_M2_RUNTIME_COMPAT="false"
++export EXYNOS9810_M2_BOOTSTRAP_COMPAT="false"
++export EXYNOS9810_M4_RUNTIME_COMPAT="true"
++export EXYNOS9810_ENABLE_METADATA_BIND="true"
++
++# Reviewed initial M4 choices: fixed native panel mode, donor Wi-Fi UI,
++# omitted Face HAL, and only the preflighted unsupported Settings controls hidden.
++export STAR2LTE_M4_FIXED_RESOLUTION="true"
++export STAR2LTE_M4_KEEP_DONOR_WIFI_UI="true"
++export STAR2LTE_M4_BOOT_LIMITS="true"
++export EXYNOS9810_FACE_UNLOCK_DISABLED="true"
++export EXYNOS9810_FACEUNLOCKFIX_EXPERIMENTAL_BUILD="false"
++export EXYNOS9810_FACEUNLOCKFIX_BUILTIN="false"

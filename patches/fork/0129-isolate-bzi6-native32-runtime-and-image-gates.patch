@@ -1,0 +1,260 @@
+diff --git a/scripts/internal/verify_exynos9810_images.sh b/scripts/internal/verify_exynos9810_images.sh
+--- a/scripts/internal/verify_exynos9810_images.sh
++++ b/scripts/internal/verify_exynos9810_images.sh
+@@ -76,6 +76,12 @@
+                     --image "$RAW_IMAGE" --partition "$PARTITION" \
+                     --work-dir "${WORK_DIR:?WORK_DIR required for runtime image audit}" || exit 1
+             fi
++            if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ] && \
++                    [ "$PARTITION" = system ]; then
++                python3 "$(dirname "$0")/../../unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_native32.py" \
++                    verify-image --image "$RAW_IMAGE" \
++                    --work-dir "${WORK_DIR:?WORK_DIR required for native32 image audit}" || exit 1
++            fi
+             ;;
+     esac
+ 
+diff --git a/scripts/internal/verify_exynos9810_release_defaults.py b/scripts/internal/verify_exynos9810_release_defaults.py
+--- a/scripts/internal/verify_exynos9810_release_defaults.py
++++ b/scripts/internal/verify_exynos9810_release_defaults.py
+@@ -49,6 +49,8 @@
+         subprocess.run([sys.executable,str(wifi_ui_checker),"verify-compiled",str(work),str(ROOT/"out/tools")],check=True)
+         settings_checker=ROOT/"unica/mods/settings/a376b_android17_boot_limits.py"
+         subprocess.run([sys.executable,str(settings_checker),"verify-compiled",str(work),str(ROOT/"out/tools")],check=True)
++        native32=ROOT/"unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_native32.py"
++        subprocess.run([sys.executable,str(native32),"verify","--work-dir",str(work)],check=True)
+     if os.environ.get("ROM_SOURCE_CONFIG") == "essi_a376b_android16":
+         if (target, os.environ.get("ROM_MILESTONE")) != ("star2lte", "M2"):
+             raise RuntimeError("Unreviewed native32 A376B release profile")
+diff --git a/target/star2lte/profiles/m1-g965f-no-ksu.sh b/target/star2lte/profiles/m1-g965f-no-ksu.sh
+--- a/target/star2lte/profiles/m1-g965f-no-ksu.sh
++++ b/target/star2lte/profiles/m1-g965f-no-ksu.sh
+@@ -45,6 +45,7 @@
+ unset _STAR2LTE_M1_ROOT _STAR2LTE_M1_HASH
+ export EXYNOS9810_ENABLE_METADATA_BIND="false"
+ export EXYNOS9810_M2_RUNTIME_COMPAT="false"
++export EXYNOS9810_M4_RUNTIME_COMPAT="false"
+ 
+ # Reset opt-in diagnostics when selecting another profile in the same shell.
+ export EXYNOS9810_ENABLE_INIT_DEBUG="false"
+diff --git a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_native32.py b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_native32.py
+--- a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_native32.py
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_native32.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""A376B M2 native32 adapter, invoked by the existing vendor-restore module.
++"""A376B donor-locked native32 adapter in the existing vendor-restore module.
+ 
+ Uses the fork's ext4/AVB/signapk tools, preserving A37 files and adding only
+ pinned S22 native32 files. No app_process32/ART32 and no kernel changes.
+@@ -9,7 +9,31 @@
+ import argparse, hashlib, json, os, re, shutil, subprocess, tempfile, zipfile
+ LOCK_PATH=Path(__file__).with_name('a376b_native32.lock.json')
+ def digest(path): return hashlib.sha256(path.read_bytes()).hexdigest()
+-def locked(): return json.loads(LOCK_PATH.read_text())
++def lock_path():
++    # Keep the existing M2 lock/behavior. Android17 has an independent APEX;
++    # neither a filename argument nor an M2 flag may select its hash gate.
++    if os.environ.get('ROM_SOURCE_CONFIG') == 'essi_a376b_android17':
++        expected = {
++            'ROM_MILESTONE':'M4', 'TARGET_CODENAME':'star2lte',
++            'STAR2LTE_BUILD_MODEL':'SM-G965F', 'SOURCE_PLATFORM_SDK_VERSION':'37',
++            'TARGET_PLATFORM_SDK_VERSION':'31', 'TARGET_BOARD_API_LEVEL':'33',
++            'SOURCE_PRODUCT_SHIPPING_API_LEVEL':'36', 'TARGET_PRODUCT_SHIPPING_API_LEVEL':'26',
++            'SOURCE_FIRMWARE_CACHE_SUFFIX':'A376BXXU5BZI6',
++            'TARGET_OS_FILE_SYSTEM_TYPE':'ext4', 'EXYNOS9810_M4_RUNTIME_COMPAT':'true',
++            'EXYNOS9810_ENABLE_KERNELSU_RUNTIME':'false',
++        }
++        for key,value in expected.items():
++            if os.environ.get(key)!=value:
++                raise RuntimeError('Unreviewed BZI6 native32 scope: '+key)
++        for key in ('EXYNOS9810_M2_RUNTIME_COMPAT','EXYNOS9810_M2_BOOTSTRAP_COMPAT'):
++            if os.environ.get(key,'false')!='false':
++                raise RuntimeError('Mixed M2/M4 native32 selection: '+key)
++        return LOCK_PATH.with_name('a376b_android17_native32.lock.json')
++    if os.environ.get('EXYNOS9810_M4_RUNTIME_COMPAT','false')!='false' or os.environ.get('ROM_MILESTONE')=='M4':
++        raise RuntimeError('M4 native32 selection requires the reviewed BZI6 donor')
++    return LOCK_PATH
++
++def locked(): return json.loads(lock_path().read_text())
+ def run(args,allowed=(0,)):
+  x=subprocess.run([str(a) for a in args],capture_output=True,text=True)
+  if x.returncode not in allowed:raise RuntimeError(str(args[0])+': '+x.stdout+'\n'+x.stderr)
+@@ -146,13 +170,63 @@
+     tmp=apex.with_name(apex.name+'.native32-tmp');shutil.copyfile(cached,tmp);os.chmod(tmp,0o644);os.replace(tmp,apex)
+     print('PASS prepared pinned A37 runtime64 plus S22 native32 and '+str(len(lock['system32']))+' native platform libraries')
+ 
++def verify_image(image,work):
++    """Check the native32 slice in the real M4 SYSTEM ext4, without mounting it.
++
++    This complements, and does not replace, the remaining M4 runtime/boot,
++    SELinux and compiled ADB gates. The work tree must already pass verify().
++    """
++    if lock_path()==LOCK_PATH:
++        raise RuntimeError('Native32 image audit is restricted to reviewed M4')
++    verify(work);m=locked()
++    entries={'system/apex/com.android.runtime.apex':(m['output_apex_sha256'],'system_file')}
++    entries.update({'system/lib/'+n:(h,'system_lib_file')
++        for n,h in {**m['system32'],**m['retained_radio_system32']}.items()})
++    def debug(command):
++        # debugfs may return success for a missing inode; every result below
++        # is validated, including owner, mode and the exact SELinux context.
++        return run(['debugfs','-R',command,image])
++    with tempfile.TemporaryDirectory(prefix='m4-native32-image-') as td:
++        for i,(rel,(expected,label)) in enumerate(entries.items()):
++            dest=Path(td)/str(i);debug('dump /'+rel+' '+str(dest))
++            if not dest.is_file() or digest(dest)!=expected:
++                raise RuntimeError('M4 native32 image bytes mismatch: '+rel)
++            stat=debug('stat /'+rel)
++            if not re.search(r'Type:\s+regular\s+Mode:\s+0644\b',stat):
++                raise RuntimeError('M4 native32 image mode mismatch: '+rel)
++            owner=re.search(r'User:\s+(\d+)\s+Group:\s+(\d+)',stat)
++            if not owner or owner.groups()!=('0','0'):
++                raise RuntimeError('M4 native32 image owner mismatch: '+rel)
++            attr=Path(td)/(str(i)+'.context')
++            debug('ea_get -f '+str(attr)+' /'+rel+' security.selinux')
++            if not attr.is_file() or attr.read_bytes().rstrip(b'\0')!=('u:object_r:'+label+':s0').encode():
++                raise RuntimeError('M4 native32 image SELinux label mismatch: '+rel)
++        for rel in ('system/build.prop','system/bin/app_process64','system/etc/init/hw/init.zygote64.rc'):
++            dest=Path(td)/'abi';debug('dump /'+rel+' '+str(dest))
++            if not dest.is_file() or dest.read_bytes()!=(work/'system'/rel).read_bytes():
++                raise RuntimeError('M4 app64 image ABI mismatch: '+rel)
++            dest.unlink()
++        # Inspect the directory as well as stat: a missing app_process32 is
++        # expected, but a failed debugfs lookup is not evidence of absence.
++        listing=debug('ls -p /system/bin')
++        if '/app_process64/' not in listing or '/app_process32/' in listing:
++            raise RuntimeError('M4 image app_process ABI changed')
++        stat=debug('stat /system/bin/linker')
++        if 'Type: symlink' not in stat or 'Fast link dest: "/apex/com.android.runtime/bin/linker"' not in stat:
++            raise RuntimeError('M4 native32 image linker entry mismatch')
++    print('PASS M4 real ext4 native32 bytes/mode/UID/GID/SELinux, app64 and linker; '+str(len(entries))+' locked files')
++
+ if __name__=='__main__':
+     parser=argparse.ArgumentParser(description=__doc__)
+-    parser.add_argument('mode',choices=['apply','verify'])
++    parser.add_argument('mode',choices=['apply','verify','verify-image'])
+     parser.add_argument('--work-dir',type=Path,required=True)
++    parser.add_argument('--image',type=Path)
+     for name in ['compat-root','tools-dir','cache-dir','keys-dir']:parser.add_argument('--'+name,type=Path)
+     args=parser.parse_args()
+     if args.mode=='verify':verify(args.work_dir)
++    elif args.mode=='verify-image':
++        if args.image is None:parser.error('verify-image requires image')
++        verify_image(args.image,args.work_dir)
+     else:
+         if not all([args.compat_root,args.tools_dir,args.cache_dir,args.keys_dir]):parser.error('apply requires all input directories')
+         apply(args.work_dir,args.compat_root,args.tools_dir,args.cache_dir,args.keys_dir)
+diff --git a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/customize.sh b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/customize.sh
+--- a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/customize.sh
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/customize.sh
+@@ -1951,26 +1951,36 @@
+ _EXYNOS9810_DISABLE_FINAL_SECURITY_FEATURE_PROPS
+ _EXYNOS9810_RESTORE_ODM_BASELINE || return 1
+ _EXYNOS9810_REMOVE_STALE_PRECOMPILED_SEPOLICY
+-if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
+-    [ "$TARGET_CODENAME" = star2lte ] && [ "${ROM_MILESTONE:-}" = M2 ] || {
++if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] || \
++        [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++    NATIVE32_LOCK="$MODPATH/a376b_native32.lock.json"
++    NATIVE32_CACHE="$OUT_DIR/compat/a376b-native32"
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++        # The Python adapter enforces exact BZI6/F/M4 selection before any
++        # staging. No M2 compatibility flag or APEX hash is borrowed here.
++        NATIVE32_LOCK="$MODPATH/a376b_android17_native32.lock.json"
++        NATIVE32_CACHE="$OUT_DIR/compat/a376b-android17-native32"
++    else
++        [ "$TARGET_CODENAME" = star2lte ] && [ "${ROM_MILESTONE:-}" = M2 ] || {
+         LOGE "Unreviewed A376B native32 compatibility profile"
+         return 1
+-    }
++        }
++    fi
+     python3 "$MODPATH/a376b_native32.py" apply \
+         --work-dir "$WORK_DIR" \
+         --compat-root "$FW_DIR/SM-S901B_EUX/system/system" \
+         --tools-dir "$TOOLS_DIR/bin" \
+-        --cache-dir "$OUT_DIR/compat/a376b-native32" \
++        --cache-dir "$NATIVE32_CACHE" \
+         --keys-dir "$SRC_DIR/../keys/m2-native32-apex" || return 1
+     while IFS= read -r NATIVE32_LIB; do
+         _EXYNOS9810_SET_METADATA_SAFE system "system/lib/$NATIVE32_LIB" \
+             0 0 644 "u:object_r:system_lib_file:s0"
+-    done < <(python3 - "$MODPATH/a376b_native32.lock.json" <<'PYNATIVE32'
++    done < <(python3 - "$NATIVE32_LOCK" <<'PYNATIVE32'
+ import json, sys
+ print('\n'.join(json.load(open(sys.argv[1]))['system32']))
+ PYNATIVE32
+ )
+-    unset NATIVE32_LIB
++    unset NATIVE32_LIB NATIVE32_LOCK NATIVE32_CACHE
+     SET_PROP vendor ro.zygote zygote64
+     SET_PROP system ro.product.cpu.abilist arm64-v8a
+     SET_PROP system ro.product.cpu.abilist32 ""
+diff --git a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_native32.lock.json b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_native32.lock.json
+--- /dev/null
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_native32.lock.json
+@@ -0,0 +1,63 @@
++{
++  "schema": 1,
++  "a37_apex_sha256": "f308d89271dbf319dd79b833e41b850bf8de36e96efced954a7d85f7013036c9",
++  "s22_apex_sha256": "f3764e9425e8295b2ffe40d5d3520c0aa11feb8a630882b35f17b4de0a64c574",
++  "output_apex_sha256": "b6b559bf52dfb07d4c8f1d073b037f1d319b0366e3a732c3b56bbbb55583cdaf",
++  "payload_public_key_sha256": "fedf8b2943754e4848f9d3edb25f228adec6a6e26d5b7fa8816851c0cd7155dd",
++  "container_certificate_sha256": "ee98540809da3112f84e0e3ab1ae13b9108b5121dd5c2f0c7bea8851e2cf272a",
++  "system32": {
++    "android.hardware.configstore-utils.so": "581c1def683b6207c366374659fad1ec01a6ecae8f8fdb422654d49ede12eff4",
++    "android.hardware.configstore@1.0.so": "a20f2e9b8dc5ba00bec5360abf39c15937a33e71bbca85fb523c32983ebf00ea",
++    "android.hardware.configstore@1.1.so": "4b917899a292d5963560103df7c63213e6040c764de99abbee628b07410e0d75",
++    "android.hardware.graphics.allocator-V2-ndk.so": "79584fb2aa8fafc44d19842b6d665bf2ebd914e6ea2aeb58827a7cd6947b5352",
++    "android.hardware.graphics.allocator@2.0.so": "c20b3877fb757432091b5c7e6819d1495a4095830d48d7a855edfc2517507121",
++    "android.hardware.graphics.allocator@3.0.so": "e884be704baf589b5c43d79ac56a35f4451b9fbf80d0e48ef1cb2e4b7592a296",
++    "android.hardware.graphics.allocator@4.0.so": "3884f491751edbdc4142c7341745572a351f90c7741c8013d3da9ca3b0da6306",
++    "android.hardware.graphics.common-V6-ndk.so": "f266755c08ff47fd048e35a67ba0accdd1232e57d8dc30e1a7a32a89ae85f3ff",
++    "android.hardware.graphics.common@1.0.so": "0b9f7e9814ac1453d843cc26ae74eacdbb128e985dc49cbe4239a4b522badb84",
++    "android.hardware.graphics.common@1.1.so": "8128bd3b9ab909043cc4177f0df0c85a868bce2cf17f58eeee10e7ee0bfa1158",
++    "android.hardware.graphics.common@1.2.so": "0d4a6d908cd79b742a2a5a8b0b7c4bc665f114606018a06c87e396f0efd9ff98",
++    "android.hardware.graphics.mapper@2.0.so": "5187547cc1140252e2bcc7bae6005e49ca0e74967bbddf6f5658cbd37102dc13",
++    "android.hardware.graphics.mapper@2.1.so": "8948a8a460e9bf210f5e804ddff81907ae93adc053ec755f08b6d9bee83610e9",
++    "android.hardware.graphics.mapper@3.0.so": "d58ebf5f5f611329a47d262f0edb26fca36f3082b8c3386984b7fab111a6695c",
++    "android.hardware.graphics.mapper@4.0.so": "af0702596792973c8e194dc7b86f408dc0c245ea0199335386a619936d3a598d",
++    "ld-android.so": "e7540ded3974c2b1152505e011df8afa8a5dae66493c1684268af4eee76eacc1",
++    "libEGL.so": "26a211d62858e6f82a55b14dd62501e1779d87bdbc92992ffd0ddd124671df14",
++    "libGLESv1_CM.so": "37c20346dcf16ec784d1734548550be8967a5eff09c9b66f7817bf7a0095e989",
++    "libGLESv2.so": "d89151c39326bfb215c44289d06794c23f5f6067af981f9d5039aeaa655ea8be",
++    "libGLESv3.so": "96ee3a0a1ee1f9bab511abdcb8c303874c190009dcc2b4c0855f313d5fc659cc",
++    "libSurfaceFlingerProp.so": "b624ed599ac752cb7997a3f4071df63680f198b86e7bda53f1508b143ca6b589",
++    "libaconfig_storage_read_api_cc.so": "a4fb103a654078e0da4ea44f7e615022d1b00fd08e76ce5bad46a2a298707783",
++    "libapexsupport.so": "d0fdcb5ecd2f3293aa5b8f7ba96d8308dd946f10d0b761d0974343c5c9d974e3",
++    "libbase.so": "f369320421eb97b1f40afee6bd3f45c706c0f2a07858e9ce660b717b24c124f5",
++    "libbinder.so": "b1c805e5fabd613854c19e8e680d3ae1556418b522ea8a3c37349079528453a2",
++    "libbinder_ndk.so": "c654d0216fa7f5763ef817cd241b9a0409ac8dde82158ddfab17f6859200c0ed",
++    "libc++.so": "238a0bacd6ad699a88988a36881817452690d238bea31d4ac31f257a1afbc1a2",
++    "libcgrouprc.so": "d1775e34c9230aef38db9c39f27b5d2cf6599178d1fadf831e984676263c6cc7",
++    "libcutils.so": "4f7c8949a4c4dedcc2e6fb5d14bdc6c21409a94e313f37236e7b5308fcb0b99d",
++    "libegl_flags.so": "380f6eed1ec30bfc8ef784baa6a8ce39f661915d287d982fb6897b3816d549e0",
++    "libgralloctypes.so": "f1440d827fc29df8f88e91713700ea6443d0c68255fe0dd059303c1d7eb1d429",
++    "libgraphicsenv.so": "20b5933c7e8359c47e1d884cd98e8ea43c7613004592744cc0b33a5b4403f6c0",
++    "libhidlbase.so": "3cd756dc3b078b86fad8ea972a56eb4bb3184019858d00be7e0ea785e177e8a5",
++    "liblog.so": "c6a7ae235c69339262b1e0d1d0604018c66bafb4d63c445f494258a31d4d7f7f",
++    "liblzma.so": "39487f511f232f61f10aea557ea9bc83f309f8609ef593a415400777587aaeec",
++    "libnativebridge_lazy.so": "dcc19808d00e310f06e8b2a0617cc3a195f98a62684ff99ded35bc5f6576f844",
++    "libnativeloader_lazy.so": "832ff56f9823f0c3b36fbd6f58ec9fa4145be4e027bad86dd08e474730603734",
++    "libnativewindow.so": "acde92cd2281a5252445b414f0ab86246a50933234defbfb8537b386c26ffdd3",
++    "libprocessgroup.so": "e4df3b957b2396490e7aaa134dc19f4bb55be0c1c689e30141400e649b42faf5",
++    "libprocinfo.so": "1d3f0985058561bbc7ae3a811d9ec07c4633deed34710f92b5bd9a8644faa7c7",
++    "libsync.so": "5fe77665a28424e27bd2ffbfceec05bfcd20798b9a88a4c980b3362dc0416e18",
++    "libui.so": "5f1e615a13cd9c21d816da7785e5786afd80e87d7c62ec1354186727cde728fd",
++    "libunwindstack.so": "95f1bfa0aa16532cf7a1ef99d83b45ef444a6bf116092a21994a68f225d72176",
++    "libutils.so": "fb598aaba9b781dfb1e87ce27fa7650dd8ba4494bcf8fcf277a4d7810d830c48",
++    "libutilscallstack.so": "66da7fe825a36560769ac83dd998f035aa35130f92b925148e801ecc156ae817",
++    "libvndksupport.so": "8bfecc458087d7899596c8c956e6c7265cd25c359ccd239d063464e1a9b21dcc",
++    "libz.so": "c6e0a5358698d8c8d5655032884c513dcc014b122a1a56a8ed2f7c323d6da73f",
++    "server_configurable_flags.so": "5a7233cef6cc9940e28c06b2016a73e7bcc2fb0bcbe1b314680a1a56b0de516c"
++  },
++  "retained_radio_system32": {
++    "android.hardware.common-V2-ndk.so": "b0a34a922de6d0f4a1528df37d87faf500162b4c3342a2ec93f15a4b4eb84ef1"
++  },
++  "scope": "M4 BZI6 Android17 star2lte G965F native32 only",
++  "source_firmware_marker": "A376BXXU5BZI6/A376BOLM5BZI6/A376BXXU5BZI6"
++}

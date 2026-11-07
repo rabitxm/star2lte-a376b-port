@@ -1,0 +1,254 @@
+diff --git a/unica/patches/product_feature/customize.sh b/unica/patches/product_feature/customize.sh
+--- a/unica/patches/product_feature/customize.sh
++++ b/unica/patches/product_feature/customize.sh
+@@ -26,54 +26,60 @@
+ 
+ # SEC_PRODUCT_FEATURE_BUILD_MAINLINE_API_LEVEL
+ if [[ "$SOURCE_PRODUCT_SHIPPING_API_LEVEL" != "$TARGET_PRODUCT_SHIPPING_API_LEVEL" ]]; then
+-    SMALI_PATCH "system" "system/framework/esecomm.jar" \
+-        "smali/com/sec/esecomm/EsecommAdapter.smali" "replace" \
+-        "<clinit>()V" \
+-        "$SOURCE_PRODUCT_SHIPPING_API_LEVEL" \
+-        "$TARGET_PRODUCT_SHIPPING_API_LEVEL"
+-    SMALI_PATCH "system" "system/framework/services.jar" \
+-        "smali/com/android/server/enterprise/hdm/HdmSakManager.smali" "replace" \
+-        "isSupported(Landroid/content/Context;)Z" \
+-        "$SOURCE_PRODUCT_SHIPPING_API_LEVEL" \
+-        "$TARGET_PRODUCT_SHIPPING_API_LEVEL"
+-    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
+-        LOGW "A376B AZH4 HdmVendorController has no <init>()V method; skipping only its inapplicable shipping-API substitution"
+-    else
+-        SMALI_PATCH "system" "system/framework/services.jar" \
+-            "smali/com/android/server/enterprise/hdm/HdmVendorController.smali" "replace" \
+-            "<init>()V" \
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++        DECODE_APK "system" "system/framework/esecomm.jar" || return 1
++        DECODE_APK "system" "system/framework/services.jar" || return 1
++        EVAL "python3 \"$MODPATH/a376b_android17_product.py\" shipping \"$APKTOOL_DIR\"" || return 1
++    else
++        SMALI_PATCH "system" "system/framework/esecomm.jar" \
++            "smali/com/sec/esecomm/EsecommAdapter.smali" "replace" \
++            "<clinit>()V" \
+             "$SOURCE_PRODUCT_SHIPPING_API_LEVEL" \
+             "$TARGET_PRODUCT_SHIPPING_API_LEVEL"
+-    fi
+-    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
+-        LOGW "A376B AZH4 services.jar has no Knox TAProxy class; skipping its inapplicable shipping-API substitution"
+-    else
+         SMALI_PATCH "system" "system/framework/services.jar" \
+-            "smali/com/android/server/knox/dar/ddar/ta/TAProxy.smali" "replace" \
+-            "updateServiceHolder(Z)V" \
++            "smali/com/android/server/enterprise/hdm/HdmSakManager.smali" "replace" \
++            "isSupported(Landroid/content/Context;)Z" \
+             "$SOURCE_PRODUCT_SHIPPING_API_LEVEL" \
+             "$TARGET_PRODUCT_SHIPPING_API_LEVEL"
+-    fi
+-    SMALI_PATCH "system" "system/framework/services.jar" \
+-        "smali/com/android/server/SystemServer.smali" "replace" \
+-        "startOtherServices(Lcom/android/server/utils/TimingsTraceAndSlog;)V" \
+-        "MAINLINE_API_LEVEL: $SOURCE_PRODUCT_SHIPPING_API_LEVEL" \
+-        "MAINLINE_API_LEVEL: $TARGET_PRODUCT_SHIPPING_API_LEVEL"
+-    SMALI_PATCH "system" "system/framework/services.jar" \
+-        "smali/com/android/server/SystemServer.smali" "replace" \
+-        "startOtherServices(Lcom/android/server/utils/TimingsTraceAndSlog;)V" \
+-        "$SOURCE_PRODUCT_SHIPPING_API_LEVEL" \
+-        "$TARGET_PRODUCT_SHIPPING_API_LEVEL"
+-    SMALI_PATCH "system" "system/framework/services.jar" \
+-        "smali_classes2/com/android/server/power/PowerManagerUtil.smali" "replace" \
+-        "<clinit>()V" \
+-        "$SOURCE_PRODUCT_SHIPPING_API_LEVEL" \
+-        "$TARGET_PRODUCT_SHIPPING_API_LEVEL"
+-    SMALI_PATCH "system" "system/framework/services.jar" \
+-        "smali_classes2/com/android/server/sepunion/EngmodeService\$EngmodeTimeThread.smali" "replace" \
+-        "<clinit>()V" \
+-        "$SOURCE_PRODUCT_SHIPPING_API_LEVEL" \
+-        "$TARGET_PRODUCT_SHIPPING_API_LEVEL"
++        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++            LOGW "A376B AZH4 HdmVendorController has no <init>()V method; skipping only its inapplicable shipping-API substitution"
++        else
++            SMALI_PATCH "system" "system/framework/services.jar" \
++                "smali/com/android/server/enterprise/hdm/HdmVendorController.smali" "replace" \
++                "<init>()V" \
++                "$SOURCE_PRODUCT_SHIPPING_API_LEVEL" \
++                "$TARGET_PRODUCT_SHIPPING_API_LEVEL"
++        fi
++        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++            LOGW "A376B AZH4 services.jar has no Knox TAProxy class; skipping its inapplicable shipping-API substitution"
++        else
++            SMALI_PATCH "system" "system/framework/services.jar" \
++                "smali/com/android/server/knox/dar/ddar/ta/TAProxy.smali" "replace" \
++                "updateServiceHolder(Z)V" \
++                "$SOURCE_PRODUCT_SHIPPING_API_LEVEL" \
++                "$TARGET_PRODUCT_SHIPPING_API_LEVEL"
++        fi
++        SMALI_PATCH "system" "system/framework/services.jar" \
++            "smali/com/android/server/SystemServer.smali" "replace" \
++            "startOtherServices(Lcom/android/server/utils/TimingsTraceAndSlog;)V" \
++            "MAINLINE_API_LEVEL: $SOURCE_PRODUCT_SHIPPING_API_LEVEL" \
++            "MAINLINE_API_LEVEL: $TARGET_PRODUCT_SHIPPING_API_LEVEL"
++        SMALI_PATCH "system" "system/framework/services.jar" \
++            "smali/com/android/server/SystemServer.smali" "replace" \
++            "startOtherServices(Lcom/android/server/utils/TimingsTraceAndSlog;)V" \
++            "$SOURCE_PRODUCT_SHIPPING_API_LEVEL" \
++            "$TARGET_PRODUCT_SHIPPING_API_LEVEL"
++        SMALI_PATCH "system" "system/framework/services.jar" \
++            "smali_classes2/com/android/server/power/PowerManagerUtil.smali" "replace" \
++            "<clinit>()V" \
++            "$SOURCE_PRODUCT_SHIPPING_API_LEVEL" \
++            "$TARGET_PRODUCT_SHIPPING_API_LEVEL"
++        SMALI_PATCH "system" "system/framework/services.jar" \
++            "smali_classes2/com/android/server/sepunion/EngmodeService\$EngmodeTimeThread.smali" "replace" \
++            "<clinit>()V" \
++            "$SOURCE_PRODUCT_SHIPPING_API_LEVEL" \
++            "$TARGET_PRODUCT_SHIPPING_API_LEVEL"
++    fi
+ fi
+ 
+ # SEC_PRODUCT_FEATURE_AUDIO_CONFIG_RECORDALIVE_LIB_VERSION
+@@ -294,7 +300,11 @@
+     fi
+ else
+     if $TARGET_COMMON_SUPPORT_HDR_EFFECT; then
+-        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++            DECODE_APK "system" "system/priv-app/SecSettings/SecSettings.apk" || return 1
++            EVAL "python3 \"$MODPATH/a376b_android17_product.py\" hdr \"$APKTOOL_DIR\"" || return 1
++            SET_FLOATING_FEATURE_CONFIG "SEC_FLOATING_FEATURE_COMMON_SUPPORT_HDR_EFFECT" "TRUE"
++        elif [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
+             # Both complete AZH4 controllers remain in the donor but their
+             # availability methods are compiled to UNSUPPORTED_ON_DEVICE.
+             # The target mDNIe/DisplaySolution stack supplies the hardware.
+diff --git a/unica/patches/product_feature/a376b_android17_product.py b/unica/patches/product_feature/a376b_android17_product.py
+--- /dev/null
++++ b/unica/patches/product_feature/a376b_android17_product.py
+@@ -0,0 +1,130 @@
++#!/usr/bin/env python3
++"""Adapt reviewed BZI6 product constants through the fork's decoded Smali tree."""
++from hashlib import sha256
++from pathlib import Path
++import os
++import re
++import sys
++
++
++SERVICES = "system/framework/services.jar"
++SETTINGS = "system/priv-app/SecSettings/SecSettings.apk"
++POWER = "com/android/server/power/PowerManagerUtil"
++CLINIT = "<clinit>()V"
++
++
++def scope():
++    for key, value in {
++        "ROM_SOURCE_CONFIG": "essi_a376b_android17", "ROM_MILESTONE": "M4",
++        "TARGET_CODENAME": "star2lte", "STAR2LTE_BUILD_MODEL": "SM-G965F",
++        "SOURCE_PLATFORM_SDK_VERSION": "37", "TARGET_PLATFORM_SDK_VERSION": "31",
++        "TARGET_BOARD_API_LEVEL": "33", "SOURCE_FIRMWARE_CACHE_SUFFIX": "A376BXXU5BZI6",
++        "SOURCE_PRODUCT_SHIPPING_API_LEVEL": "36", "TARGET_PRODUCT_SHIPPING_API_LEVEL": "26",
++    }.items():
++        if os.environ.get(key) != value:
++            raise RuntimeError("Unreviewed BZI6 product scope: " + key)
++
++
++def method(text, signature):
++    matches = list(re.finditer(r"(?ms)^\.method[^\n]* " + re.escape(signature) + r"\n.*?^\.end method$", text))
++    if len(matches) != 1:
++        raise RuntimeError("Expected one BZI6 product method: " + signature)
++    return matches[0]
++
++
++class Edits:
++    def __init__(self, root):
++        self.root = root
++        self.pending = {}
++
++    def locate(self, artifact, descriptor):
++        matches = list((self.root / artifact).glob("smali*/" + descriptor + ".smali"))
++        if len(matches) != 1:
++            raise RuntimeError("Expected one BZI6 product class: " + descriptor)
++        path = matches[0]
++        text = path.read_text()
++        if not text.splitlines()[0].endswith("L" + descriptor + ";"):
++            raise RuntimeError("BZI6 class descriptor mismatch: " + descriptor)
++        self.pending.setdefault(path, text)
++        return path
++
++    def pin(self, path, signature, digest):
++        if sha256(method(self.pending[path], signature).group().encode()).hexdigest() != digest:
++            raise RuntimeError("Unreviewed BZI6 product method: " + path.name + " " + signature)
++
++    def replace(self, path, signature, old, new):
++        text = self.pending[path]
++        current = method(text, signature)
++        if current.group().count(old) != 1:
++            raise RuntimeError("BZI6 product preimage changed: " + path.name + " " + signature + " " + old)
++        self.pending[path] = text[:current.start()] + current.group().replace(old, new, 1) + text[current.end():]
++
++    def write(self):
++        changed = 0
++        for path, text in self.pending.items():
++            if path.read_text() != text:
++                path.write_text(text)
++                changed += 1
++        return changed
++
++
++def shipping(edits):
++    for artifact, cls, signature, digest, register in (
++        ("system/framework/esecomm.jar", "com/sec/esecomm/EsecommAdapter", CLINIT,
++         "a4e6807baa691e818cebcdb135773cedc2bbd2fc4bc24b2e9a7f20b2d24cbee8", "v0"),
++        (SERVICES, "com/android/server/enterprise/hdm/HdmSakManager", "isSupported(Landroid/content/Context;)Z",
++         "812432830de192731eedfc2e365c263132a962f37aee3daa7ca74a0c0ed209c1", "v3"),
++        # Legacy lights runs first. Require its exact initializer addition.
++        (SERVICES, POWER, CLINIT,
++         "1d03087498e56e6670688ee5d04ea06dd59d7dc86a2ef9f7047e0ad92e581424", "v0"),
++        (SERVICES, "com/android/server/sepunion/EngmodeService$EngmodeTimeThread", CLINIT,
++         "df77c96218401c50508e7b2db0d597a123d78dc6b0204b1154e8b088b9055c29", "v0"),
++    ):
++        path = edits.locate(artifact, cls)
++        edits.pin(path, signature, digest)
++        edits.replace(path, signature, f'const-string {register}, "36"', f'const-string {register}, "26"')
++
++    vendor = edits.locate(SERVICES, "com/android/server/enterprise/hdm/HdmVendorController")
++    if sha256(edits.pending[vendor].encode()).hexdigest() != "457d2d796da242152c71659224fbbdc4437c0bbd553a5910f64d07d6a7c7f042":
++        raise RuntimeError("BZI6 HdmVendorController changed; recheck absent constructor")
++    if list((edits.root / SERVICES).glob("smali*/com/android/server/knox/dar/ddar/ta/TAProxy.smali")):
++        raise RuntimeError("BZI6 TAProxy unexpectedly present; review shipping branch")
++
++    server = edits.locate(SERVICES, "com/android/server/SystemServer")
++    # eSE patches can touch other parts of this large method. Pin the complete
++    # shipping log/parse/threshold block instead of unrelated service startup.
++    before = ('    const-string/jumbo v15, "MAINLINE_API_LEVEL: 36"\n\n'
++              '    invoke-static {v0, v15}, Landroid/util/Slog;->i(Ljava/lang/String;Ljava/lang/String;)I\n\n'
++              '    const-string v0, "36"\n\n'
++              '    invoke-static {v0}, Ljava/lang/Integer;->parseInt(Ljava/lang/String;)I\n\n'
++              '    move-result v0\n\n    const/16 v15, 0x22\n\n'
++              '    if-lt v0, v15, :cond_1')
++    edits.replace(server, "startOtherServices(Lcom/android/server/utils/TimingsTraceAndSlog;)V",
++                  before, before.replace('LEVEL: 36', 'LEVEL: 26').replace('"36"', '"26"'))
++
++
++def hdr(edits):
++    for key, expected in {"SOURCE_COMMON_SUPPORT_HDR_EFFECT": "false", "TARGET_COMMON_SUPPORT_HDR_EFFECT": "true"}.items():
++        if os.environ.get(key) != expected:
++            raise RuntimeError("Unreviewed BZI6 HDR feature: " + key)
++    for cls, digest in (
++        ("VideoEnhancerPreferenceController", "526723a2d182ad930f1827981dea78b30918134d0cdc953457c537812dd08c0f"),
++        ("SecBrightenUpVideoPreferenceController", "6814d00faa547b1821c975283ff64b27f276526152b9021be7d75144be01bffc"),
++    ):
++        path = edits.locate(SETTINGS, "com/samsung/android/settings/usefulfeature/videoenhancer/" + cls)
++        if sha256(edits.pending[path].encode()).hexdigest() != digest:
++            raise RuntimeError("Unreviewed complete BZI6 HDR controller: " + cls)
++        edits.replace(path, "getAvailabilityStatus()I", "const/4 p0, 0x3", "const/4 p0, 0x0")
++
++
++def adapt(root, phase):
++    scope()
++    edits = Edits(root)
++    {"shipping": shipping, "hdr": hdr}[phase](edits)
++    print(f"PASS BZI6 product {phase}: {edits.write()} changed classes; validated before writes")
++
++
++if __name__ == "__main__":
++    if len(sys.argv) != 3 or sys.argv[1] not in ("shipping", "hdr"):
++        raise SystemExit("usage: a376b_android17_product.py shipping|hdr DECODED")
++    adapt(Path(sys.argv[2]), sys.argv[1])

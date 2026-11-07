@@ -1,0 +1,210 @@
+diff --git a/unica/patches/product_feature/customize.sh b/unica/patches/product_feature/customize.sh
+--- a/unica/patches/product_feature/customize.sh
++++ b/unica/patches/product_feature/customize.sh
+@@ -945,6 +945,11 @@
+ 
+ # SEC_PRODUCT_FEATURE_WLAN_SUPPORT_80211AX
+ # SEC_PRODUCT_FEATURE_WLAN_SUPPORT_80211AX_6GHZ
++if [ "${STAR2LTE_M4_KEEP_DONOR_WIFI_UI:-false}" = "true" ]; then
++    DECODE_APK "system" "system/priv-app/SecSettings/SecSettings.apk" || return 1
++    DECODE_APK "system_ext" "priv-app/SystemUI/SystemUI.apk" || return 1
++    EVAL "python3 \"$MODPATH/wifi/a376b_android17_ui.py\" verify-source \"$APKTOOL_DIR\"" || return 1
++fi
+ if [ "${STAR2LTE_M2_KEEP_DONOR_WIFI_UI:-false}" = "true" ]; then
+     if [ "${ROM_SOURCE_CONFIG:-}" != "essi_a376b_android16" ] || \
+             [ "${ROM_MILESTONE:-}" != "M2" ] || [ "$TARGET_CODENAME" != "star2lte" ] || \
+@@ -978,6 +983,8 @@
+         if ! $SOURCE_WLAN_SUPPORT_80211AX_6GHZ; then
+             if [ "${STAR2LTE_M2_KEEP_DONOR_WIFI_UI:-false}" = "true" ]; then
+                 LOGW "M2 user-selected limitation: retain donor Wi-Fi scan labels/icons; target HAL/blobs remain Wi-Fi5"
++            elif [ "${STAR2LTE_M4_KEEP_DONOR_WIFI_UI:-false}" = "true" ]; then
++                LOGW "M4 initial limitation: retain verified BZI6 Wi-Fi UI; target HAL/blobs remain Wi-Fi5"
+             else
+                 APPLY_PATCH "system" "system/priv-app/SecSettings/SecSettings.apk" \
+                     "$MODPATH/wifi/80211ax/SecSettings.apk/0001-Disable-80211AX-support.patch"
+diff --git a/unica/patches/product_feature/wifi/a376b_android17_ui.py b/unica/patches/product_feature/wifi/a376b_android17_ui.py
+--- /dev/null
++++ b/unica/patches/product_feature/wifi/a376b_android17_ui.py
+@@ -0,0 +1,75 @@
++#!/usr/bin/env python3
++"""Verify the explicitly retained BZI6 Wi-Fi UI; no hardware capability edit."""
++from hashlib import sha256
++from pathlib import Path
++import importlib.util
++import json
++import os
++import re
++import sys
++
++SPEC = importlib.util.spec_from_file_location("bzi6_product", Path(__file__).resolve().parent.parent / "a376b_android17_product.py")
++PRODUCT = importlib.util.module_from_spec(SPEC)
++SPEC.loader.exec_module(PRODUCT)
++ABSENT = "com/samsung/android/settings/wifi/WifiEntriesFilter$$ExternalSyntheticLambda0.smali"
++
++
++def scope():
++    PRODUCT.scope()
++    for key, value in {
++        "STAR2LTE_M4_KEEP_DONOR_WIFI_UI": "true", "STAR2LTE_M2_KEEP_DONOR_WIFI_UI": "false",
++        "SOURCE_WLAN_SUPPORT_80211AX": "true", "TARGET_WLAN_SUPPORT_80211AX": "false",
++        "SOURCE_WLAN_SUPPORT_80211AX_6GHZ": "false", "TARGET_WLAN_SUPPORT_80211AX_6GHZ": "false",
++    }.items():
++        if os.environ.get(key) != value:
++            raise RuntimeError("Unreviewed BZI6 retained Wi-Fi UI selection: " + key)
++
++
++def rules():
++    return json.loads(Path(__file__).with_suffix(".json").read_text())
++
++
++def canonical(text):
++    # DEX pool size can change const-string/jumbo encoding. Source markers,
++    # comments and hidden-API access labels are not executable UI behavior.
++    lines = []
++    for line in text.splitlines():
++        line = line.strip()
++        if not line or line.startswith(("#", ".source ")):
++            continue
++        line = line.replace("const-string/jumbo ", "const-string ")
++        if line.startswith((".method ", ".field ")):
++            line = re.sub(r"\b(?:blacklist|whitelist|greylist(?:-max-[a-z])?|core-platform-api|test-api)\s+", "", line)
++        lines.append(line)
++    return sha256("\n".join(lines).encode()).hexdigest()
++
++
++def verify_source(root):
++    scope()
++    for row in rules():
++        paths = list((root / row["artifact"]).glob("smali*/" + row["descriptor"] + ".smali"))
++        if len(paths) != 1 or sha256(paths[0].read_bytes()).hexdigest() != row["sha256"]:
++            raise RuntimeError("Unreviewed retained BZI6 Wi-Fi UI class: " + row["descriptor"])
++    if list((root / "system/priv-app/SecSettings/SecSettings.apk").glob("smali*/" + ABSENT)):
++        raise RuntimeError("Old BZI6 Wi-Fi filter lambda unexpectedly present")
++    print("PASS retained BZI6 Wi-Fi UI: 13 source class pins, replacement filter and old-lambda absence; target Wi-Fi5")
++
++
++def verify_compiled(work, tools):
++    scope()
++    for row in rules():
++        artifact = row["artifact"]
++        path = work / ("system/" + artifact if artifact.startswith("system/") else artifact)
++        text = PRODUCT.compiled_class(path, row["descriptor"], tools)
++        if canonical(text) != row["canonical_sha256"]:
++            raise RuntimeError("Retained compiled BZI6 Wi-Fi UI changed: " + row["descriptor"])
++    print("PASS retained compiled BZI6 Wi-Fi UI: all13 class bodies match reviewed donor behavior; hardware remains Wi-Fi5")
++
++
++if __name__ == "__main__":
++    if len(sys.argv) == 3 and sys.argv[1] == "verify-source":
++        verify_source(Path(sys.argv[2]))
++    elif len(sys.argv) == 4 and sys.argv[1] == "verify-compiled":
++        verify_compiled(Path(sys.argv[2]), Path(sys.argv[3]))
++    else:
++        raise SystemExit("usage: a376b_android17_ui.py verify-source DECODED | verify-compiled WORK TOOLS")
+diff --git a/unica/patches/product_feature/wifi/a376b_android17_ui.json b/unica/patches/product_feature/wifi/a376b_android17_ui.json
+--- /dev/null
++++ b/unica/patches/product_feature/wifi/a376b_android17_ui.json
+@@ -0,0 +1,80 @@
++[
++  {
++    "artifact": "system/priv-app/SecSettings/SecSettings.apk",
++    "descriptor": "com/android/settings/wifi/slice/WifiSlice",
++    "sha256": "2f9734aa91ffd29ceb2e0db8fb326b1b179df329a5023fb8ab74d74d9c6344ea",
++    "canonical_sha256": "b25a04005530ac5c15628046689df7b4e5d3c457e095bb06efabb113ab110a3f"
++  },
++  {
++    "artifact": "system/priv-app/SecSettings/SecSettings.apk",
++    "descriptor": "com/android/settings/wifi/slice/WifiSliceItem",
++    "sha256": "e7b4a19feb40366d2a4fcb17ce740711fd12d20fcbddd0ac47a812d92e957096",
++    "canonical_sha256": "6ec3f8f6ac6d7025b5f11a864b6fa5c9b8524b5303a16fed962452698459e761"
++  },
++  {
++    "artifact": "system/priv-app/SecSettings/SecSettings.apk",
++    "descriptor": "com/android/wifitrackerlib/WifiEntry",
++    "sha256": "6a8c8e7a21d67bc4721cbb5d45907f3be00d43c33ea70e9f28d5febb4e2a3928",
++    "canonical_sha256": "c388f7a58d425cdde470180b407e5d7de7788278597cb8fab58d81c93b42d8e1"
++  },
++  {
++    "artifact": "system/priv-app/SecSettings/SecSettings.apk",
++    "descriptor": "com/samsung/android/settings/wifi/AutoHotspotListAdapter",
++    "sha256": "3f5b3b30ac83ab116d7d7d5db5aa19e68ce54fa14e5a08b02ec07460f30e3084",
++    "canonical_sha256": "69059ab356cf8be8b2c343156136c041f1e0c77bbbeba233ef7cdc2028772d99"
++  },
++  {
++    "artifact": "system/priv-app/SecSettings/SecSettings.apk",
++    "descriptor": "com/samsung/android/settings/wifi/McfAutoHotspotListAdapter",
++    "sha256": "07450fdbb07d795db1afd6627fc216578ca1a6d950dc1d409b40233a51d581a9",
++    "canonical_sha256": "81f7b07193c777a3687f2642f4bf17674df6395299c9ce411127337923434513"
++  },
++  {
++    "artifact": "system/priv-app/SecSettings/SecSettings.apk",
++    "descriptor": "com/samsung/android/settings/wifi/WifiListAdapter",
++    "sha256": "fa939fe4b6bb1e73e6b1f73bb37e5ecd64134400ce49fbbeebb30aa825ff15d0",
++    "canonical_sha256": "aaba5ad6d399d22be717e4c5360486f03101bd564fc14352a01c430791c79213"
++  },
++  {
++    "artifact": "system/priv-app/SecSettings/SecSettings.apk",
++    "descriptor": "com/samsung/android/settings/wifi/develop/WifiLabsWeeklyReportPreference",
++    "sha256": "b5e06dd5f38724e45fd76db8952f1135c7ec7ad556f11ba0ae5cec3f5a2702c8",
++    "canonical_sha256": "183f7d39685587a73fbacc4dcbd2399b7b29b15041df3a24474884031a351afe"
++  },
++  {
++    "artifact": "system/priv-app/SecSettings/SecSettings.apk",
++    "descriptor": "com/samsung/android/wifitrackerlib/SemWifiUtils",
++    "sha256": "ba00c61d18a9caf5e0459de6ded8ca3a1e8b831dc7c67c682831e20c5fc053a5",
++    "canonical_sha256": "cad62f3c666d1632c154f4c80582926c0c9209dc352dab3a31f9add1c15869da"
++  },
++  {
++    "artifact": "system_ext/priv-app/SystemUI/SystemUI.apk",
++    "descriptor": "com/android/systemui/qs/tiles/detail/WifiDetailAdapter",
++    "sha256": "23a1db54279c282c4ded0aabbbd562be7418b715566bbaaa7cb2ccf2209f9f29",
++    "canonical_sha256": "c28de57c811457cbca4292ff611be394807f35eb36864c463bb4558f50ea9180"
++  },
++  {
++    "artifact": "system_ext/priv-app/SystemUI/SystemUI.apk",
++    "descriptor": "com/android/systemui/statusbar/connectivity/AccessPointControllerImpl",
++    "sha256": "621ad0b5fa806eb48874602806d281e24c9d20f288ecac3600578e58142267ce",
++    "canonical_sha256": "51c213c8874f7e011ca39b7aa37e6d4eb19af8147479d4471184e9fbf1072f6e"
++  },
++  {
++    "artifact": "system_ext/priv-app/SystemUI/SystemUI.apk",
++    "descriptor": "com/android/systemui/statusbar/pipeline/wifi/data/repository/prod/WifiRepositoryImpl",
++    "sha256": "1a542bac5994c6b82a517232e27b650baac22029c8849c9a74deda0c117a211b",
++    "canonical_sha256": "5e9ae40df8c4e9bd1fddfe95ab615d28fa18a225de614140b7e5e576d3d2d209"
++  },
++  {
++    "artifact": "system/priv-app/SecSettings/SecSettings.apk",
++    "descriptor": "com/samsung/android/settings/wifi/WifiEntriesFilter",
++    "sha256": "71936f0a71c57e2e05b8f07ba927c5d01615e1e4c977bd5544b2e379787ce20f",
++    "canonical_sha256": "7a01f24e01e59acaddbba0cbfd828076f9fa5a14107574c75ffd51d811766d3b"
++  },
++  {
++    "artifact": "system/priv-app/SecSettings/SecSettings.apk",
++    "descriptor": "com/samsung/android/settings/wifi/WifiEntriesFilter$getFilteredWifiEntries$1",
++    "sha256": "b33a2507658f04b32c0b44533fb87ed6fc82ca5f9a2c8f493a86efb756e1c4bb",
++    "canonical_sha256": "b7f49ea4118b991c7f36b701b16e867135d9146105df38e2e2973a9bfe9d8b0a"
++  }
++]
+diff --git a/target/star2lte/profiles/m1-g965f-no-ksu.sh b/target/star2lte/profiles/m1-g965f-no-ksu.sh
+--- a/target/star2lte/profiles/m1-g965f-no-ksu.sh
++++ b/target/star2lte/profiles/m1-g965f-no-ksu.sh
+@@ -9,6 +9,7 @@
+ export STAR2LTE_M2_FIXED_RESOLUTION="false"
+ export STAR2LTE_M4_FIXED_RESOLUTION="false"
+ export STAR2LTE_M2_KEEP_DONOR_WIFI_UI="false"
++export STAR2LTE_M4_KEEP_DONOR_WIFI_UI="false"
+ export EXYNOS9810_M2_BOOTSTRAP_COMPAT="false"
+ export UN1CA_DONOR_CONFIG="essi"
+ export SOURCE_FIRMWARE_CACHE_SUFFIX=""
+diff --git a/scripts/internal/verify_exynos9810_release_defaults.py b/scripts/internal/verify_exynos9810_release_defaults.py
+--- a/scripts/internal/verify_exynos9810_release_defaults.py
++++ b/scripts/internal/verify_exynos9810_release_defaults.py
+@@ -45,6 +45,8 @@
+         subprocess.run([sys.executable,str(product_checker),"verify-compiled",str(work),str(ROOT/"out/tools")],check=True)
+         ese_checker=ROOT/"unica/patches/ese/a376b_android17_baseline.py"
+         subprocess.run([sys.executable,str(ese_checker),"verify-compiled",str(work),str(ROOT/"out/tools")],check=True)
++        wifi_ui_checker=ROOT/"unica/patches/product_feature/wifi/a376b_android17_ui.py"
++        subprocess.run([sys.executable,str(wifi_ui_checker),"verify-compiled",str(work),str(ROOT/"out/tools")],check=True)
+     if os.environ.get("ROM_SOURCE_CONFIG") == "essi_a376b_android16":
+         if (target, os.environ.get("ROM_MILESTONE")) != ("star2lte", "M2"):
+             raise RuntimeError("Unreviewed native32 A376B release profile")

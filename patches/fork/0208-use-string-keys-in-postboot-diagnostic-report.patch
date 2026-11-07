@@ -1,0 +1,21 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] use string keys in postboot runtime result
+
+# Reason: attempt0208 reached the postboot diagnostic apply, composed and verified both outputs, then raised `KeyError: PosixPath('system/system/apex/com.google.android.tethering_compressed.apex')` because verify() serializes its mapping keys as strings while apply() indexed with Path objects.
+# Affected: the existing M4 postboot diagnostic helper's final report lookup only.
+# Verify: Python compile; scoped verify JSON with both exact locked hashes; scoped apply completes and prints PASS; then resume the existing completed module work_dir and run release/image/package gates.
+# Rollback: reverse patch0208; a repeat M4 build fails at the same report-only key mismatch. Payload semantics are unchanged.
+
+--- a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_postboot_diagnostic.py
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_postboot_diagnostic.py
+@@ -146,8 +146,8 @@
+ 
+     outputs = verify(work, donor)
+     print(json.dumps({"result": "PASS", "profile": "M4/G965F diagnostic only",
+-                      "network_apex_sha256": outputs[APEX_REL],
+-                      "libmeminfo_sha256": outputs[MEMINFO_REL],
++                      "network_apex_sha256": outputs[str(APEX_REL)],
++                      "libmeminfo_sha256": outputs[str(MEMINFO_REL)],
+                       "normal_profile_changed": False}, sort_keys=True))
+ 
+ 

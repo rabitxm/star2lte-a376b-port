@@ -1,0 +1,217 @@
+--- a/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
+@@ -1430,6 +1430,18 @@
+             "samsung/$NAME/$TARGET_CODENAME:10/QP1A.190711.020/$STOCK_INCREMENTAL:user/release-keys"
+         _EXYNOS9810_FINAL_SET_PROP "$FILE" "ro.$PREFIX.build.version.incremental" "$STOCK_INCREMENTAL"
+     done
++
++    # The donor's system and system_ext qualified identity wins the Android 17
++    # property-source resolution on this profile. Keep their OS build
++    # fingerprints, but make the exposed product identity match the S9+.
++    if IS_A376B_M4_BOOT_TEST; then
++        python3 "$SRC_DIR/unica/patches/exynos9810_device_stack/exynos9810_finalization/a376b_android17_target_identity.py" \
++            apply --system-build-prop "$WORK_DIR/system/system/build.prop" \
++            --system-ext-build-prop "$WORK_DIR/system/system/system_ext/etc/build.prop" || return 1
++        python3 "$SRC_DIR/unica/patches/exynos9810_device_stack/exynos9810_finalization/a376b_android17_target_identity.py" \
++            verify-work --system-build-prop "$WORK_DIR/system/system/build.prop" \
++            --system-ext-build-prop "$WORK_DIR/system/system/system_ext/etc/build.prop" || return 1
++    fi
+ 
+     _EXYNOS9810_FINAL_SET_PROP "$WORK_DIR/vendor/build.prop" "ro.product.first_api_level" "$FIRST_API"
+     _EXYNOS9810_FINAL_SET_PROP "$WORK_DIR/vendor/build.prop" "ro.board.first_api_level" "$FIRST_API"
+--- a/scripts/internal/verify_m4_runtime_image.py
++++ b/scripts/internal/verify_m4_runtime_image.py
+@@ -30,12 +30,16 @@
+ BT_FDF1_HELPER = ROOT / "unica/patches/bluetooth/a376b_android17_fdf1_skip.py"
+ BT_CAPABILITY_HELPER = ROOT / "unica/patches/bluetooth/a376b_android17_dbfw_capability.py"
+ BT_SENDERS_HELPER = ROOT / "unica/patches/bluetooth/a376b_android17_dbfw_senders.py"
++TARGET_IDENTITY_HELPER = ROOT / "unica/patches/exynos9810_device_stack/exynos9810_finalization/a376b_android17_target_identity.py"
+ 
+ 
+ def metadata(partition, rel):
+     if partition == "system":
+         exact = {
+             "system/bin/cameraserver": (0o755, (0, 2000), "cameraserver_exec"),
++            "system/build.prop": (0o644, (0, 0), "system_file"),
++            "system/system_ext/etc/build.prop": (0o644, (0, 0), "system_file"),
++            "system/framework/framework-res.apk": (0o644, (0, 0), "system_file"),
+             "system/priv-app/SamsungCamera/SamsungCamera.apk": (0o644, (0, 0), "system_file"),
+             "system/framework/services.jar": (0o644, (0, 0), "system_file"),
+             "system/lib64/libaudiobase.so": (0o644, (0, 0), "system_lib_file"),
+@@ -181,6 +184,11 @@
+                 os.environ.get("EXYNOS9810_M4_SKIP_UNSUPPORTED_FDF1") == "true":
+             paths.append("system/lib64/libbluetooth_jni.so")
+         if os.environ.get("ROM_SOURCE_CONFIG") == "essi_a376b_android17":
++            if os.environ.get("STAR2LTE_BUILD_MODEL") == "SM-G965F":
++                run(["python3", str(TARGET_IDENTITY_HELPER), "verify-work",
++                     "--system-build-prop", str(work / "system/system/build.prop"),
++                     "--system-ext-build-prop", str(work / "system/system/system_ext/etc/build.prop")])
++                paths.extend(["system/build.prop", "system/system_ext/etc/build.prop"])
+             if os.environ.get("EXYNOS9810_M4_RUNTIME_COMPAT") != "true":
+                 raise ValueError("M4 KG30 image verification requires the reviewed runtime profile")
+             kg30_jar_rel = "system/framework/services.jar"
+--- /dev/null
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/a376b_android17_target_identity.py
+@@ -0,0 +1,162 @@
++#!/usr/bin/env python3
++"""Correct Android 17 partition-qualified identity for the G965F M4 profile.
++
++Reason: the BZI6 system/system_ext product properties outrank the fork's
++unqualified target values and expose SM-A376B/essi on star2lte.
++Files: only the device/model/name properties in system and system_ext build.prop.
++Verify: exact donor preimage, scope and byte-preserving fixtures; later verify
++getprop ro.product.model/name/device on the built image and running device.
++Rollback: remove this adapter call; donor build.prop inputs remain unchanged.
++"""
++from pathlib import Path
++import argparse
++import os
++import re
++import tempfile
++
++DONOR = {
++    "system": {
++        "ro.product.system.device": "essi",
++        "ro.product.system.model": "SM-A376B",
++        "ro.product.system.name": "a37xnaxx",
++    },
++    "system_ext": {
++        "ro.product.system_ext.device": "essi",
++        "ro.product.system_ext.model": "SM-A376B",
++        "ro.product.system_ext.name": "a37xnaxx",
++    },
++}
++TARGET = {
++    "ro.product.system.device": "star2lte",
++    "ro.product.system.model": "SM-G965F",
++    "ro.product.system.name": "star2ltexx",
++    "ro.product.system_ext.device": "star2lte",
++    "ro.product.system_ext.model": "SM-G965F",
++    "ro.product.system_ext.name": "star2ltexx",
++}
++
++
++def scope(env=None):
++    env = os.environ if env is None else env
++    expected = {
++        "ROM_SOURCE_CONFIG": "essi_a376b_android17",
++        "ROM_MILESTONE": "M4",
++        "TARGET_CODENAME": "star2lte",
++        "STAR2LTE_BUILD_MODEL": "SM-G965F",
++        "SOURCE_FIRMWARE_CACHE_SUFFIX": "A376BXXU5BZI6",
++    }
++    for key, value in expected.items():
++        if env.get(key) != value:
++            raise ValueError("target identity adapter scope mismatch: " + key)
++
++
++def update(path, expected, target):
++    path = Path(path)
++    if path.is_symlink() or not path.is_file():
++        raise ValueError("identity build.prop missing or symlinked: " + str(path))
++    text = path.read_text()
++    lines = text.splitlines(keepends=True)
++    changes = 0
++    for key, donor_value in expected.items():
++        matches = [i for i, line in enumerate(lines)
++                   if re.match(r"^" + re.escape(key) + r"=", line)]
++        if len(matches) != 1:
++            raise ValueError("expected one donor identity key " + key)
++        index = matches[0]
++        match = re.fullmatch(re.escape(key) + r"=(.*?)(\r?\n)?", lines[index])
++        if not match:
++            raise ValueError("malformed identity property " + key)
++        current = match.group(1)
++        if current == target[key]:
++            continue
++        if current != donor_value:
++            raise ValueError("unreviewed identity preimage for " + key + ": " + current)
++        newline = match.group(2) or ""
++        lines[index] = key + "=" + target[key] + newline
++        changes += 1
++    path.write_text("".join(lines))
++    return changes
++
++
++def apply(system, system_ext):
++    scope()
++    changed = update(system, DONOR["system"], TARGET)
++    changed += update(system_ext, DONOR["system_ext"], TARGET)
++    print("PASS target system/system_ext identity properties (changed %d)" % changed)
++
++
++def verify(system, system_ext):
++    scope()
++    for path, expected in ((Path(system), {k: TARGET[k] for k in DONOR["system"]}),
++                           (Path(system_ext), {k: TARGET[k] for k in DONOR["system_ext"]})):
++        if path.is_symlink() or not path.is_file():
++            raise ValueError("identity build.prop missing or symlinked: " + str(path))
++        text = path.read_text()
++        for key, value in expected.items():
++            found = re.findall(r"^" + re.escape(key) + r"=(.*)$", text, re.M)
++            if found != [value]:
++                raise ValueError("compiled target identity mismatch for " + key + ": " + repr(found))
++    print("PASS compiled system/system_ext G965F identity properties")
++
++
++def fixture():
++    scope()
++    with tempfile.TemporaryDirectory(prefix="m4-target-identity-") as td:
++        root = Path(td)
++        system = root / "system.build.prop"
++        system_ext = root / "system_ext.build.prop"
++        system.write_text("ro.product.system.model=SM-A376B\nro.product.system.name=a37xnaxx\n"
++                          "ro.product.system.device=essi\nro.build.fingerprint=donor\n")
++        system_ext.write_text("ro.product.system_ext.model=SM-A376B\n"
++                              "ro.product.system_ext.name=a37xnaxx\n"
++                              "ro.product.system_ext.device=essi\n")
++        apply(system, system_ext)
++        verify(system, system_ext)
++        first = (system.read_bytes(), system_ext.read_bytes())
++        assert all(value in first[0] + first[1] for value in (
++            b"ro.product.system.model=SM-G965F\n", b"ro.product.system.name=star2ltexx\n",
++            b"ro.product.system.device=star2lte\n",
++            b"ro.product.system_ext.model=SM-G965F\n",
++            b"ro.product.system_ext.name=star2ltexx\n",
++            b"ro.product.system_ext.device=star2lte\n", b"ro.build.fingerprint=donor\n"))
++        apply(system, system_ext)
++        assert first == (system.read_bytes(), system_ext.read_bytes())
++        negative = dict(os.environ, STAR2LTE_BUILD_MODEL="SM-G965N")
++        try:
++            scope(negative)
++        except ValueError:
++            pass
++        else:
++            raise AssertionError("wrong-model profile accepted")
++        bad = root / "bad.build.prop"
++        bad.write_text("ro.product.system.model=unexpected\n"
++                       "ro.product.system.name=a37xnaxx\nro.product.system.device=essi\n")
++        try:
++            update(bad, DONOR["system"], TARGET)
++        except ValueError:
++            pass
++        else:
++            raise AssertionError("changed donor preimage accepted")
++    print("PASS exact properties, preserve donor fingerprint, idempotence and negative scope/preimage")
++
++
++def main():
++    parser = argparse.ArgumentParser()
++    parser.add_argument("command", choices=("apply", "verify-work", "fixture"))
++    parser.add_argument("--system-build-prop", type=Path)
++    parser.add_argument("--system-ext-build-prop", type=Path)
++    args = parser.parse_args()
++    if args.command == "fixture":
++        fixture()
++    elif args.command == "apply":
++        if args.system_build_prop is None or args.system_ext_build_prop is None:
++            parser.error("apply requires both build.prop paths")
++        apply(args.system_build_prop, args.system_ext_build_prop)
++    else:
++        if args.system_build_prop is None or args.system_ext_build_prop is None:
++            parser.error("verify-work requires both build.prop paths")
++        verify(args.system_build_prop, args.system_ext_build_prop)
++
++
++if __name__ == "__main__":
++    main()

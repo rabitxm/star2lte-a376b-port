@@ -1,0 +1,124 @@
+diff --git a/target/star2lte/config.sh b/target/star2lte/config.sh
+--- a/target/star2lte/config.sh
++++ b/target/star2lte/config.sh
+@@ -56,4 +56,14 @@
+     fi
+     TARGET_COMMON_SUPPORT_DYN_RESOLUTION_CONTROL=false
+ fi
++if [ "${STAR2LTE_M4_FIXED_RESOLUTION:-false}" = "true" ]; then
++    if [ "${UN1CA_DONOR_CONFIG:-}" != "essi_a376b_android17" ] || \
++            [ "${ROM_MILESTONE:-}" != M4 ] || \
++            [ "${STAR2LTE_BUILD_MODEL:-}" != SM-G965F ] || \
++            [ "${SOURCE_FIRMWARE_CACHE_SUFFIX:-}" != A376BXXU5BZI6 ]; then
++        printf 'M4 fixed-resolution preflight requires reviewed BZI6/star2lte/F.\n' >&2
++        return 1
++    fi
++    TARGET_COMMON_SUPPORT_DYN_RESOLUTION_CONTROL=false
++fi
+ TARGET_CAMERA_SUPPORT_SDK_SERVICE=false
+diff --git a/target/star2lte/profiles/m1-g965f-no-ksu.sh b/target/star2lte/profiles/m1-g965f-no-ksu.sh
+--- a/target/star2lte/profiles/m1-g965f-no-ksu.sh
++++ b/target/star2lte/profiles/m1-g965f-no-ksu.sh
+@@ -7,6 +7,7 @@
+ export EXYNOS9810_FACEUNLOCKFIX_EXPERIMENTAL_BUILD="false"
+ export EXYNOS9810_FACEUNLOCKFIX_BUILTIN="false"
+ export STAR2LTE_M2_FIXED_RESOLUTION="false"
++export STAR2LTE_M4_FIXED_RESOLUTION="false"
+ export STAR2LTE_M2_KEEP_DONOR_WIFI_UI="false"
+ export EXYNOS9810_M2_BOOTSTRAP_COMPAT="false"
+ export UN1CA_DONOR_CONFIG="essi"
+diff --git a/unica/patches/exynos9810_device_stack/customize.sh b/unica/patches/exynos9810_device_stack/customize.sh
+--- a/unica/patches/exynos9810_device_stack/customize.sh
++++ b/unica/patches/exynos9810_device_stack/customize.sh
+@@ -1788,7 +1788,8 @@
+         # it after the legacy floating-feature restore
+         # so later donor files cannot hide the One UI 8 Settings toggle.
+         _EXYNOS9810_SET_FLOATING_FEATURE "$FILE" "SEC_FLOATING_FEATURE_LCD_SUPPORT_EXTRA_BRIGHTNESS" "TRUE"
+-        if [ "${STAR2LTE_M2_FIXED_RESOLUTION:-false}" = "true" ]; then
++        if [ "${STAR2LTE_M2_FIXED_RESOLUTION:-false}" = "true" ] || \
++                [ "${STAR2LTE_M4_FIXED_RESOLUTION:-false}" = "true" ]; then
+             _EXYNOS9810_DELETE_FLOATING_FEATURE "$FILE" "SEC_FLOATING_FEATURE_COMMON_CONFIG_DYN_RESOLUTION_CONTROL"
+         fi
+         _EXYNOS9810_SET_FLOATING_FEATURE "$FILE" "SEC_FLOATING_FEATURE_CAMERA_SUPPORT_AVATAR" "FALSE"
+diff --git a/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh b/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
+--- a/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
+@@ -6407,8 +6407,9 @@
+ 
+     _EXYNOS9810_FINAL_RESTORE_FLOATING_FEATURE_FILES || return 1
+ 
+-    if [ "${STAR2LTE_M2_FIXED_RESOLUTION:-false}" = "true" ]; then
+-        LOG "- Keeping M2 at native star2lte resolution (1440x2960, base density 560); no resolution switcher"
++    if [ "${STAR2LTE_M2_FIXED_RESOLUTION:-false}" = "true" ] || \
++            [ "${STAR2LTE_M4_FIXED_RESOLUTION:-false}" = "true" ]; then
++        LOG "- Keeping selected star2lte profile at native resolution (1440x2960, base density 560); no resolution switcher"
+         _EXYNOS9810_FINAL_SET_FLOATING_FEATURE_BOTH \
+             "SEC_FLOATING_FEATURE_COMMON_CONFIG_DYN_RESOLUTION_CONTROL" "" || return 1
+     fi
+@@ -6958,9 +6959,10 @@
+             LOGE "Exynos9810 auto-brightness mode is not set in $REL"
+             return 1
+         }
+-        if [ "${STAR2LTE_M2_FIXED_RESOLUTION:-false}" = "true" ]; then
++        if [ "${STAR2LTE_M2_FIXED_RESOLUTION:-false}" = "true" ] || \
++                [ "${STAR2LTE_M4_FIXED_RESOLUTION:-false}" = "true" ]; then
+             if grep -q '<SEC_FLOATING_FEATURE_COMMON_CONFIG_DYN_RESOLUTION_CONTROL>[^<][^<]*</SEC_FLOATING_FEATURE_COMMON_CONFIG_DYN_RESOLUTION_CONTROL>' "$REL"; then
+-                LOGE "M2 fixed-resolution profile still advertises a resolution switcher in $REL"
++                LOGE "Selected fixed-resolution profile still advertises a resolution switcher in $REL"
+                 return 1
+             fi
+         else
+diff --git a/unica/patches/product_feature/a376b_android17_product.py b/unica/patches/product_feature/a376b_android17_product.py
+--- a/unica/patches/product_feature/a376b_android17_product.py
++++ b/unica/patches/product_feature/a376b_android17_product.py
+@@ -123,6 +123,9 @@
+ 
+ 
+ def display_scope():
++    if os.environ.get("STAR2LTE_M4_FIXED_RESOLUTION") != "true" or \
++            os.environ.get("TARGET_COMMON_SUPPORT_DYN_RESOLUTION_CONTROL") != "false":
++        raise RuntimeError("BZI6 initial display path requires its reviewed M4 fixed-resolution selection")
+     for suffix, source, target in (
+         ("CONTROL_AUTO_BRIGHTNESS", "5", "3"),
+         ("HFR_DEFAULT_REFRESH_RATE", "120", "60"), ("HFR_MODE", "2", "0"),
+@@ -246,6 +249,9 @@
+         body = method(read(SETTINGS, "com/samsung/android/settings/usefulfeature/videoenhancer/" + cls), "getAvailabilityStatus()I").group()
+         if not has_instruction(body, "const/4 p0, 0x0") or has_instruction(body, "const/4 p0, 0x3"):
+             raise RuntimeError("Stale compiled BZI6 HDR availability: " + cls)
++    resolution = method(read(SETTINGS, "com/samsung/android/settings/display/controller/ScreenResolutionPreferenceController"), "getAvailabilityStatus()I").group()
++    if not has_instruction(resolution, "const/4 p0, 0x3") or has_instruction(resolution, "const/4 p0, 0x0"):
++        raise RuntimeError("Compiled BZI6 fixed-resolution controller unexpectedly enabled")
+     feature_root = ET.parse(work / "system/system/etc/floating_feature.xml").getroot()
+     for tag, expected in {
+         "SEC_FLOATING_FEATURE_COMMON_SUPPORT_HDR_EFFECT": "TRUE",
+@@ -257,7 +263,8 @@
+         if len(nodes) != 1 or (nodes[0].text or "").strip() != expected:
+             raise RuntimeError("Stale final BZI6 display feature: " + tag)
+     for tag in ("SEC_FLOATING_FEATURE_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE",
+-                "SEC_FLOATING_FEATURE_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE_NS"):
++                "SEC_FLOATING_FEATURE_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE_NS",
++                "SEC_FLOATING_FEATURE_COMMON_CONFIG_DYN_RESOLUTION_CONTROL"):
+         if any((node.text or "").strip() for node in feature_root.findall(tag)):
+             raise RuntimeError("Unexpected final BZI6 VRR list: " + tag)
+     print("PASS compiled BZI6 product: shipping26, HDR availability, 60Hz/non-VRR, brightness3 and runtime sensor queries")
+diff --git a/unica/patches/product_feature/a376b_android17_display.json b/unica/patches/product_feature/a376b_android17_display.json
+--- a/unica/patches/product_feature/a376b_android17_display.json
++++ b/unica/patches/product_feature/a376b_android17_display.json
+@@ -298,6 +298,17 @@
+         ".field public static final LCD_CONFIG_HFR_MODE:Ljava/lang/String; = \"2\"",
+         ".field public static final LCD_CONFIG_HFR_MODE:Ljava/lang/String; = \"0\""
+       ]
++    },
++    {
++      "artifact": "system/priv-app/SecSettings/SecSettings.apk",
++      "descriptor": "com/samsung/android/settings/display/controller/ScreenResolutionPreferenceController",
++      "methods": [
++        {
++          "signature": "getAvailabilityStatus()I",
++          "sha256": "dff1a5d71940934cc54059e456de235b0dbe242d453767ddf016d6ad14debf77",
++          "replace": []
++        }
++      ]
+     }
+   ]
+ }

@@ -1,0 +1,41 @@
+--- a/unica/patches/legacy/customize.sh
++++ b/unica/patches/legacy/customize.sh
+@@ -791,6 +791,23 @@
+ 
+     if $VBOOT_MISSING && $KERNEL_MISSING; then
+         PATCHED=true
++
++        # BZI6 Android 17 moved UsbHostRestrictor's message Handler from the
++        # fork's $8 descriptor to $11. Keep the old donor path unchanged and
++        # bind the new one only to the reviewed M4 firmware/profile tuple.
++        USB_HOST_RESTRICTOR_MSG_CLASS='smali_classes2/com/android/server/usb/UsbHostRestrictor$8.smali'
++        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++            if [ "${ROM_MILESTONE:-}" != M4 ] || [ "${TARGET_CODENAME:-}" != star2lte ] || \
++                    [ "${STAR2LTE_BUILD_MODEL:-}" != SM-G965F ] || \
++                    [ "${SOURCE_PLATFORM_SDK_VERSION:-}" != 37 ] || \
++                    [ "${SOURCE_FIRMWARE_CACHE_SUFFIX:-}" != A376BXXU5BZI6 ]; then
++                LOGE "Unreviewed BZI6 UsbHostRestrictor handler mapping"
++                return 1
++            fi
++            USB_HOST_RESTRICTOR_MSG_CLASS='smali_classes2/com/android/server/usb/UsbHostRestrictor$11.smali'
++            LOG "Using reviewed BZI6 UsbHostRestrictor handler descriptor: $USB_HOST_RESTRICTOR_MSG_CLASS"
++        fi
++
+         SMALI_PATCH "system" "system/framework/services.jar" \
+             "smali_classes2/com/android/server/usb/UsbHostRestrictor.smali" "replace" \
+             "isFinishLockTimer()Z" \
+@@ -807,12 +824,12 @@
+             "CLOUDY_WORK_MODE" \
+             "1"
+         SMALI_PATCH "system" "system/framework/services.jar" \
+-            "smali_classes2/com/android/server/usb/UsbHostRestrictor\$8.smali" "replace" \
++            "$USB_HOST_RESTRICTOR_MSG_CLASS" "replace" \
+             "handleMessage(Landroid/os/Message;)V" \
+             "SUNNY_WORK_MODE" \
+             "0"
+         SMALI_PATCH "system" "system/framework/services.jar" \
+-            "smali_classes2/com/android/server/usb/UsbHostRestrictor\$8.smali" "replace" \
++            "$USB_HOST_RESTRICTOR_MSG_CLASS" "replace" \
+             "handleMessage(Landroid/os/Message;)V" \
+             "RAINY_RESTRICT_MODE" \
+             "2"

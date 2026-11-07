@@ -1,0 +1,147 @@
+# Reason: Attempt20 line1097 fails because BZI6 lacks the legacy smartcropping_2.0 files; its ImageCropper model moved to system/saiv/imageCropper, while the target-specific SCE model remains in the embedded star2lte vendor baseline.
+# Affected: unica/patches/saiv/customize.sh and unica/patches/saiv/a376b_android17_image_cropper.sh.
+# Verify: pinned BZI6 feature/model/library inputs; staged donor model, cleared only hash-pinned G965F legacy smartcropping data, and retained the hash-pinned Exynos9810 vendor SCE model; wrong-model/changed-input negatives; shell syntax; full source-series replay; clean M4 build.
+# Rollback: remove this patch from patches/fork/series and sources.lock.json.
+
+--- a/unica/patches/saiv/customize.sh
++++ b/unica/patches/saiv/customize.sh
+@@ -245,20 +245,25 @@
+ fi
+ 
+ # SEC_PRODUCT_FEATURE_VISION_CONFIG_SMART_CROPPING_SOLUTION
+-if [ ! -d "$WORK_DIR/system/system/saiv/smartcropping_2.0" ] || \
+-        [ "$TARGET_PLATFORM_SDK_VERSION" -lt "$SOURCE_PLATFORM_SDK_VERSION" ]; then
+-    if [ -d "$WORK_DIR/system/system/saiv/smartcropping_2.0" ]; then
+-        DELETE_FROM_WORK_DIR "system" "system/saiv/smartcropping_2.0"
+-    fi
+-    ADD_TO_WORK_DIR "$SOURCE_FIRMWARE" "system" "system/saiv/smartcropping_2.0/db/smartcrop_saliency_deploy.prototxt" 0 0 644 "u:object_r:system_file:s0"
+-    ADD_TO_WORK_DIR "$SOURCE_FIRMWARE" "system" "system/saiv/smartcropping_2.0/db/smartcrop_saliency_train" 0 0 644 "u:object_r:system_file:s0"
+-fi
+-if [ ! -d "$WORK_DIR/vendor/saiv/image_understanding/db/sce_detector" ] || \
+-        [ "$TARGET_PLATFORM_SDK_VERSION" -lt "$SOURCE_PLATFORM_SDK_VERSION" ]; then
+-    if [ -d "$WORK_DIR/vendor/saiv/image_understanding/db/sce_detector" ]; then
+-        DELETE_FROM_WORK_DIR "vendor" "saiv/image_understanding/db/sce_detector"
+-    fi
+-    ADD_TO_WORK_DIR "$SOURCE_FIRMWARE" "vendor" "saiv/image_understanding/db/sce_detector/sce_detector_cnn.tflite" 0 0 644 "u:object_r:vendor_snap_file:s0"
++if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++    source "$MODPATH/a376b_android17_image_cropper.sh" || return 1
++    A376B17_ADAPT_IMAGE_CROPPER || return 1
++else
++    if [ ! -d "$WORK_DIR/system/system/saiv/smartcropping_2.0" ] || \
++            [ "$TARGET_PLATFORM_SDK_VERSION" -lt "$SOURCE_PLATFORM_SDK_VERSION" ]; then
++        if [ -d "$WORK_DIR/system/system/saiv/smartcropping_2.0" ]; then
++            DELETE_FROM_WORK_DIR "system" "system/saiv/smartcropping_2.0"
++        fi
++        ADD_TO_WORK_DIR "$SOURCE_FIRMWARE" "system" "system/saiv/smartcropping_2.0/db/smartcrop_saliency_deploy.prototxt" 0 0 644 "u:object_r:system_file:s0"
++        ADD_TO_WORK_DIR "$SOURCE_FIRMWARE" "system" "system/saiv/smartcropping_2.0/db/smartcrop_saliency_train" 0 0 644 "u:object_r:system_file:s0"
++    fi
++    if [ ! -d "$WORK_DIR/vendor/saiv/image_understanding/db/sce_detector" ] || \
++            [ "$TARGET_PLATFORM_SDK_VERSION" -lt "$SOURCE_PLATFORM_SDK_VERSION" ]; then
++        if [ -d "$WORK_DIR/vendor/saiv/image_understanding/db/sce_detector" ]; then
++            DELETE_FROM_WORK_DIR "vendor" "saiv/image_understanding/db/sce_detector"
++        fi
++        ADD_TO_WORK_DIR "$SOURCE_FIRMWARE" "vendor" "saiv/image_understanding/db/sce_detector/sce_detector_cnn.tflite" 0 0 644 "u:object_r:vendor_snap_file:s0"
++    fi
+ fi
+ 
+ # SEC_PRODUCT_FEATURE_CAMERA_CONFIG_STRIDE_OCR_VERSION
+--- /dev/null
++++ b/unica/patches/saiv/a376b_android17_image_cropper.sh
+@@ -0,0 +1,97 @@
++# Keep the donor's ImageCropper model layout and the target Exynos9810 vendor model.
++A376B17_ADAPT_IMAGE_CROPPER()
++{
++    local DONOR_ROOT="$FW_DIR/$SOURCE_FIRMWARE_PATH"
++    local WORK_SMART_DIR="$WORK_DIR/system/system/saiv/smartcropping_2.0"
++    local WORK_IMAGE_DIR="$WORK_DIR/system/system/saiv/imageCropper"
++    local WORK_SCE_DIR="$WORK_DIR/vendor/saiv/image_understanding/db/sce_detector"
++
++    if [ "${ROM_SOURCE_CONFIG:-}" != "essi_a376b_android17" ] || \
++            [ "${ROM_MILESTONE:-}" != "M4" ] || \
++            [ "${TARGET_CODENAME:-}" != "star2lte" ] || \
++            [ "${STAR2LTE_BUILD_MODEL:-}" != "SM-G965F" ] || \
++            [ "${SOURCE_PLATFORM_SDK_VERSION:-}" != "37" ] || \
++            [ "${TARGET_PLATFORM_SDK_VERSION:-}" != "31" ] || \
++            [ "${TARGET_BOARD_API_LEVEL:-}" != "33" ] || \
++            [ "${SOURCE_FIRMWARE_CACHE_SUFFIX:-}" != "A376BXXU5BZI6" ] || \
++            [ "${SOURCE_FIRMWARE:-}" != "SM-A376B/XXV/LOCAL" ] || \
++            [[ "${TARGET_FIRMWARE:-}" != SM-G965F/PHN/* ]]; then
++        LOGE "Unreviewed BZI6 ImageCropper dispatch scope"
++        return 1
++    fi
++
++    python3 - "$DONOR_ROOT" "$WORK_SMART_DIR" "$WORK_SCE_DIR" "$WORK_IMAGE_DIR" "$WORK_DIR" <<'PY' || return 1
++import hashlib
++import sys
++import xml.etree.ElementTree as ET
++from pathlib import Path
++
++donor, work_smart, work_sce, work_image, work = map(Path, sys.argv[1:])
++expected = {
++    "system/system/etc/floating_feature.xml": "76f9e27c92500562fe4163366c07b71e2ac41e510a57b643500e3a7b68aa1989",
++    "vendor/etc/floating_feature.xml": "59324c8572e9668db0d29cb09e7ab0247a6abff9a736d71fb447317d44933521",
++    "system/system/saiv/imageCropper/sce_detector_cnn.tflite": "5ee6feae9f8307b7f0c363ec6f41e764ef97b5d2afeb83e72714659268b887f5",
++    "system/system/lib64/libImageCropper.camera.samsung.so": "e5ab1aa650369208dd8113292c05f18313881196530425a637923f1e1ca55914",
++}
++for rel, digest in expected.items():
++    path = donor / rel
++    if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != digest:
++        raise SystemExit("Unreviewed BZI6 ImageCropper input: " + rel)
++for rel in (
++    "system/system/saiv/smartcropping_2.0",
++    "vendor/saiv/image_understanding/db/sce_detector",
++):
++    if (donor / rel).exists():
++        raise SystemExit("BZI6 legacy ImageCropper path unexpectedly exists: " + rel)
++
++for rel in ("system/system/etc/floating_feature.xml", "vendor/etc/floating_feature.xml"):
++    root = ET.parse(donor / rel).getroot()
++    features = {node.tag: (node.text or "").strip() for node in root}
++    if features.get("SEC_FLOATING_FEATURE_VISION_CONFIG_IMAGE_CROPPER_VERSION") != "V1":
++        raise SystemExit("BZI6 ImageCropper feature is not enabled in " + rel)
++    if "SEC_FLOATING_FEATURE_VISION_CONFIG_SMART_CROPPING_SOLUTION" in features:
++        raise SystemExit("BZI6 unexpectedly advertises legacy smart cropping in " + rel)
++
++def verify_tree(directory, expected_files, label):
++    if not directory.is_dir():
++        raise SystemExit("Missing required " + label + " directory: " + str(directory))
++    files = {p.relative_to(directory).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
++             for p in directory.rglob("*") if p.is_file()}
++    if files != expected_files:
++        raise SystemExit("Unreviewed " + label + " file set or hash")
++
++if work_smart.exists():
++    verify_tree(work_smart, {
++        "db/smartcrop_saliency_deploy.prototxt": "6f0d4daf03b3330941afdee6305401f6db717bfd0c4209a93e9820211fec8e88",
++        "db/smartcrop_saliency_train": "3046afb0a51ead841297f42a38cd3c7733fd7304f39a2fabdeff6bac966fb678",
++    }, "G965F legacy smartcropping")
++verify_tree(work_sce, {
++    "sce_detector_cnn.tflite": "f39455590d713701df4d051612d1b0baf427d66704e51eb404fd6fabb4498f1c",
++}, "star2lte embedded vendor SCE detector")
++if work_image.exists():
++    verify_tree(work_image, {
++        "sce_detector_cnn.tflite": "5ee6feae9f8307b7f0c363ec6f41e764ef97b5d2afeb83e72714659268b887f5",
++    }, "existing BZI6 system ImageCropper")
++for rel in ("system/system/etc/floating_feature.xml", "vendor/etc/floating_feature.xml"):
++    path = work / rel
++    if not path.is_file():
++        raise SystemExit("Missing staged ImageCropper floating features: " + rel)
++    root = ET.parse(path).getroot()
++    features = {node.tag: (node.text or "").strip() for node in root}
++    if "SEC_FLOATING_FEATURE_VISION_CONFIG_SMART_CROPPING_SOLUTION" in features:
++        raise SystemExit("Staged work tree retains legacy smart-cropping feature: " + rel)
++if ET.parse(work / "vendor/etc/floating_feature.xml").getroot().findtext(
++        "SEC_FLOATING_FEATURE_VISION_CONFIG_IMAGE_CROPPER_VERSION") != "V1":
++    raise SystemExit("Staged vendor ImageCropper feature mismatch")
++print("PASS BZI6 ImageCropper inputs and star2lte vendor SCE baseline")
++PY
++
++    if [ -d "$WORK_SMART_DIR" ]; then
++        DELETE_FROM_WORK_DIR "system" "system/saiv/smartcropping_2.0" || return 1
++    fi
++    if [ -d "$WORK_IMAGE_DIR" ]; then
++        DELETE_FROM_WORK_DIR "system" "system/saiv/imageCropper" || return 1
++    fi
++    ADD_TO_WORK_DIR "$SOURCE_FIRMWARE" "system" "system/saiv/imageCropper" 0 0 755 "u:object_r:system_file:s0" || return 1
++    LOG "Staged BZI6 system ImageCropper model; omitted absent legacy smartcrop and retained the pinned star2lte vendor SCE baseline"
++}

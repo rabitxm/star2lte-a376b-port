@@ -1,0 +1,112 @@
+diff --git a/unica/patches/product_feature/wifi/a376b_backend.py b/unica/patches/product_feature/wifi/a376b_backend.py
+--- a/unica/patches/product_feature/wifi/a376b_backend.py
++++ b/unica/patches/product_feature/wifi/a376b_backend.py
+@@ -1,12 +1,20 @@
+ #!/usr/bin/env python3
+-"""Adapt reviewed AZH4 APE/personalization disablement to legacy target flags."""
++"""Adapt reviewed AZH4/BZI6 APE disablement to the legacy target flags."""
+ from pathlib import Path
+ from hashlib import sha256
+ import re
+ import sys
++import os
+ 
+ 
+ def adapt(root):
++    a17 = os.environ.get("ROM_SOURCE_CONFIG") == "essi_a376b_android17"
++    if a17:
++        for key, value in {"ROM_MILESTONE": "M4", "TARGET_CODENAME": "star2lte",
++                           "STAR2LTE_BUILD_MODEL": "SM-G965F", "SOURCE_PLATFORM_SDK_VERSION": "37",
++                           "SOURCE_FIRMWARE_CACHE_SUFFIX": "A376BXXU5BZI6"}.items():
++            if os.environ.get(key) != value:
++                raise RuntimeError("Unreviewed BZI6 Wi-Fi scope: " + key)
+     pending = {}
+ 
+     def locate(artifact, descriptor):
+@@ -38,7 +46,9 @@
+     start = text.index('    const-string v0, "SemApeController start"')
+     end = text.index("    new-instance v0, Lcom/samsung/android/server/wifi/SemQboxController;", start)
+     region = text[start:end]
+-    if sha256(region.encode()).hexdigest() != "43a42369b291c5ebfe708241618564188770eceae15071ea767d0c82ddc40d6b":
++    region_hash = ("9886c8c353debcf91ab40d7ce12304ff02460868882ef86767e4b1d514b79cf5" if a17 else
++                   "43a42369b291c5ebfe708241618564188770eceae15071ea767d0c82ddc40d6b")
++    if sha256(region.encode()).hexdigest() != region_hash:
+         raise RuntimeError("Unreviewed AZH4 APE constructor region")
+     # Removed try/catch/control-flow labels must have no outside callers.
+     constructor = method(text, "<init>(Landroid/content/Context;)V").group()
+@@ -59,6 +69,10 @@
+     current = method(pending[qbox], "registerContentObserver(Lcom/samsung/android/server/wifi/SemFrameworkFacade;)V")
+     if sha256(current.group().encode()).hexdigest() != "70ae9997ceaf965e204508a75b50d22761fcc0bd39853a5a84cba297d23ac126":
+         raise RuntimeError("Unreviewed AZH4 Qbox observer")
++    if a17:
++        handler = locate(jar, prefix + "SemQboxController$3")
++        if sha256(method(pending[handler], "handleMessage(Landroid/os/Message;)V").group().encode()).hexdigest() != "9d7307bbeb3e2f865d4d1c3409703b64b5a48cdef7c80e75148aa9e1ba9a3344":
++            raise RuntimeError("BZI6 Qbox message5/MSCS semantics changed")
+     body = current.group().splitlines()[0] + """
+     .locals 1
+ 
+@@ -82,24 +96,35 @@
+ .end method"""
+     pending[qbox] = pending[qbox][:current.start()] + body + pending[qbox][current.end():]
+     enum = locate(jar, prefix + "SemSqeCommandHandler$SqeCommand")
+-    expected = ('    const/16 v1, 0x23\n\n    const-string v2, "support_ape"\n\n'
++    ordinal = 37 if a17 else 35
++    expected = (f'    const/16 v1, {hex(ordinal)}\n\n    const-string v2, "support_ape"\n\n'
+                 '    const-string v4, "SUPPORT_APE"')
+     if expected not in pending[enum]:
+         raise RuntimeError("AZH4 SUPPORT_APE enum ordinal changed")
+     shell = locate(jar, prefix + "SemSqeCommandHandler")
+     process = method(pending[shell], "process(Ljava/lang/String;Ljava/io/PrintWriter;)I").group()
+     table = re.search(r"(?ms)^    \.packed-switch 0x0\n(.*?)^    \.end packed-switch", process)
+-    if table is None or table.group(1).split()[35] != ":pswitch_6" or \
+-            'const-string v10, "Not Supported"' not in process or "const/4 v11, 0x0" not in process:
++    if a17 and sha256(process.encode()).hexdigest() != "9dd3d11f657adb7e82a4a0496cde21697280ebc0b6c6678165083b55db2e45e7":
++        raise RuntimeError("BZI6 SQE command method changed")
++    unsupported, zero, writer = ("v13", "v14", "v1") if a17 else ("v10", "v11", "p2")
++    if table is None or table.group(1).split()[ordinal] != ":pswitch_6" or \
++            f'const-string {unsupported}, "Not Supported"' not in process or f"const/4 {zero}, 0x0" not in process:
+         raise RuntimeError("AZH4 SQE APE dispatch changed")
+-    # The old Supported branch is shared. Split only ordinal35 instead of
++    # The old Supported branch is shared. Split only the APE ordinal instead of
+     # changing the result for unrelated supported commands.
+     lines = table.group(1).splitlines(True)
+-    lines[35] = "        :pswitch_ape_disabled\n"
++    lines[ordinal] = "        :pswitch_ape_disabled\n"
+     replace(shell, table.group(), table.group().replace(table.group(1), "".join(lines), 1))
+-    replace(shell, "    :pswitch_data_0\n", "    :pswitch_ape_disabled\n    invoke-virtual {p2, v10}, Ljava/io/PrintWriter;->println(Ljava/lang/String;)V\n\n    return v11\n\n    :pswitch_data_0\n")
++    replace(shell, "    :pswitch_data_0\n", f"    :pswitch_ape_disabled\n    invoke-virtual {{{writer}, {unsupported}}}, Ljava/io/PrintWriter;->println(Ljava/lang/String;)V\n\n    return {zero}\n\n    :pswitch_data_0\n")
+     settings = "system/priv-app/SecSettings/SecSettings.apk"
+     controller = locate(settings, "com/samsung/android/settings/wifi/develop/ApePreferenceController")
++    if a17:
++        for name, digest in {
++            "getAvailabilityStatus()I": "03bf53136eb394f164aa031a96e6086c45f449af412d6f1ba310d83afd440324",
++            "resetDataPriorityMode(Landroid/content/Context;)V": "c03a1521199fc29bda86897172afcf3640f1950db8b296a76657b2d247396758",
++        }.items():
++            if sha256(method(pending[controller], name).group().encode()).hexdigest() != digest:
++                raise RuntimeError("BZI6 APE Settings method changed: " + name)
+     replace(controller, "SUPPORT_APE_SERVICE:Z = true", "SUPPORT_APE_SERVICE:Z = false")
+     for name, before, after in [
+         ("getAvailabilityStatus()I", "const/4 p0, 0x0", "const/4 p0, 0x3"),
+@@ -120,7 +145,7 @@
+         if path.read_text() != text:
+             path.write_text(text)
+             changed += 1
+-    print(f"PASS AZH4 APE/personalization disabled: {changed} classes; donor scan UI retained")
++    print(f"PASS {'BZI6' if a17 else 'AZH4'} APE/personalization disabled: {changed} classes; scan UI unchanged")
+ 
+ 
+ if __name__ == "__main__":
+diff --git a/unica/patches/product_feature/customize.sh b/unica/patches/product_feature/customize.sh
+--- a/unica/patches/product_feature/customize.sh
++++ b/unica/patches/product_feature/customize.sh
+@@ -976,7 +976,9 @@
+ if [[ "$SOURCE_WLAN_CONFIG_CONNECTION_PERSONALIZATION" != "$TARGET_WLAN_CONFIG_CONNECTION_PERSONALIZATION" ]] || \
+         [[ "$SOURCE_WLAN_CONFIG_DYNAMIC_SWITCH" != "$TARGET_WLAN_CONFIG_DYNAMIC_SWITCH" ]] || \
+         [[ "$SOURCE_WLAN_SUPPORT_APE_SERVICE" != "$TARGET_WLAN_SUPPORT_APE_SERVICE" ]]; then
+-    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] && \
++    if { [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] || \
++            { [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ] && \
++              [ "${ROM_MILESTONE:-}" = M4 ] && [ "$SOURCE_PLATFORM_SDK_VERSION" = 37 ]; }; } && \
+             [ "$TARGET_CODENAME" = "star2lte" ] && \
+             [ "$SOURCE_WLAN_CONFIG_CONNECTION_PERSONALIZATION" = "1" ] && \
+             [ "$TARGET_WLAN_CONFIG_CONNECTION_PERSONALIZATION" = "0" ] && \

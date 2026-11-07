@@ -1,0 +1,32 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] Retain BZI6 donor Secure Folder key behavior
+
+# Reason: attempt27 lines1194–1206 show the optional Secure Folder quick-switch patch partially matches Usefulfeature but fails at FunctionKeyUtils.smali:589 because BZI6 changed the donor method body. Keep the donor key behavior rather than applying a partial patch.
+# Affected: scripts/internal/apply_modules.sh.
+# Verify: exact M4/G965F/BZI6 route skips only the Secure Folder shortcut patch; wrong model/milestone fail closed; AZH4 and unrelated routes remain unchanged; syntax, dispatcher tests, replay, and clean attempt28.
+# Rollback: remove patch0155 from patches/fork/series and sources.lock.json and restore the prior dispatcher.
+
+--- a/scripts/internal/apply_modules.sh
++++ b/scripts/internal/apply_modules.sh
+@@ -224,6 +224,21 @@
+                 return 1
+             fi
+             LOGW "BZI6 NotificationsItem DEX path differs; retaining donor network-speed Settings behavior"
++            continue
++        fi
++        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ] && \
++                [[ "$p" == */csc/smali/system/priv-app/SecSettings/SecSettings.apk/0003-Enable-quick-switch-to-Secure-Folder-feature.patch ]]; then
++            if [ "${ROM_MILESTONE:-}" != M4 ] || [ "${TARGET_CODENAME:-}" != star2lte ] || \
++                    [ "${STAR2LTE_BUILD_MODEL:-}" != SM-G965F ] || \
++                    [ "${SOURCE_PLATFORM_SDK_VERSION:-}" != 37 ] || \
++                    [ "${TARGET_PLATFORM_SDK_VERSION:-}" != 31 ] || \
++                    [ "${TARGET_BOARD_API_LEVEL:-}" != 33 ] || \
++                    [ "${SOURCE_FIRMWARE_CACHE_SUFFIX:-}" != A376BXXU5BZI6 ] || \
++                    [ "${SOURCE_FIRMWARE:-}" != SM-A376B/XXV/LOCAL ]; then
++                LOGE "Unreviewed BZI6 Secure Folder quick-switch scope"
++                return 1
++            fi
++            LOGW "BZI6 FunctionKeyUtils differs; retaining donor Secure Folder quick-switch behavior"
+             continue
+         fi
+         if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] && \

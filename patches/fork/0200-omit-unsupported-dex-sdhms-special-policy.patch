@@ -1,0 +1,180 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] omit unsupported DeX special case in M4 S9 thermal policy
+
+# Reason: BZI6 SDHMS crashes on enum value DEX; user approved omission of the DEX-specific special branch.
+# Affected: exact M4/G965F diagnostic SDHMS SIOP asset transformation, lock and compiled-image gate. Only the DEX/SKIN/470 special node is removed; the separate ssrm_default asset and all ordinary S9 thermal rules remain.
+# Verify: exact source/output SHA256 and byte size; parse XML; require no DEX node; compiled APK assets and final ext4 image are byte/hash gated. Runtime sensor/actuator validation remains required.
+# Rollback: reverse this patch and rebuild; ordinary profile assets remain unchanged. No hardware/kernel/radio/EFS changes.
+
+--- a/unica/patches/dvfs/customize.sh
++++ b/unica/patches/dvfs/customize.sh
+@@ -139,4 +139,30 @@
+     fi
+ fi
+ 
++# BZI6's SDHMS parser has no OverheatComplexType.DEX. For the reviewed M4
++# G965F diagnostic profile only, retain the S9 policy and remove exactly that
++# unsupported DeX special node; keep the fork's distinct ssrm_default asset.
++if [[ "${ROM_SOURCE_CONFIG:-}" == "essi_a376b_android17" ]]; then
++    IS_A376B_M4_BOOT_TEST && \
++            [ "${EXYNOS9810_M4_RUNTIME_COMPAT:-false}" = "true" ] || {
++        LOGE "BZI6 SDHMS thermal policy patch is restricted to reviewed M4 G965F profile"
++        return 1
++    }
++    [ "$SOURCE_PLATFORM_SDK_VERSION" = "37" ] && \
++            [ "$TARGET_DVFSAPP_CONFIG_SSRM_POLICY_FILENAME" = "ssrm_default" ] || {
++        LOGE "Unreviewed BZI6 SDHMS thermal policy selection"
++        return 1
++    }
++    _SDHMS_POLICY_TOOL="$MODPATH/a376b_android17_dvfs_policy.py"
++    _SDHMS_POLICY_OUT="$APKTOOL_DIR/system/priv-app/SamsungDeviceHealthManagerService/SamsungDeviceHealthManagerService.apk/assets"
++    python3 "$_SDHMS_POLICY_TOOL" apply \
++        --source "$MODPATH/assets/siop_default.xml" \
++        --output "$_SDHMS_POLICY_OUT/siop_default.xml" \
++        --ssrm-source "$MODPATH/assets/ssrm_default.xml" \
++        --ssrm-output "$_SDHMS_POLICY_OUT/ssrm_default.xml" || return 1
++    python3 "$_SDHMS_POLICY_TOOL" verify \
++        --siop "$_SDHMS_POLICY_OUT/siop_default.xml" \
++        --ssrm "$_SDHMS_POLICY_OUT/ssrm_default.xml" || return 1
++fi
++
+ unset -f _LOG
+--- /dev/null
++++ b/unica/patches/dvfs/a376b_android17_dvfs_policy.py
+@@ -0,0 +1,108 @@
++#!/usr/bin/env python3
++"""Build and verify the narrowly scoped BZI6 M4 S9 thermal policy.
++
++Reason: BZI6 SDHMS calls Enum.valueOf for overheat-complex nodes, but its
++OverheatComplexType has no DEX member. Remove only the reviewed DEX special
++node from the S9 SIOP policy; all AP/GPU/skin/charging/camera limits remain.
++Files: generated siop_default.xml; keep the distinct locked ssrm_default.xml.
++Rollback: use the ordinary M4 profile/asset selection and rebuild.
++"""
++import argparse
++import hashlib
++import json
++import os
++from pathlib import Path
++import xml.etree.ElementTree as ET
++
++HERE = Path(__file__).resolve().parent
++LOCK = HERE / "a376b_android17_dvfs_policy.lock.json"
++
++
++def require_scope():
++    expected = {"ROM_SOURCE_CONFIG": "essi_a376b_android17", "ROM_MILESTONE": "M4",
++                "TARGET_CODENAME": "star2lte", "STAR2LTE_BUILD_MODEL": "SM-G965F",
++                "SOURCE_PLATFORM_SDK_VERSION": "37",
++                "EXYNOS9810_M4_RUNTIME_COMPAT": "true"}
++    for key, value in expected.items():
++        if os.environ.get(key) != value:
++            raise ValueError("M4 SDHMS policy scope mismatch: " + key)
++
++
++def sha(data):
++    return hashlib.sha256(data).hexdigest()
++
++
++def load_lock():
++    return json.loads(LOCK.read_text())
++
++
++def verify(data, lock, output=True):
++    expected = lock["output_sha256"] if output else lock["source_sha256"]
++    if sha(data) != expected:
++        raise ValueError("M4 SIOP policy SHA256 mismatch")
++    root = ET.fromstring(data)
++    dex = [node for node in root.iter() if node.tag == "DEX"]
++    if dex:
++        raise ValueError("M4 SIOP policy still contains unsupported DEX node")
++    # Structural guard: removal must leave the full policy tree intact except
++    # for this one overheat-complex child.
++    return root
++
++
++def apply(source, output, ssrm_source, ssrm_output):
++    require_scope()
++    lock = load_lock()
++    source, output = Path(source), Path(output)
++    ssrm_source, ssrm_output = Path(ssrm_source), Path(ssrm_output)
++    original = source.read_bytes()
++    if sha(original) != lock["source_sha256"]:
++        raise ValueError("Unreviewed M4 SIOP source policy")
++    exact = lock["removed_line"].encode()
++    if original.count(exact) != 1:
++        raise ValueError("Expected exactly one locked DEX special node")
++    result = original.replace(exact, b"", 1)
++    verify(result, lock, output=True)
++    ssrm = ssrm_source.read_bytes()
++    if sha(ssrm) != lock["ssrm_source_sha256"]:
++        raise ValueError("Unreviewed distinct SSRM default policy")
++    ssrm_root = ET.fromstring(ssrm)
++    if any(node.tag == "DEX" for node in ssrm_root.iter()):
++        raise ValueError("Unexpected DEX node in locked SSRM policy")
++    output.parent.mkdir(parents=True, exist_ok=True)
++    ssrm_output.parent.mkdir(parents=True, exist_ok=True)
++    output.write_bytes(result)
++    ssrm_output.write_bytes(ssrm)
++    print(json.dumps({"result": "PASS", "siop_sha256": sha(result),
++                      "ssrm_sha256": sha(ssrm), "removed": "DEX/SKIN/470 only",
++                      "retained_policy_nodes": len(list(ET.fromstring(result).iter()))}, sort_keys=True))
++
++
++def main():
++    parser = argparse.ArgumentParser(description=__doc__)
++    sub = parser.add_subparsers(dest="command", required=True)
++    run = sub.add_parser("apply")
++    run.add_argument("--source", type=Path, required=True)
++    run.add_argument("--output", type=Path, required=True)
++    run.add_argument("--ssrm-source", type=Path, required=True)
++    run.add_argument("--ssrm-output", type=Path, required=True)
++    check = sub.add_parser("verify")
++    check.add_argument("--siop", type=Path, required=True)
++    check.add_argument("--ssrm", type=Path, required=True)
++    args = parser.parse_args()
++    lock = load_lock()
++    if args.command == "apply":
++        apply(args.source, args.output, args.ssrm_source, args.ssrm_output)
++    else:
++        require_scope()
++        verify(args.siop.read_bytes(), lock, output=True)
++        ssrm = args.ssrm.read_bytes()
++        if sha(ssrm) != lock["ssrm_source_sha256"]:
++            raise ValueError("M4 distinct SSRM asset changed")
++        if any(node.tag == "DEX" for node in ET.fromstring(ssrm).iter()):
++            raise ValueError("M4 SSRM asset unexpectedly contains DEX")
++        print(json.dumps({"result": "PASS", "siop_sha256": sha(args.siop.read_bytes()),
++                          "ssrm_sha256": sha(ssrm)}, sort_keys=True))
++
++
++if __name__ == "__main__":
++    main()
+--- /dev/null
++++ b/unica/patches/dvfs/a376b_android17_dvfs_policy.lock.json
+@@ -0,0 +1,25 @@
++{
++  "schema": 1,
++  "scope": {
++    "source_config": "essi_a376b_android17",
++    "milestone": "M4",
++    "source_firmware": "SM-A376B/XXV/A376BXXU5BZI6",
++    "target": "star2lte",
++    "target_model": "SM-G965F",
++    "source_platform_sdk": 37
++  },
++  "sdhms_apk_sha256": "53c76a214d5e325ed7c16e368392ad37e9de52b68568777a0b6fa29e554fe3f9",
++  "source_path": "rom/unica/patches/dvfs/assets/siop_default.xml",
++  "source_sha256": "8e30ff47bec85ea6526b839df5057ee3ea0769a017ef9a9e3573dea16bf23503",
++  "source_bytes": 10227,
++  "removed_line": "            <DEX formula=\"SKIN\" temp=\"470\" />\n",
++  "removed_semantic": "Only the DeX-specific overheat-complex entry; BZI6 parser has no DEX enum.",
++  "output_sha256": "94a74d1c278207fbd59eb595db12ad337ccf1a8b8a39797451745e16923347be",
++  "output_bytes": 10181,
++  "ssrm_source_path": "rom/unica/patches/dvfs/assets/ssrm_default.xml",
++  "ssrm_source_sha256": "6784ecc18f0326c0599b9278fbd2865c56e3c4d58f2e6ca1f5250280ef78cb96",
++  "ssrm_output_sha256": "6784ecc18f0326c0599b9278fbd2865c56e3c4d58f2e6ca1f5250280ef78cb96",
++  "policy": "All S9 AP/GPU/skin/charging/camera/general SIOP tables remain byte-identical; only DEX special node is omitted. Keep distinct SSRM asset.",
++  "runtime_requirement": "Verify SDHMS policy selection, live S9 thermal sensors and limiter actuator/readback before claiming thermal acceptance.",
++  "rollback": "Rebuild with the ordinary M4 profile and original fork policy assets."
++}

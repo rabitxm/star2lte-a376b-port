@@ -1,0 +1,36 @@
+--- a/unica/patches/nfc/customize.sh
++++ b/unica/patches/nfc/customize.sh
+@@ -63,8 +63,31 @@
+     fi
+ elif [ -f "$FW_DIR/$TARGET_FIRMWARE_PATH/system/system/lib64/libnfc_nci_jni.so" ]; then
+     ADD_TO_WORK_DIR "$TARGET_FIRMWARE" "system" "system/lib64/libnfc_nci_jni.so" 0 0 644 "u:object_r:system_lib_file:s0"
+-    ADD_TO_WORK_DIR "$TARGET_FIRMWARE" "system" "system/lib64/libnfc_prop_extn.so" 0 0 644 "u:object_r:system_lib_file:s0"
+-    ADD_TO_WORK_DIR "$TARGET_FIRMWARE" "system" "system/lib64/libnfc_vendor_extn.so" 0 0 644 "u:object_r:system_lib_file:s0"
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ] &&             [ "${ROM_MILESTONE:-}" = "M4" ] &&             [ "${TARGET_CODENAME:-}" = "star2lte" ] &&             [ "${STAR2LTE_BUILD_MODEL:-}" = "SM-G965F" ] &&             [ "${SOURCE_PLATFORM_SDK_VERSION:-}" = "37" ] &&             [ "${TARGET_PLATFORM_SDK_VERSION:-}" = "29" ] &&             [ "${SOURCE_FIRMWARE_CACHE_SUFFIX:-}" = "A376BXXU5BZI6" ] &&             [ "${TARGET_FIRMWARE:-}" = "SM-G965F/PHN/352966091234565" ]; then
++        _M4_NFC_SOURCE_LIBDIR="$FW_DIR/$TARGET_FIRMWARE_PATH/system/system/lib64"
++        _M4_NFC_DONOR_LIBDIR="$FW_DIR/$(GET_FIRMWARE_CACHE_KEY "$SOURCE_FIRMWARE")/system/system/lib64"
++        [ "$(sha256sum "$_M4_NFC_SOURCE_LIBDIR/libnfc_nci_jni.so" | cut -d ' ' -f 1)" =             "ed74c2fc3c76a835d0fe88043366b3e8c86a920c503cf247355cc84f94efa042" ] || {
++            _LOG "Unreviewed G965F PHN libnfc_nci_jni.so"
++            return 1
++        }
++        if [ ! -e "$_M4_NFC_SOURCE_LIBDIR/libnfc_prop_extn.so" ] &&                 [ ! -e "$_M4_NFC_SOURCE_LIBDIR/libnfc_vendor_extn.so" ]; then
++            [ "$(sha256sum "$_M4_NFC_DONOR_LIBDIR/libnfc_prop_extn.so" | cut -d ' ' -f 1)" =                 "9f75da0bfc77a6a1727616d70fe5c0a7cb25c940e8ca54a7b3397d5af2e1a449" ] &&             [ "$(sha256sum "$_M4_NFC_DONOR_LIBDIR/libnfc_vendor_extn.so" | cut -d ' ' -f 1)" =                 "bb410612066722ba02db56d74b3a457f25e8c12fa0b6bafbe101f25c77439d02" ] || {
++                _LOG "Unreviewed BZI6 donor NFC extension sidecars"
++                return 1
++            }
++            LOGW "G965F PHN has no NFC extension sidecars; retaining hash-pinned BZI6 donor extensions with the target JNI/HAL stack"
++        elif [ -f "$_M4_NFC_SOURCE_LIBDIR/libnfc_prop_extn.so" ] &&                 [ -f "$_M4_NFC_SOURCE_LIBDIR/libnfc_vendor_extn.so" ]; then
++            ADD_TO_WORK_DIR "$TARGET_FIRMWARE" "system" "system/lib64/libnfc_prop_extn.so" 0 0 644 "u:object_r:system_lib_file:s0"
++            ADD_TO_WORK_DIR "$TARGET_FIRMWARE" "system" "system/lib64/libnfc_vendor_extn.so" 0 0 644 "u:object_r:system_lib_file:s0"
++        else
++            _LOG "Partial G965F NFC extension sidecar set is unreviewed"
++            return 1
++        fi
++        unset _M4_NFC_SOURCE_LIBDIR _M4_NFC_DONOR_LIBDIR
++    else
++        ADD_TO_WORK_DIR "$TARGET_FIRMWARE" "system" "system/lib64/libnfc_prop_extn.so" 0 0 644 "u:object_r:system_lib_file:s0"
++        ADD_TO_WORK_DIR "$TARGET_FIRMWARE" "system" "system/lib64/libnfc_vendor_extn.so" 0 0 644 "u:object_r:system_lib_file:s0"
++    fi
+ elif [ -f "$FW_DIR/$TARGET_FIRMWARE_PATH/system/system/lib64/libnfc_nxpsn_jni.so" ]; then
+     # TODO
+     _LOG "Missing prebuilt blobs for NXP_SN100U NFC chip"

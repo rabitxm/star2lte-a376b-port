@@ -1,0 +1,127 @@
+diff --git a/unica/patches/ese/customize.sh b/unica/patches/ese/customize.sh
+--- a/unica/patches/ese/customize.sh
++++ b/unica/patches/ese/customize.sh
+@@ -19,7 +19,12 @@
+ }
+ # ]
+ 
+-if [[ "$SOURCE_SECURITY_CONFIG_ESE_CHIP_VENDOR" == "NXP" ]] && [[ "$SOURCE_SECURITY_CONFIG_ESE_COS_NAME" == "JCOP6.2U" ]] && \
++if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++    DECODE_APK "system" "system/app/SecureElement/SecureElement.apk" || return 1
++    DECODE_APK "system" "system/framework/framework.jar" || return 1
++    DECODE_APK "system" "system/framework/services.jar" || return 1
++    EVAL "python3 \"$MODPATH/a376b_android17_baseline.py\" adapt \"$APKTOOL_DIR\"" || return 1
++elif [[ "$SOURCE_SECURITY_CONFIG_ESE_CHIP_VENDOR" == "NXP" ]] && [[ "$SOURCE_SECURITY_CONFIG_ESE_COS_NAME" == "JCOP6.2U" ]] && \
+         [[ "$TARGET_SECURITY_CONFIG_ESE_CHIP_VENDOR" == "none" ]] && [[ "$TARGET_SECURITY_CONFIG_ESE_COS_NAME" == "none" ]]; then
+     APPLY_PATCH "system" "system/app/SecureElement/SecureElement.apk" \
+         "$MODPATH/ese/SecureElement.apk/0001-Disable-eSE-support.patch"
+diff --git a/unica/patches/ese/a376b_android17_baseline.py b/unica/patches/ese/a376b_android17_baseline.py
+--- /dev/null
++++ b/unica/patches/ese/a376b_android17_baseline.py
+@@ -0,0 +1,94 @@
++#!/usr/bin/env python3
++"""Apply the existing target eSE=none policy to reviewed BZI6 code.
++
++Preserve SKU/country/feature detection, OMAPI UICC and NFC behavior. This does
++not choose a COS, emulate an eSE, or establish hardware eSE functionality.
++"""
++from hashlib import sha256
++from pathlib import Path
++import importlib.util
++import os
++import re
++import sys
++
++
++COMMON = Path(__file__).resolve().parent.parent / "product_feature/a376b_android17_product.py"
++SPEC = importlib.util.spec_from_file_location("bzi6_product", COMMON)
++PRODUCT = importlib.util.module_from_spec(SPEC)
++SPEC.loader.exec_module(PRODUCT)
++UTIL = "com/android/se/internal/UtilExtension"
++SERVICE = "com/android/server/SemService"
++MANAGER = "com/samsung/android/service/SemService/SemServiceManager"
++CREDENTIALS = "com/samsung/ucm/ucmservice/CredentialManagerService"
++RULES = (
++    ("system/app/SecureElement/SecureElement.apk", UTIL,
++     "ee2b936be0936deb25cd90465df44c5693707d26e863e1198d96715b35669c94", 3, 1),
++    ("system/framework/framework.jar", SERVICE,
++     "9c962f72f2818b49d8a504168161b7405059d37a79d3622d49d98f97f49c956d", 1, 1),
++    ("system/framework/framework.jar", MANAGER,
++     "5172085229b388b11afc17d0d5686dfe2fc941604bd230363bc5a025b99b231a", 1, 1),
++    ("system/framework/services.jar", CREDENTIALS,
++     "cf75f7b05fd95d636c21b7e59e1b09c14d9ff62e16fbd15a2f2ee4c8cb64fc5b", 0, 1),
++)
++
++
++def scope():
++    PRODUCT.scope()
++    for key, expected in {
++        "SOURCE_SECURITY_CONFIG_ESE_CHIP_VENDOR": "NXP_SKU",
++        "SOURCE_SECURITY_CONFIG_ESE_COS_NAME": "JCOP6.5U",
++        "TARGET_SECURITY_CONFIG_ESE_CHIP_VENDOR": "none",
++        "TARGET_SECURITY_CONFIG_ESE_COS_NAME": "none",
++    }.items():
++        if os.environ.get(key) != expected:
++            raise RuntimeError("Unreviewed BZI6 target eSE baseline: " + key)
++
++
++def adapt(root):
++    scope()
++    edits = PRODUCT.Edits(root)
++    for artifact, descriptor, digest, cos_count, vendor_count in RULES:
++        path = edits.locate(artifact, descriptor)
++        text = edits.pending[path]
++        if sha256(text.encode()).hexdigest() != digest or \
++                text.count("JCOP6.5U") != cos_count or text.count("NXP_SKU") != vendor_count:
++            raise RuntimeError("Unreviewed BZI6 eSE class/preimage: " + descriptor)
++        # Match the existing target-none substitutions. BZI6 supportEseHal's
++        # COS occurs inside a log string; the old exact-string rule misses it.
++        edits.pending[path] = text.replace("JCOP6.5U", "").replace("NXP_SKU", "")
++    print(f"PASS BZI6 target eSE baseline: {edits.write()} classes; SKU/country/UICC/NFC paths retained")
++
++
++def verify_compiled(work, tools):
++    scope()
++    texts = {}
++    for artifact, descriptor, *_ in RULES:
++        text = PRODUCT.compiled_class(work / ("system/" + artifact), descriptor, tools)
++        if "JCOP6.5U" in text or "NXP_SKU" in text:
++            raise RuntimeError("Stale compiled BZI6 eSE metadata: " + descriptor)
++        texts[descriptor] = text
++    for field in ("chipVendor", "cosName"):
++        if not re.search(r"(?m)^\.field[^\n]* " + field + r':Ljava/lang/String; = ""$', texts[SERVICE]):
++            raise RuntimeError("Final BZI6 eSE target field mismatch: " + field)
++    util_init = PRODUCT.method(texts[UTIL], "<clinit>()V").group()
++    for token in ('const-string v0, ""', "->isBlank()Z", "xor-int/lit8 v0, v0, 0x1", "->mSupportEseHal:Z"):
++        if token not in util_init:
++            raise RuntimeError("Compiled BZI6 eSE HAL target-none path changed")
++    detection = PRODUCT.method(texts[UTIL], "supportEse(Landroid/content/Context;)Z").group()
++    for token in ("ro.boot.product.hardware.sku", "com.samsung.android.nfc.gpfelica", "->getCountryCode()", "->hasSystemFeature("):
++        if token not in detection:
++            raise RuntimeError("Compiled BZI6 SKU/country/feature detection changed")
++    constructor = PRODUCT.method(texts[SERVICE], "<init>(Landroid/content/Context;)V").group()
++    for token in ("->cosName:Ljava/lang/String;", "->isEmpty()Z", "->isBlank()Z", "->supportReeSpi:Z"):
++        if token not in constructor:
++            raise RuntimeError("Compiled BZI6 SemService target-none path changed")
++    print("PASS compiled BZI6 eSE target-none fields/HAL path; dynamic SKU/country/feature checks retained")
++
++
++if __name__ == "__main__":
++    if len(sys.argv) == 3 and sys.argv[1] == "adapt":
++        adapt(Path(sys.argv[2]))
++    elif len(sys.argv) == 4 and sys.argv[1] == "verify-compiled":
++        verify_compiled(Path(sys.argv[2]), Path(sys.argv[3]))
++    else:
++        raise SystemExit("usage: a376b_android17_baseline.py adapt DECODED | verify-compiled WORK TOOLS")
+diff --git a/scripts/internal/verify_exynos9810_release_defaults.py b/scripts/internal/verify_exynos9810_release_defaults.py
+--- a/scripts/internal/verify_exynos9810_release_defaults.py
++++ b/scripts/internal/verify_exynos9810_release_defaults.py
+@@ -43,6 +43,8 @@
+         subprocess.run([sys.executable,str(media_checker),"verify-compiled",str(work),str(ROOT/"out/tools")],check=True)
+         product_checker=ROOT/"unica/patches/product_feature/a376b_android17_product.py"
+         subprocess.run([sys.executable,str(product_checker),"verify-compiled",str(work),str(ROOT/"out/tools")],check=True)
++        ese_checker=ROOT/"unica/patches/ese/a376b_android17_baseline.py"
++        subprocess.run([sys.executable,str(ese_checker),"verify-compiled",str(work),str(ROOT/"out/tools")],check=True)
+     if os.environ.get("ROM_SOURCE_CONFIG") == "essi_a376b_android16":
+         if (target, os.environ.get("ROM_MILESTONE")) != ("star2lte", "M2"):
+             raise RuntimeError("Unreviewed native32 A376B release profile")

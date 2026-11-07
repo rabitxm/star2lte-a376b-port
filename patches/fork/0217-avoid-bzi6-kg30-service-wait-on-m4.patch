@@ -1,0 +1,337 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] avoid blocking BZI6 KG30 lookup on M4 G965F
+
+# Reason: M4 first-boot ANR evidence places SystemServer in KnoxGuard30's
+# synchronous TA-state query. The pinned G965F vendor stack has no KG30 AIDL
+# provider, while donor getService() waits for registration. Use the existing
+# nonblocking ServiceManager lookup so the existing fail-closed 0xff02 response
+# returns promptly; preserve binder validation, state mapping and bounded retry.
+# Affected: M4 finalization services.jar helper/lock, hook and compiled image
+# verifier metadata/check. No generated Apktool tree, state value, vendor, radio,
+# kernel, EFS or bootloader content is changed.
+# Verify: exact BZI6 donor/class locks; source apply/idempotence and wrong-source/
+# scope rejection; Apktool assemble/decode; compiled checkService/no-wait check;
+# ext4 byte, mode, owner and SELinux gates. Runtime cold boot remains pending.
+# Rollback: remove 0217 from series/source lock and rebuild from BZI6 donor; keep
+# the existing M4-0217 package as rollback until the new candidate passes.
+
+--- a/rom/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
++++ b/rom/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
+@@ -7537,6 +7537,26 @@
+ python3 "$MODPATH/adb_defaults.py" apply \
+     --work-dir "$WORK_DIR" --apktool-dir "$APKTOOL_DIR" || return 1
+ 
++# BZI6 has no KG30 provider on the S9+ vendor stack. Keep Knox Guard's
++# fail-closed response, but do not block SystemServer waiting for a service
++# that this device cannot provide. The helper pins the donor jar and exact
++# controller class and is limited to the reviewed M4 G965F runtime profile.
++if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++    IS_A376B_M4_BOOT_TEST && \
++            [ "${EXYNOS9810_M4_RUNTIME_COMPAT:-false}" = "true" ] || {
++        LOGE "BZI6 KG30 nonblocking bridge is restricted to reviewed M4 G965F profile"
++        return 1
++    }
++    python3 "$SRC_DIR/unica/patches/exynos9810_device_stack/exynos9810_finalization/a376b_android17_kg30_nonblocking.py" \
++        apply-work \
++        --apktool-dir "$APKTOOL_DIR/system/framework/services.jar" \
++        --donor-services-jar "$FW_DIR/$EXYNOS9810_SOURCE_CACHE_KEY/system/system/framework/services.jar" || return 1
++    python3 "$SRC_DIR/unica/patches/exynos9810_device_stack/exynos9810_finalization/a376b_android17_kg30_nonblocking.py" \
++        verify-work \
++        --apktool-dir "$APKTOOL_DIR/system/framework/services.jar" \
++        --donor-services-jar "$FW_DIR/$EXYNOS9810_SOURCE_CACHE_KEY/system/system/framework/services.jar" || return 1
++fi
++
+ # BZI6 constructs its FaceWidget lifecycle inside setPluginFaceWidgetCallback.
+ # Keep this exact init path on the existing main-looper handler and reject stale
+ # connect work by generation + plugin instance; no lifecycle assertion is muted.
+--- a/rom/scripts/internal/verify_m4_runtime_image.py
++++ b/rom/scripts/internal/verify_m4_runtime_image.py
+@@ -23,6 +23,7 @@
+ POSTBOOT_HELPER = ROOT / "unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_postboot_diagnostic.py"
+ THERMAL_HELPER = ROOT / "unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_thermal.py"
+ FACEWIDGET_HELPER = ROOT / "unica/patches/exynos9810_device_stack/exynos9810_finalization/a376b_android17_facewidget_thread.py"
++KG30_HELPER = ROOT / "unica/patches/exynos9810_device_stack/exynos9810_finalization/a376b_android17_kg30_nonblocking.py"
+ 
+ 
+ def metadata(partition, rel):
+@@ -30,6 +31,7 @@
+         exact = {
+             "system/bin/cameraserver": (0o755, (0, 2000), "cameraserver_exec"),
+             "system/priv-app/SamsungCamera/SamsungCamera.apk": (0o644, (0, 0), "system_file"),
++            "system/framework/services.jar": (0o644, (0, 0), "system_file"),
+             "system/lib64/libaudiobase.so": (0o644, (0, 0), "system_lib_file"),
+             "system/lib64/libaudioclient.so": (0o644, (0, 0), "system_lib_file"),
+             "system/lib64/libui.so": (0o644, (0, 0), "system_lib_file"),
+@@ -146,6 +148,19 @@
+         paths.extend(rel.removeprefix("system/") for rel in runtime.manifest()["runtime_patches"])
+         paths.extend(verify_nfc_apex(work, donor))
+         paths.append(runtime.manifest()["legacy_ion_context"]["path"].removeprefix("system/"))
++        if os.environ.get("ROM_SOURCE_CONFIG") == "essi_a376b_android17":
++            if os.environ.get("EXYNOS9810_M4_RUNTIME_COMPAT") != "true":
++                raise ValueError("M4 KG30 image verification requires the reviewed runtime profile")
++            kg30_jar_rel = "system/framework/services.jar"
++            kg30_jar = work / "system" / kg30_jar_rel
++            apktool = ROOT / "out/tools/bin/apktool"
++            if not kg30_jar.is_file() or kg30_jar.is_symlink() or not apktool.is_file():
++                raise ValueError("M4 compiled services.jar or bundled Apktool is missing")
++            run(["python3", str(KG30_HELPER), "verify-apk",
++                 "--apk", str(kg30_jar),
++                 "--donor-services-jar", str(donor / "system/system/framework/services.jar"),
++                 "--apktool", str(apktool), "--temp-root", tempfile.gettempdir()])
++            paths.append(kg30_jar_rel)
+         if diagnostic:
+             spec = importlib.util.spec_from_file_location("m4_postboot_diag", POSTBOOT_HELPER)
+             postboot = importlib.util.module_from_spec(spec)
+--- /dev/null
++++ b/rom/unica/patches/exynos9810_device_stack/exynos9810_finalization/a376b_android17_kg30_nonblocking.py
+@@ -0,0 +1,216 @@
++#!/usr/bin/env python3
++"""Avoid a missing BZI6 KG30 provider blocking the S9+ SystemServer startup.
++
++Reason: first-boot ANR evidence traces SystemServer through the KnoxGuard30
++constructor into a worker whose KG30 lookup uses waitForService. The reviewed
++G965F vendor image has no KG30 provider. Switch only that lookup to the
++framework's nonblocking checkService; the existing 0xff02 fail-closed response,
++three-attempt retry policy, binder conversion, death check and lock cleanup stay
++intact.
++
++Files: one exact BZI6 KnoxGuard30VendorController Smali method, pinned to the
++donor services.jar and adjacent lock. The final image verifier decodes the
++compiled services.jar and checks the lookup and fail-closed/retry contracts.
++
++Verify: wrong profile/donor/class hashes fail; apply is idempotent; built JAR
++decodes with checkService and without waitForService; retries remain bounded;
++safeCall still returns the existing error response. Device cold-boot/watchdog
++and later provider-available behavior remain runtime gates.
++
++Rollback: remove this helper call and restore services.jar from the pinned BZI6
++donor, then rebuild. No KnoxGuard state, vendor, radio, kernel or EFS is edited.
++"""
++import argparse
++import hashlib
++import json
++import os
++from pathlib import Path
++import re
++import subprocess
++import tempfile
++
++HERE = Path(__file__).resolve().parent
++LOCK = HERE / "a376b_android17_kg30_nonblocking.lock.json"
++CLASS = Path("smali_classes2/com/samsung/android/knoxguard30/service/KnoxGuard30VendorController.smali")
++NATIVE = Path("smali_classes2/com/samsung/android/knoxguard30/service/KnoxGuardNative.smali")
++SERVICE = Path("smali_classes2/com/samsung/android/knoxguard30/service/KnoxGuard30Service.smali")
++UTILS = Path("smali_classes2/com/samsung/android/knoxguard30/service/utils/Utils.smali")
++WAIT = "invoke-static {v0}, Landroid/os/ServiceManager;->waitForService(Ljava/lang/String;)Landroid/os/IBinder;"
++CHECK = "invoke-static {v0}, Landroid/os/ServiceManager;->checkService(Ljava/lang/String;)Landroid/os/IBinder;"
++
++
++def sha(data):
++    return hashlib.sha256(data).hexdigest()
++
++
++def source_tree(apktool_dir):
++    return {name: Path(apktool_dir) / rel for name, rel in
++            (("controller", CLASS), ("native", NATIVE), ("service", SERVICE), ("utils", UTILS))}
++
++
++def method(text, name, signature=None):
++    starts = [m.start() for m in re.finditer(r"^\.method[^\n]*$", text, re.M)
++              if (m.group().endswith(signature) if signature else
++                  re.search(re.escape(name) + r"\(", m.group()))]
++    if len(starts) != 1:
++        raise ValueError(f"KG30 expected one {name} method, found {len(starts)}")
++    end = text.find("\n.end method", starts[0])
++    if end < 0:
++        raise ValueError(f"KG30 method has no terminator: {name}")
++    return text[starts[0]:end + len("\n.end method")]
++
++
++def scope():
++    expected = {
++        "ROM_SOURCE_CONFIG": "essi_a376b_android17",
++        "ROM_MILESTONE": "M4",
++        "TARGET_CODENAME": "star2lte",
++        "STAR2LTE_BUILD_MODEL": "SM-G965F",
++        "SOURCE_PLATFORM_SDK_VERSION": "37",
++        "SOURCE_FIRMWARE_CACHE_SUFFIX": "A376BXXU5BZI6",
++        "STAR2LTE_M4_BOOT_LIMITS": "true",
++        "EXYNOS9810_M4_RUNTIME_COMPAT": "true",
++    }
++    for key, value in expected.items():
++        if os.environ.get(key) != value:
++            raise ValueError("M4 KG30 scope mismatch: " + key)
++
++
++def verify_donor(path, lock):
++    path = Path(path)
++    if not path.is_file() or path.is_symlink():
++        raise ValueError("Pinned BZI6 donor services.jar is missing or symlinked")
++    found = sha(path.read_bytes())
++    if found != lock["donor_services_jar_sha256"]:
++        raise ValueError("BZI6 donor services.jar hash mismatch: " + found)
++    return found
++
++
++def read_tree(apktool_dir):
++    paths = source_tree(apktool_dir)
++    for name, path in paths.items():
++        if not path.is_file() or path.is_symlink():
++            raise ValueError("BZI6 KG30 decoded class missing or symlinked: " + name)
++    return paths, {name: path.read_text() for name, path in paths.items()}
++
++
++def verify_semantics(texts, compiled=False):
++    get_service = method(texts["controller"], "getService")
++    if get_service.count(CHECK) != 1 or WAIT in get_service:
++        raise ValueError("KG30 getService must use one nonblocking checkService lookup")
++    safe_call = method(texts["controller"], "safeCall")
++    for marker in ("const v12, 0xff02", "generateFailCloseResponse(I)Ljava/lang/String;",
++                   "monitor-enter v11", "monitor-exit v11"):
++        if marker not in safe_call:
++            raise ValueError("KG30 fail-closed/lock contract missing: " + marker)
++
++    timeout = method(texts["native"], "executeMethodWithTimeOut")
++    if "const-wide/16 v8, 0x61a8" not in timeout or \
++            "ExecutorService;->shutdown()V" not in timeout:
++        raise ValueError("KG30 worker timeout/shutdown contract changed")
++    retry = method(texts["native"], "performTAApiCallWithRetry")
++    for marker in ("const/4 v2, 0x3", "if-ge v3, v2, :cond_1",
++                   "const-wide/16 v1, 0x64", "executeMethodWithTimeOut"):
++        if marker not in retry:
++            raise ValueError("KG30 bounded retry contract changed: " + marker)
++
++    constructor = method(texts["service"], "<init>", "<init>(Landroid/content/Context;)V")
++    if "Utils;->getStateAndSetToKGSystemProperty()" not in constructor:
++        raise ValueError("KG30 constructor no longer uses the reviewed state path")
++    state = method(texts["native"], "getTAStateData",
++                   "getTAStateData(Lcom/samsung/android/knoxguard30/service/KgTaResponse;)I")
++    if "const/4 p0, 0x5" not in state or "return p0" not in state:
++        raise ValueError("KG30 failed TA response no longer maps to its existing fail-closed state")
++    set_state = method(texts["utils"], "getStateAndSetToKGSystemProperty")
++    if 'const-string/jumbo v4, "knox.kg.state"' not in set_state:
++        raise ValueError("KG30 state property update contract changed")
++    return {"lookup": "checkService", "waitForService": False,
++            "fail_close_error": "0xff02", "bounded_attempts": 3,
++            "worker_timeout_ms": 25000, "compiled_dex": compiled}
++
++
++def verify_work(apktool_dir, donor_services_jar):
++    scope()
++    lock = json.loads(LOCK.read_text())
++    donor_hash = verify_donor(donor_services_jar, lock)
++    paths, texts = read_tree(apktool_dir)
++    actual = {name: sha(path.read_bytes()) for name, path in paths.items()}
++    for name, expected in lock["source_classes"].items():
++        if name != "controller" and actual[name] != expected:
++            raise ValueError("Unexpected BZI6 KG30 support class: " + name)
++    if actual["controller"] != lock["output_controller_sha256"]:
++        raise ValueError("M4 KG30 patched controller hash mismatch")
++    contract = verify_semantics(texts)
++    return {"result": "PASS", "donor_services_jar_sha256": donor_hash,
++            "controller_sha256": actual["controller"], "contract": contract}
++
++
++def apply_work(apktool_dir, donor_services_jar):
++    scope()
++    lock = json.loads(LOCK.read_text())
++    donor_hash = verify_donor(donor_services_jar, lock)
++    paths, texts = read_tree(apktool_dir)
++    actual = {name: sha(path.read_bytes()) for name, path in paths.items()}
++    for name, expected in lock["source_classes"].items():
++        if actual[name] != expected:
++            if name == "controller" and actual[name] == lock["output_controller_sha256"]:
++                return verify_work(apktool_dir, donor_services_jar)
++            raise ValueError("Unexpected BZI6 KG30 preimage: " + name)
++    get_service = method(texts["controller"], "getService")
++    if get_service.count(WAIT) != 1 or CHECK in get_service:
++        raise ValueError("KG30 waitForService preimage does not match the reviewed donor")
++    updated = get_service.replace(WAIT, CHECK, 1)
++    texts["controller"] = texts["controller"].replace(get_service, updated, 1)
++    paths["controller"].write_text(texts["controller"])
++    result = verify_work(apktool_dir, donor_services_jar)
++    print(json.dumps(result, sort_keys=True))
++
++
++def verify_apk(apk, donor_services_jar, apktool, temp_root):
++    scope()
++    lock = json.loads(LOCK.read_text())
++    verify_donor(donor_services_jar, lock)
++    apk = Path(apk)
++    apktool = Path(apktool)
++    if not apk.is_file() or apk.is_symlink() or not apktool.is_file() or apktool.is_symlink():
++        raise ValueError("M4 services.jar or pinned Apktool is missing or symlinked")
++    temp_root = Path(temp_root)
++    temp_root.mkdir(parents=True, exist_ok=True)
++    with tempfile.TemporaryDirectory(prefix="m4-kg30-compiled-", dir=temp_root) as td:
++        decoded = Path(td) / "decoded"
++        subprocess.run([str(apktool), "d", "--no-res", "--no-debug-info", "--force",
++                        "-o", str(decoded), str(apk)], check=True, capture_output=True, text=True)
++        paths, texts = read_tree(decoded)
++        contract = verify_semantics(texts, compiled=True)
++        controller_hash = sha(paths["controller"].read_bytes())
++        expected_roundtrip = lock.get("compiled_controller_sha256")
++        if expected_roundtrip and controller_hash != expected_roundtrip:
++            raise ValueError("Compiled M4 KG30 controller roundtrip hash mismatch: " + controller_hash)
++    result = {"result": "PASS", "services_jar_sha256": sha(apk.read_bytes()),
++              "compiled_controller_sha256": controller_hash, "contract": contract}
++    print(json.dumps(result, sort_keys=True))
++
++
++def main():
++    parser = argparse.ArgumentParser(description=__doc__)
++    sub = parser.add_subparsers(dest="command", required=True)
++    for name in ("apply-work", "verify-work"):
++        cmd = sub.add_parser(name)
++        cmd.add_argument("--apktool-dir", type=Path, required=True)
++        cmd.add_argument("--donor-services-jar", type=Path, required=True)
++    compiled = sub.add_parser("verify-apk")
++    compiled.add_argument("--apk", type=Path, required=True)
++    compiled.add_argument("--donor-services-jar", type=Path, required=True)
++    compiled.add_argument("--apktool", type=Path, required=True)
++    compiled.add_argument("--temp-root", type=Path, required=True)
++    args = parser.parse_args()
++    if args.command == "apply-work":
++        apply_work(args.apktool_dir, args.donor_services_jar)
++    elif args.command == "verify-work":
++        print(json.dumps(verify_work(args.apktool_dir, args.donor_services_jar), sort_keys=True))
++    else:
++        verify_apk(args.apk, args.donor_services_jar, args.apktool, args.temp_root)
++
++
++if __name__ == "__main__":
++    main()
+--- /dev/null
++++ b/rom/unica/patches/exynos9810_device_stack/exynos9810_finalization/a376b_android17_kg30_nonblocking.lock.json
+@@ -0,0 +1,31 @@
++{
++  "schema": 1,
++  "scope": {
++    "source_config": "essi_a376b_android17",
++    "milestone": "M4",
++    "source_firmware": "SM-A376B/XXV/A376BXXU5BZI6",
++    "target": "star2lte",
++    "target_model": "SM-G965F",
++    "source_platform_sdk": 37
++  },
++  "donor_services_jar_sha256": "efb433ade1059327c8a591731839899e7f6a6da1d7e7895f6e5bc996a182170e",
++  "source_classes": {
++    "controller": "9286fe8e7ba8797c1da5dbc9dfac67f5304fde69c5b40954c82db3a59e8a5fdd",
++    "native": "4a9724b07c5d44cea4a4874d43bb6ced6f36d30f4a9261240b54faac0e0fcff7",
++    "service": "5e0c42d2ab7b028ab3104c990c24e1a14ca09757d07760b3474912d8a234ded5",
++    "utils": "b10c1479f37457a56bd69b80c9704476630244fd12cc4966a869ba5e0881f9d5"
++  },
++  "output_controller_sha256": "7cc6d0437cc75c808e80348b77f879055d6fd7d80b505675b097df31ebdf507c",
++  "compiled_controller_sha256": "7cc6d0437cc75c808e80348b77f879055d6fd7d80b505675b097df31ebdf507c",
++  "change": {
++    "method": "KnoxGuard30VendorController.getService()",
++    "before": "ServiceManager.waitForService",
++    "after": "ServiceManager.checkService",
++    "missing_service_response": "success=false,errorCode=0xff02",
++    "retry_attempts": 3,
++    "retry_delay_ms": 100,
++    "remote_call_timeout_ms": 25000
++  },
++  "limitations": "Host gates prove the exact lookup and preserved fail-closed/retry source contract. Device tests must verify cold-start watchdog removal and present/death/reconnect behavior.",
++  "rollback": "Remove the M4 finalization helper call and rebuild services.jar from the pinned BZI6 donor."
++}

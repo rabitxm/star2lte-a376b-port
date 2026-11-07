@@ -1,0 +1,19 @@
+diff --git a/unica/patches/product_feature/a376b_android17_sim.py b/unica/patches/product_feature/a376b_android17_sim.py
+--- a/unica/patches/product_feature/a376b_android17_sim.py
++++ b/unica/patches/product_feature/a376b_android17_sim.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Verify and preserve BZI6's runtime SIM-tray detection for star2lte M4."""
++"""Verify BZI6 runtime SIM detection in the fork's --no-debug-info output."""
+ 
+ from hashlib import sha256
+ from pathlib import Path
+@@ -19,7 +19,7 @@
+ METHOD_HASHES = {
+     "framework.jar": {
+         "com/android/internal/telephony/TelephonyFeatures.smali": {
+-            "isOneTray()Z": "fd17565ff6ced93fffdbbd7664a296ddb0a80ebb74c35c65bd3ce5969748e869",
++            "isOneTray()Z": "94e6545f297449fb653da6bbc7bba340612116f4d8b9cd399ec17abb9d1f373f",
+         },
+     },
+     "telephony-common.jar": {

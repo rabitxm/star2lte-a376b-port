@@ -1,0 +1,16 @@
+# Reason: Legacy identity patches replace the two ro.product lookups in BZI6 CoreRune before the fixed-resolution adapter pins its method hash.
+# Affected: unica/patches/product_feature/a376b_android17_display.json only.
+# Verify: inverse-normalized source method matches old locked hash; exact intermediate hash is pinned; display adapter fixture and full patch replay.
+# Rollback: remove this patch from patches/fork/series and sources.lock.json.
+
+--- a/unica/patches/product_feature/a376b_android17_display.json
++++ b/unica/patches/product_feature/a376b_android17_display.json
+@@ -78,7 +78,7 @@
+       "methods": [
+         {
+           "signature": "<clinit>()V",
+-          "sha256": "56d6e8ff4f638415b65c1b6afedd07bf5df1f163d98997d3d1dc889338ca6931",
++          "sha256": "f383d6643c1d420005df733e8b418cb075077bebfd020c73f14f093249ab22f7",
+           "replace": [
+             [
+               "const-string v0, \"2\"",

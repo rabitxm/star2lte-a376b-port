@@ -1,0 +1,71 @@
+# Reason: Attempt19 staged the hash-pinned BZI6 Midas moire model, then failed because the generic PhotoEditor branch expects hs_segmenter.info/tflite while BZI6 ships two versioned HumanSeg/BGPclassifier info-model pairs.
+# Affected: unica/patches/saiv/customize.sh and unica/patches/saiv/a376b_android17_hs_segmenter.sh.
+# Verify: exact four-file set, SHA256 and info-to-model references; stage/copy metadata fixture; changed-model and wrong-model negatives; shell syntax; full source-series replay; clean M4 build.
+# Rollback: remove this patch from patches/fork/series and sources.lock.json.
+
+--- a/unica/patches/saiv/customize.sh
++++ b/unica/patches/saiv/customize.sh
+@@ -131,6 +131,9 @@
+ print("PASS A376B hs_segmenter donor info/model pairs")
+ PY
+             ADD_TO_WORK_DIR "$SOURCE_FIRMWARE" "vendor" "etc/saiv/image_understanding/db/hs_segmenter" 0 0 755 "u:object_r:vendor_configs_file:s0"
++        elif [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++            source "$MODPATH/a376b_android17_hs_segmenter.sh" || return 1
++            A376B17_STAGE_HS_SEGMENTER || return 1
+         else
+             ADD_TO_WORK_DIR "$SOURCE_FIRMWARE" "vendor" "etc/saiv/image_understanding/db/hs_segmenter/hs_segmenter.info" 0 0 644 "u:object_r:vendor_configs_file:s0"
+             ADD_TO_WORK_DIR "$SOURCE_FIRMWARE" "vendor" "etc/saiv/image_understanding/db/hs_segmenter/hs_segmenter.tflite" 0 0 644 "u:object_r:vendor_configs_file:s0"
+--- /dev/null
++++ b/unica/patches/saiv/a376b_android17_hs_segmenter.sh
+@@ -0,0 +1,51 @@
++# Preserve the paired BZI6 PhotoEditor HumanSeg/BGPclassifier model layout.
++A376B17_STAGE_HS_SEGMENTER()
++{
++    local DONOR_DIR="$FW_DIR/$SOURCE_FIRMWARE_PATH/vendor/etc/saiv/image_understanding/db/hs_segmenter"
++
++    if [ "${ROM_SOURCE_CONFIG:-}" != "essi_a376b_android17" ] || \
++            [ "${ROM_MILESTONE:-}" != "M4" ] || \
++            [ "${TARGET_CODENAME:-}" != "star2lte" ] || \
++            [ "${STAR2LTE_BUILD_MODEL:-}" != "SM-G965F" ] || \
++            [ "${SOURCE_PLATFORM_SDK_VERSION:-}" != "37" ] || \
++            [ "${TARGET_PLATFORM_SDK_VERSION:-}" != "31" ] || \
++            [ "${TARGET_BOARD_API_LEVEL:-}" != "33" ] || \
++            [ "${SOURCE_FIRMWARE_CACHE_SUFFIX:-}" != "A376BXXU5BZI6" ] || \
++            [ "${SOURCE_FIRMWARE:-}" != "SM-A376B/XXV/LOCAL" ] || \
++            [[ "${TARGET_FIRMWARE:-}" != SM-G965F/PHN/* ]]; then
++        LOGE "Unreviewed BZI6 PhotoEditor hs_segmenter dispatch scope"
++        return 1
++    fi
++
++    python3 - "$DONOR_DIR" <<'PY' || return 1
++import hashlib
++import json
++import sys
++from pathlib import Path
++
++directory = Path(sys.argv[1])
++expected = {
++    "12-23_PhotoEditor_SuggestErases_HumanSeg.info": "754a1de236383f1bc67113658a4c608527323b23fb2a09b5a2a43a2017030f51",
++    "12-23_PhotoEditor_SuggestErases_v1.10.0_HumanSeg.tflite": "079939acf5a92d5fb89ae495cbe63d731f0be84e198eb720e2d8799136447f9a",
++    "12-39_PhotoEditor_SuggestErases_BGPclassifier.info": "2802f3750beb748ab35421556b4da4c415e960ac18989d47f855af3e37060817",
++    "12-39_PhotoEditor_SuggestErases_v1.10.1_BGPclassifier.tflite": "237b89774dd3a1b9164d855ed5c713d8c0761149555b651873dcb7eb5785552f",
++}
++if not directory.is_dir() or {p.name for p in directory.iterdir()} != set(expected):
++    raise SystemExit("Unreviewed BZI6 hs_segmenter file set")
++for name, digest in expected.items():
++    path = directory / name
++    if hashlib.sha256(path.read_bytes()).hexdigest() != digest:
++        raise SystemExit("Unreviewed BZI6 hs_segmenter SHA256: " + name)
++    if path.suffix == ".info":
++        model = json.loads(path.read_text()).get("model_path", "")
++        if not model.startswith("/vendor/etc/saiv/image_understanding/db/hs_segmenter/"):
++            raise SystemExit("Unreviewed BZI6 hs_segmenter model path: " + name)
++        if not (directory.parents[5] / model.lstrip("/")).is_file():
++            # The hash-pinned file is also required at the JSON model_path.
++            raise SystemExit("Missing BZI6 hs_segmenter model pair: " + name)
++print("PASS hash-pinned BZI6 HumanSeg/BGPclassifier info/model pairs")
++PY
++
++    ADD_TO_WORK_DIR "$SOURCE_FIRMWARE" "vendor" "etc/saiv/image_understanding/db/hs_segmenter" 0 0 755 "u:object_r:vendor_configs_file:s0" || return 1
++    LOG "Staged the reviewed BZI6 PhotoEditor HumanSeg/BGPclassifier directory"
++}

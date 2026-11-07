@@ -1,0 +1,299 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] integrate measured M4 runtime diagnostic composition
+
+# Reason: measured fixes 0195-0198 were not selected by the M4 diagnostic profile; final vendor restores could erase staging.
+# Affected: explicit G965F M4 diagnostic profile, finalizer, runtime helper, compiled ext4 image verifier, and new composition helper. Normal M4 profile remains donor-native.
+# Verify: isolated BZI6 fixture produced Tethering APEX f17fa222... and libmeminfo b19a1c37...; verify hashes and image bytes/metadata; reject scope/donor/output drift.
+# Rollback: remove the explicit diagnostic profile selection and reverse this patch; ordinary M4 profile retains BZI6 donor files. No device writes.
+
+--- a/target/star2lte/profiles/m4-g965f-a376b-android17-runtime-init-debug.sh
++++ b/target/star2lte/profiles/m4-g965f-a376b-android17-runtime-init-debug.sh
+@@ -8,6 +8,7 @@
+ export EXYNOS9810_KERNEL_ZIP="$_M4_RUNTIME_ROOT/../inputs/kernels/DS-ACK-V1.12-G965F-WIPEONFORK-DIAGNOSTIC-Enforcing.zip"
+ export EXYNOS9810_EXPECTED_KERNEL_SHA256="4cea63f84d5add494bfcc2f9fff105848806a930a24aca975dc261bf6720e20a"
+ export EXYNOS9810_ENABLE_INIT_DEBUG="true"
++export EXYNOS9810_M4_POSTBOOT_DIAGNOSTIC="true"
+ [ -f "$EXYNOS9810_KERNEL_ZIP" ] && \
+     [ "$(sha256sum "$EXYNOS9810_KERNEL_ZIP" | cut -d ' ' -f1)" = "$EXYNOS9810_EXPECTED_KERNEL_SHA256" ] || {
+     printf 'Missing/unreviewed G965F WIPEONFORK diagnostic archive; no fallback.\n' >&2
+--- a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_runtime_compat.py
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_runtime_compat.py
+@@ -302,12 +302,14 @@
+     print("PASS staged M4 camera/audio/V7/Tethering plus pinned graphics V6, vendor_kg and empty vendor aconfig v2")
+ 
+ 
+-def verify(work, donor, compiled_camera=False):
++def verify(work, donor, compiled_camera=False, allow_postboot_network=False):
+     scope()
+     donor = source_root(donor)
+     verify_source(donor)
+     work = Path(work)
+     for rel, expected in manifest()["files"].items():
++        if allow_postboot_network and rel == "system/system/apex/com.google.android.tethering_compressed.apex":
++            continue
+         path = work / rel
+         if compiled_camera and rel == "system/system/priv-app/SamsungCamera/SamsungCamera.apk":
+             if not path.is_file() or path.is_symlink():
+--- a/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
+@@ -7536,3 +7536,27 @@
+ DECODE_APK "system" "system/framework/services.jar" || return 1
+ python3 "$MODPATH/adb_defaults.py" apply \
+     --work-dir "$WORK_DIR" --apktool-dir "$APKTOOL_DIR" || return 1
++
++# Reapply the measured M4 post-boot diagnostic composition after the final
++# donor/vendor restores. It is selected only by the explicit G965F diagnostic
++# profile; normal M4/release profiles keep the donor-native APEX and libmeminfo.
++if [ "${EXYNOS9810_M4_POSTBOOT_DIAGNOSTIC:-false}" = "true" ]; then
++    [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ] && \
++        [ "${ROM_MILESTONE:-}" = "M4" ] && \
++        [ "${TARGET_CODENAME:-}" = "star2lte" ] && \
++        [ "${STAR2LTE_BUILD_MODEL:-}" = "SM-G965F" ] && \
++        [ "${EXYNOS9810_M4_RUNTIME_COMPAT:-false}" = "true" ] || {
++        LOGE "M4 post-boot diagnostic composition is restricted to the reviewed BZI6/G965F profile"
++        return 1
++    }
++    python3 "$SRC_DIR/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_postboot_diagnostic.py" \
++        apply --work-dir "$WORK_DIR" \
++        --donor-root "$FW_DIR/$EXYNOS9810_SOURCE_CACHE_KEY" \
++        --scratch-root "$SRC_DIR/out" || return 1
++    _EXYNOS9810_SET_METADATA_SAFE "system" "system/apex/com.google.android.tethering_compressed.apex" \
++        0 0 644 "u:object_r:system_file:s0"
++    _EXYNOS9810_SET_METADATA_SAFE "system" "system/lib64/libmeminfo.so" \
++        0 0 644 "u:object_r:system_lib_file:s0"
++    python3 "$SRC_DIR/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_postboot_diagnostic.py" \
++        verify --work-dir "$WORK_DIR" --donor-root "$FW_DIR/$EXYNOS9810_SOURCE_CACHE_KEY" || return 1
++fi
+--- a/scripts/internal/verify_m4_runtime_image.py
++++ b/scripts/internal/verify_m4_runtime_image.py
+@@ -14,10 +14,12 @@
+ import re
+ import subprocess
+ import tempfile
++import zipfile
+ 
+ ROOT = Path(__file__).resolve().parents[2]
+ HELPER = ROOT / "unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_runtime_compat.py"
+ NFC_LOCK = ROOT / "unica/patches/exynos9810_device_stack/nfc/a376b_android17_nfc.lock.json"
++POSTBOOT_HELPER = ROOT / "unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_postboot_diagnostic.py"
+ 
+ 
+ def metadata(partition, rel):
+@@ -31,6 +33,8 @@
+             "system/lib64/android.hardware.graphics.common-V6-ndk.so": (0o644, (0, 0), "system_lib_file"),
+             "system/lib64/android.hardware.graphics.common-V7-ndk.so": (0o644, (0, 0), "system_lib_file"),
+             "system/apex/com.google.android.tethering_compressed.apex": (0o644, (0, 0), "system_file"),
++            "system/lib64/libmeminfo.so": (0o644, (0, 0), "system_lib_file"),
++            "system/priv-app/SamsungDeviceHealthManagerService/SamsungDeviceHealthManagerService.apk": (0o644, (0, 0), "system_file"),
+             "system/apex/com.android.nfcservices.capex": (0o644, (0, 0), "system_file"),
+             "system/priv-app/SecNfc/SecNfc.apk": (0o644, (0, 0), "system_file"),
+             "system/etc/init/aconfigd.rc": (0o644, (0, 0), "system_file"),
+@@ -102,13 +106,34 @@
+     spec = importlib.util.spec_from_file_location("m4_runtime", HELPER)
+     runtime = importlib.util.module_from_spec(spec)
+     spec.loader.exec_module(runtime)
+-    runtime.verify(work, donor, compiled_camera=True)
++    diagnostic = os.environ.get("EXYNOS9810_M4_POSTBOOT_DIAGNOSTIC", "false") == "true"
++    runtime.verify(work, donor, compiled_camera=True, allow_postboot_network=diagnostic)
+     if partition == "system":
+         paths = [rel.removeprefix("system/") for rel in runtime.manifest()["files"]
+                  if rel.startswith("system/system/")]
+         paths.extend(rel.removeprefix("system/") for rel in runtime.manifest()["compatibility_files"])
+         paths.extend(rel.removeprefix("system/") for rel in runtime.manifest()["runtime_patches"])
+         paths.extend(verify_nfc_apex(work, donor))
++        if diagnostic:
++            spec = importlib.util.spec_from_file_location("m4_postboot_diag", POSTBOOT_HELPER)
++            postboot = importlib.util.module_from_spec(spec)
++            spec.loader.exec_module(postboot)
++            postboot.verify(work, donor)
++            paths.extend(postboot.image_paths())
++            dvfs_lock_path = ROOT / "unica/patches/dvfs/a376b_android17_dvfs_policy.lock.json"
++            dvfs_lock = json.loads(dvfs_lock_path.read_text())
++            sdhms_rel = "system/priv-app/SamsungDeviceHealthManagerService/SamsungDeviceHealthManagerService.apk"
++            sdhms_apk = work / "system" / sdhms_rel
++            if not sdhms_apk.is_file() or sdhms_apk.is_symlink():
++                raise ValueError("M4 compiled SDHMS APK missing or symlinked")
++            with zipfile.ZipFile(sdhms_apk) as apk:
++                siop = apk.read("assets/siop_default.xml")
++                ssrm = apk.read("assets/ssrm_default.xml")
++            if hashlib.sha256(siop).hexdigest() != dvfs_lock["output_sha256"]:
++                raise ValueError("M4 compiled SDHMS SIOP policy hash mismatch")
++            if hashlib.sha256(ssrm).hexdigest() != dvfs_lock["ssrm_output_sha256"]:
++                raise ValueError("M4 compiled SDHMS SSRM policy hash mismatch")
++            paths.append(sdhms_rel)
+     elif partition == "vendor":
+         paths = ["etc/passwd", "etc/group", "etc/ueventd.rc", "etc/init/hw/init.samsungexynos9810.rc",
+                  "etc/init/init.samsungexynos9810.rc", "etc/aconfig"]
+--- /dev/null
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_postboot_diagnostic.py
+@@ -0,0 +1,170 @@
++#!/usr/bin/env python3
++"""Reproduce the measured M4 post-boot fixes in the diagnostic profile only.
++
++Reason: source0195-0198 proved the required runtime composition, but those
++helpers were not selected by the ROM build profile. Stage the exact measured
++network APEX and libmeminfo outputs after final donor restores.
++Files: Tethering APEX and libmeminfo in the M4 work tree, plus a temporary build
++directory. Verify exact donor/output hashes and final ext4 image bytes/metadata.
++Rollback: rebuild with the ordinary M4 profile; it retains donor BZI6 files.
++"""
++from pathlib import Path
++import argparse
++import hashlib
++import json
++import os
++import shutil
++import subprocess
++import sys
++import tempfile
++
++HERE = Path(__file__).resolve().parent
++FORK = HERE.parents[3]
++ROOT = FORK.parent
++RUNTIME = HERE / "a376b_android17_runtime_compat.py"
++NETWORK = HERE / "a376b_android17_network_native.py"
++NETWORK_LOCK = HERE / "a376b_android17_network_native.lock.json"
++MEMINFO = HERE / "a376b_android17_meminfo.py"
++MEMINFO_LOCK = HERE / "a376b_android17_meminfo.lock.json"
++APEX_REL = Path("system/system/apex/com.google.android.tethering_compressed.apex")
++MEMINFO_REL = Path("system/system/lib64/libmeminfo.so")
++
++
++def sha(path):
++    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
++
++
++def load(path):
++    return json.loads(Path(path).read_text())
++
++
++def require_scope():
++    expected = {
++        "ROM_SOURCE_CONFIG": "essi_a376b_android17",
++        "ROM_MILESTONE": "M4",
++        "TARGET_CODENAME": "star2lte",
++        "STAR2LTE_BUILD_MODEL": "SM-G965F",
++        "SOURCE_PLATFORM_SDK_VERSION": "37",
++        "EXYNOS9810_M4_RUNTIME_COMPAT": "true",
++        "EXYNOS9810_M4_POSTBOOT_DIAGNOSTIC": "true",
++    }
++    for key, value in expected.items():
++        if os.environ.get(key) != value:
++            raise ValueError("M4 post-boot diagnostic scope mismatch: " + key)
++    if os.environ.get("EXYNOS9810_M2_RUNTIME_COMPAT", "false") != "false":
++        raise ValueError("M2 compatibility cannot be mixed into M4 post-boot diagnostic")
++
++
++def verify_donor(donor):
++    donor = Path(donor)
++    marker = donor / ".extracted"
++    expected = load(HERE / "a376b_android17_runtime_compat.lock.json")["source_firmware_marker"]
++    if not marker.is_file() or marker.read_text().strip() != expected:
++        raise ValueError("BZI6 M4 post-boot donor marker mismatch")
++    # The work-tree and extracted donor paths are both rooted at system/system.
++    donor_apex = donor / "system/system/apex/com.google.android.tethering_compressed.apex"
++    donor_meminfo = donor / "system/system/lib64/libmeminfo.so"
++    runtime_lock = load(HERE / "a376b_android17_runtime_compat.lock.json")
++    net_lock = load(NETWORK_LOCK)
++    mem_lock = load(MEMINFO_LOCK)
++    if sha(donor_apex) != runtime_lock["files"][str(APEX_REL)]:
++        raise ValueError("BZI6 M4 Tethering donor hash changed")
++    if sha(donor_meminfo) != mem_lock["source_sha256"]:
++        raise ValueError("BZI6 M4 libmeminfo donor hash changed")
++    if sha(FORK / net_lock["inputs"]["s22"]["path"]) != net_lock["inputs"]["s22"]["sha256"]:
++        raise ValueError("Pinned S22 Tethering input changed")
++    if sha(FORK / net_lock["inputs"]["bzi6"]["path"]) != net_lock["inputs"]["bzi6"]["sha256"]:
++        raise ValueError("Pinned BZI6 Tethering input changed")
++    return donor_apex, donor_meminfo, runtime_lock, net_lock, mem_lock
++
++
++def image_paths():
++    return [str(APEX_REL.relative_to("system")), str(MEMINFO_REL.relative_to("system"))]
++
++
++def verify(work, donor):
++    require_scope()
++    _, _, runtime_lock, network_lock, meminfo_lock = verify_donor(donor)
++    work = Path(work)
++    expected = {
++        APEX_REL: network_lock["stats_compat"]["output_sha256"],
++        MEMINFO_REL: meminfo_lock["output_sha256"],
++    }
++    for rel, digest in expected.items():
++        path = work / rel
++        if not path.is_file() or path.is_symlink() or sha(path) != digest:
++            raise ValueError("M4 post-boot diagnostic output mismatch: " + str(rel))
++    if runtime_lock["files"][str(APEX_REL)] == expected[APEX_REL]:
++        raise ValueError("Diagnostic Tethering output unexpectedly equals donor")
++    return expected
++
++
++def apply(work, donor, scratch_root):
++    require_scope()
++    donor_apex, donor_meminfo, _, network_lock, meminfo_lock = verify_donor(donor)
++    work = Path(work)
++    scratch_root = Path(scratch_root)
++    if not scratch_root.is_dir() or scratch_root.is_symlink():
++        raise ValueError("M4 post-boot diagnostic scratch root must be an existing real directory")
++    targets = {
++        APEX_REL: (donor_apex, network_lock["inputs"]["bzi6"]["sha256"],
++                   network_lock["stats_compat"]["output_sha256"]),
++        MEMINFO_REL: (donor_meminfo, meminfo_lock["source_sha256"],
++                      meminfo_lock["output_sha256"]),
++    }
++    for rel, (source, source_hash, output_hash) in targets.items():
++        current = work / rel
++        if not current.is_file() or current.is_symlink() or sha(current) not in (source_hash, output_hash):
++            raise ValueError("Refusing unreviewed M4 diagnostic destination: " + str(rel))
++
++    tools = FORK / "out/tools/bin"
++    with tempfile.TemporaryDirectory(prefix="m4-postboot-diag-", dir=scratch_root) as temp_name:
++        temp = Path(temp_name)
++        network_out = temp / "network"
++        result = subprocess.run(
++            [sys.executable, str(NETWORK), str(network_out), "--stats-compat"],
++            check=True, capture_output=True, text=True)
++        (temp / "network-builder.json").write_text(result.stdout)
++        apex_out = network_out / "com.android.tethering.apex"
++        if not apex_out.is_file() or sha(apex_out) != network_lock["stats_compat"]["output_sha256"]:
++            raise ValueError("Measured M4 Tethering APEX builder output mismatch")
++
++        meminfo_out = temp / "libmeminfo.so"
++        subprocess.run(
++            [sys.executable, str(MEMINFO), "--source", str(donor_meminfo),
++             "--output", str(meminfo_out)], check=True, capture_output=True, text=True)
++        subprocess.run(
++            [sys.executable, str(MEMINFO), "--source", str(donor_meminfo),
++             "--output", str(meminfo_out), "--verify"],
++            check=True, capture_output=True, text=True)
++        if sha(meminfo_out) != meminfo_lock["output_sha256"]:
++            raise ValueError("Measured M4 libmeminfo builder output mismatch")
++        shutil.copyfile(apex_out, work / APEX_REL)
++        shutil.copyfile(meminfo_out, work / MEMINFO_REL)
++
++    outputs = verify(work, donor)
++    print(json.dumps({"result": "PASS", "profile": "M4/G965F diagnostic only",
++                      "network_apex_sha256": outputs[APEX_REL],
++                      "libmeminfo_sha256": outputs[MEMINFO_REL],
++                      "normal_profile_changed": False}, sort_keys=True))
++
++
++def main():
++    parser = argparse.ArgumentParser(description=__doc__)
++    sub = parser.add_subparsers(dest="command", required=True)
++    for name in ("apply", "verify"):
++        command = sub.add_parser(name)
++        command.add_argument("--work-dir", required=True, type=Path)
++        command.add_argument("--donor-root", required=True, type=Path)
++        if name == "apply":
++            command.add_argument("--scratch-root", required=True, type=Path)
++    args = parser.parse_args()
++    if args.command == "apply":
++        apply(args.work_dir, args.donor_root, args.scratch_root)
++    else:
++        require_scope()
++        print(json.dumps({"result": "PASS", "files": verify(args.work_dir, args.donor_root)}, sort_keys=True))
++
++
++if __name__ == "__main__":
++    main()

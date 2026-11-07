@@ -16,8 +16,14 @@ GIT_LFS_SKIP_SMUDGE=1 git -C "$fork_dest" checkout --detach "$fork_revision"
 [[ "$(git -C "$fork_dest" rev-parse HEAD)" == "$fork_revision" ]]
 while IFS= read -r patch_name || [[ -n "$patch_name" ]]; do
     [[ -z "$patch_name" || "$patch_name" == \#* ]] && continue
-    patch --dry-run --batch --forward -d "$fork_dest" -p1 -i "$project_root/patches/fork/$patch_name"
-    patch --batch --forward -d "$fork_dest" -p1 -i "$project_root/patches/fork/$patch_name"
+    # Historical0202+ patches can use a/rom/ paths; patches inside the fork
+    # otherwise use a/. Select the existing header root before the dry-run.
+    fork_patch_strip=1
+    if rg -q '^(--- a|\+\+\+ b)/rom/' "$project_root/patches/fork/$patch_name"; then
+        fork_patch_strip=2
+    fi
+    patch --dry-run --batch --forward -d "$fork_dest" -p"$fork_patch_strip" -i "$project_root/patches/fork/$patch_name"
+    patch --batch --forward -d "$fork_dest" -p"$fork_patch_strip" -i "$project_root/patches/fork/$patch_name"
 done < "$project_root/patches/fork/series"
 printf 'Pinned fork and patch series prepared at %s\n' "$fork_dest"
 printf 'See docs/build-environment.md for dependencies and firmware inputs. No build or flash has run.\n'

@@ -1,0 +1,110 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] expose pinned S9+ ueventd rules at the M4 imported path
+
+# Reason: M4 runtime ueventd imports missing /vendor/etc/ueventd.rc; Trustonic logs Permission denied opening admin device while its S9+ node rules exist only in /vendor/ueventd.rc.
+# Affected: M4 runtime staging/verifier, boot_restore metadata and real ext4 verifier. Preserve hardware rule bytes and old path; no A37 hardware rules or daemon/readiness bypass.
+# Verify: source hash, idempotence and destination-drift rejection, runtime self-test, full patch replay, actual device node permissions and Trustonic readiness/logcat; verify real ext4 bytes/UID/GID/mode/SELinux before packaging.
+# Rollback: reverse this patch and rebuild; restore saved original BOOT/VENDOR after diagnostic device trial.
+
+--- a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_runtime_compat.py
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_runtime_compat.py
+@@ -17,6 +17,26 @@
+ 
+ HERE = Path(__file__).resolve().parent
+ LOCK = HERE / "a376b_android17_runtime_compat.lock.json"
++VENDOR_UEVENTD_SHA256 = "628e3fee174b841c0cf771092034e9e043264c8232e707b4710bba2b0a69645a"
++
++
++def vendor_ueventd(work, stage=False):
++    # M4 ueventd logs an import of /vendor/etc/ueventd.rc, while the pinned
++    # Hybrid Vendor places its hardware permissions at /vendor/ueventd.rc.
++    # Publish the same bytes at the imported path; do not use A37 node rules.
++    source = Path(work) / "vendor/ueventd.rc"
++    target = Path(work) / "vendor/etc/ueventd.rc"
++    if not source.is_file() or source.is_symlink() or digest(source) != VENDOR_UEVENTD_SHA256:
++        raise ValueError("Unreviewed M4 Exynos9810 ueventd source")
++    if target.exists() or target.is_symlink():
++        if not target.is_file() or target.is_symlink() or digest(target) != VENDOR_UEVENTD_SHA256:
++            raise ValueError("Unreviewed M4 imported vendor ueventd configuration")
++    elif stage:
++        target.parent.mkdir(parents=True, exist_ok=True)
++        shutil.copyfile(source, target)
++        target.chmod(0o644)
++    else:
++        raise ValueError("M4 imported vendor ueventd configuration missing")
+ 
+ 
+ def manifest():
+@@ -204,6 +224,7 @@
+         merge_account(work / "vendor/etc" / kind, kind, rows[kind])
+     verify_vendor_account(work)
+     stage_vendor_flags(work)
++    vendor_ueventd(work, stage=True)
+     print("PASS staged donor-native M4 camera/audio/V7/Tethering, vendor_kg and empty vendor aconfig v2")
+ 
+ 
+@@ -226,6 +247,7 @@
+         if not path.is_file() or path.is_symlink() or digest(path) != expected:
+             raise ValueError("Final M4 runtime input mismatch: " + rel)
+     verify_vendor_account(work)
++    vendor_ueventd(work)
+     flags = empty_vendor_flags()
+     directory = work / "vendor/etc/aconfig"
+     if not directory.is_dir() or {p.name for p in directory.iterdir()} != set(flags):
+@@ -263,6 +285,8 @@
+             dst.parent.mkdir(parents=True, exist_ok=True)
+             shutil.copyfile(donor / rel, dst)
+         (root / "vendor/etc").mkdir(parents=True)
++        shutil.copyfile(HERE.parent / "embedded/exynos9810_legacy_port/vendor/ueventd.rc",
++                        root / "vendor/ueventd.rc")
+         anchor = "    mount_all /vendor/etc/fstab.${ro.hardware} --early\n"
+         canonical = root / "vendor/etc/init/hw/init.samsungexynos9810.rc"
+         secondary = root / "vendor/etc/init/init.samsungexynos9810.rc"
+@@ -290,6 +314,16 @@
+         if first != {p.relative_to(root).as_posix(): p.read_bytes()
+                      for p in (root / "vendor/etc/aconfig").iterdir()}:
+             raise ValueError("M4 aconfig staging is not idempotent")
++        ueventd = root / "vendor/etc/ueventd.rc"
++        original_ueventd = ueventd.read_bytes()
++        ueventd.write_bytes(b"unreviewed device permissions")
++        try:
++            vendor_ueventd(root, stage=True)
++        except ValueError:
++            pass
++        else:
++            raise ValueError("Unreviewed imported ueventd rules accepted")
++        ueventd.write_bytes(original_ueventd)
+         bad = root / "system/system/bin/cameraserver"
+         bad.write_bytes(b"unreviewed camera server")
+         try:
+--- a/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/customize.sh
++++ b/unica/patches/exynos9810_device_stack/exynos9810_boot_restore/customize.sh
+@@ -2016,6 +2016,8 @@
+         0 0 644 "u:object_r:vendor_configs_file:s0"
+     _EXYNOS9810_SET_METADATA_SAFE vendor vendor/etc/group \
+         0 0 644 "u:object_r:vendor_configs_file:s0"
++    _EXYNOS9810_SET_METADATA_SAFE vendor vendor/etc/ueventd.rc \
++        0 0 644 "u:object_r:vendor_configs_file:s0"
+     _EXYNOS9810_SET_METADATA_SAFE vendor vendor/etc/aconfig \
+         0 0 755 "u:object_r:vendor_aconfig_storage_file:s0"
+     for M4_ACONFIG_FILE in package.map flag.map flag.val flag.info; do
+--- a/scripts/internal/verify_m4_runtime_image.py
++++ b/scripts/internal/verify_m4_runtime_image.py
+@@ -42,7 +42,7 @@
+         return 0o755, (0, 0), "vendor_aconfig_storage_file", "directory"
+     if rel.startswith("etc/aconfig/"):
+         return 0o444, (0, 0), "vendor_aconfig_storage_file"
+-    if rel in ("etc/passwd", "etc/group"):
++    if rel in ("etc/passwd", "etc/group", "etc/ueventd.rc"):
+         return 0o644, (0, 0), "vendor_configs_file"
+     if rel in ("etc/init/hw/init.samsungexynos9810.rc", "etc/init/init.samsungexynos9810.rc"):
+         return 0o644, (0, 0), None
+@@ -102,7 +102,7 @@
+                  if rel.startswith("system/system/")]
+         paths.extend(verify_nfc_apex(work, donor))
+     elif partition == "vendor":
+-        paths = ["etc/passwd", "etc/group", "etc/init/hw/init.samsungexynos9810.rc",
++        paths = ["etc/passwd", "etc/group", "etc/ueventd.rc", "etc/init/hw/init.samsungexynos9810.rc",
+                  "etc/init/init.samsungexynos9810.rc", "etc/aconfig"]
+         paths += ["etc/aconfig/" + name for name in ("package.map", "flag.map", "flag.val", "flag.info")]
+     else:

@@ -1,0 +1,33 @@
+# Reason: attempt23 line1167 invokes the optional legacy UN1CA Package Block List patch; pinned BZI6 services.jar has changed PackageBlockListPolicy/PmLifecycleImpl structure and git apply fails at InstallPackageHelper:21296, PackageBlockListPolicy:4, and PmLifecycleImpl:2193. This old patch replaces donor LDU state and lifecycle behavior, so M4 should retain the complete donor policy just as M2 retains AZH4 donor behavior.
+# Affected: scripts/internal/apply_modules.sh.
+# Verify: exact M4/A376B/SM-G965F/BZI6 dispatch skips only mods/blocklist; wrong donor/model/milestone negatives fail closed; other modules remain on the existing path; bash syntax; series replay; clean M4 build with the donor policy retained.
+# Rollback: remove patch0151 from patches/fork/series and sources.lock.json, then restore the prior module dispatcher.
+
+--- a/scripts/internal/apply_modules.sh
++++ b/scripts/internal/apply_modules.sh
+@@ -42,6 +42,25 @@
+     if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] && \
+             [[ "$MODPATH" == */mods/blocklist ]]; then
+         LOGW "Skipping optional legacy Package Blocklist mod for A376B Android 16; AZH4 policy layout differs"
++        return 0
++    fi
++
++    # BZI6 changed PackageBlockListPolicy and PmLifecycleImpl. The legacy
++    # optional UN1CA mod replaces donor LDU state and lifecycle wiring; keep
++    # the complete Android 17 donor policy on this exact M4 build.
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ] && \
++            [[ "$MODPATH" == */mods/blocklist ]]; then
++        if [ "${ROM_MILESTONE:-}" != M4 ] || [ "${TARGET_CODENAME:-}" != star2lte ] || \
++                [ "${STAR2LTE_BUILD_MODEL:-}" != SM-G965F ] || \
++                [ "${SOURCE_PLATFORM_SDK_VERSION:-}" != 37 ] || \
++                [ "${TARGET_PLATFORM_SDK_VERSION:-}" != 31 ] || \
++                [ "${TARGET_BOARD_API_LEVEL:-}" != 33 ] || \
++                [ "${SOURCE_FIRMWARE_CACHE_SUFFIX:-}" != A376BXXU5BZI6 ] || \
++                [ "${SOURCE_FIRMWARE:-}" != SM-A376B/XXV/LOCAL ]; then
++            LOGE "Unreviewed BZI6 PackageBlockListPolicy donor-retention scope"
++            return 1
++        fi
++        LOGW "BZI6 PackageBlockListPolicy/PmLifecycleImpl differ; retaining donor behavior and skipping optional UN1CA blocklist mod"
+         return 0
+     fi
+ 

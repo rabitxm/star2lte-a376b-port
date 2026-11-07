@@ -1,0 +1,18 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] remove stale scloud preinstall config after debloat
+
+# Reason: finalization-preflight-0170.txt reports Samsung Cloud support file remains: preinstalled-packages-com.samsung.android.scloud.xml. It only enables installation of the removed optional Cloud APK for FULL/PROFILE users. Delete alongside existing preload triggers, retain SCPM/shared-UID contract.
+# Affected: exynos9810_finalization/customize.sh final debloat deletion list
+# Verify: Actual XML inspected; final Cloud absence/shared-UID gates, metadata deletion helper and clean build.
+# Rollback: Remove0172 to restore previous deletion list.
+
+--- a/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
+@@ -918,6 +918,7 @@
+         system/etc/permissions/signature-permissions-com.sec.android.app.kidshome.xml \
+         system/etc/permissions/signature-permissions-com.sec.android.app.voicenote.xml \
+         system/etc/default-permissions/default-permissions-com.sec.android.easyMover.xml \
++        system/etc/sysconfig/preinstalled-packages-com.samsung.android.scloud.xml \
+         system/etc/sysconfig/smartswitch.xml; do
+         if [ "$TARGET_CODENAME" = "crownlte" ] && [ "$REL" = "product/overlay/NotesRoleEnabled" ]; then
+             continue

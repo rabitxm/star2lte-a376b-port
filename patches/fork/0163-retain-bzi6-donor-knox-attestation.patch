@@ -1,0 +1,35 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] Retain BZI6 donor Knox and attestation behavior
+
+# Reason: attempt36 lines1250,1262,1296,1313,1329,1341 show incompatible legacy KnoxPatch ICD/attestation hunks in DevicePolicyManagerService, DarManagerService, UserManagerService, AttestParameterSpec, AttestationUtils and SemSsdidManagerService. Earlier steps already remove WSM and insert framework hooks; retain the complete donor stack rather than a partial optional integration.
+# Affected: scripts/internal/apply_modules.sh.
+# Verify: exact M4/G965F/star2lte/SDK37/target SDK31/board API33/BZI6 route skips only KnoxPatch; wrong model/milestone fail closed; AZH4 M2 and unrelated modules unchanged; bash syntax, hash lock/replay and clean build.
+# Rollback: remove0163 from patches/fork/series and sources.lock.json, then restore the prior dispatcher.
+
+--- a/scripts/internal/apply_modules.sh
++++ b/scripts/internal/apply_modules.sh
+@@ -46,6 +46,24 @@
+             return 1
+         fi
+         LOGW "BZI6 Keystore2 interfaces differ from framework Keybox hooks; retaining donor key-attestation behavior for M4"
++        return 0
++    fi
++
++    # Keep BZI6 Knox and attestation coherent: the optional legacy hooks no
++    # longer match DevicePolicyManager, DAR and attestation implementations.
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ] && \
++            [[ "$MODPATH" == */mods/knoxpatch ]]; then
++        if [ "${ROM_MILESTONE:-}" != M4 ] || [ "${TARGET_CODENAME:-}" != star2lte ] || \
++                [ "${STAR2LTE_BUILD_MODEL:-}" != SM-G965F ] || \
++                [ "${SOURCE_PLATFORM_SDK_VERSION:-}" != 37 ] || \
++                [ "${TARGET_PLATFORM_SDK_VERSION:-}" != 31 ] || \
++                [ "${TARGET_BOARD_API_LEVEL:-}" != 33 ] || \
++                [ "${SOURCE_FIRMWARE_CACHE_SUFFIX:-}" != A376BXXU5BZI6 ] || \
++                [ "${SOURCE_FIRMWARE:-}" != SM-A376B/XXV/LOCAL ]; then
++            LOGE "Unreviewed BZI6 KnoxPatch donor-retention scope"
++            return 1
++        fi
++        LOGW "BZI6 attestation and Knox internals differ; retaining donor Knox/attestation behavior for M4"
+         return 0
+     fi
+ 

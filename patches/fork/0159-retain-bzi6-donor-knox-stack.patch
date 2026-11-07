@@ -1,0 +1,32 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] Retain BZI6 donor Knox stack
+
+# Reason: attempt31 line1264 reports `Missing BZI6 class descriptor: com/android/server/knox/dar/ddar/ta/TAProxy.smali` after the legacy DeKnox mod had already deleted donor Knox components. Avoid a partial Knox/DAR replacement and retain the complete donor stack.
+# Affected: scripts/internal/apply_modules.sh.
+# Verify: exact M4/G965F/BZI6 module route skips only DeKnox; wrong model/milestone fail closed; AZH4 route and unrelated modules remain active; shell syntax, module dispatcher tests, full patch replay, clean attempt32.
+# Rollback: remove patch0159 from patches/fork/series and sources.lock.json, then restore the previous dispatcher.
+
+--- a/scripts/internal/apply_modules.sh
++++ b/scripts/internal/apply_modules.sh
+@@ -15,6 +15,21 @@
+ 
+     # AZH4 moved Knox framework internals across several classes. Applying the
+     # older Nuke Knox module partially would leave the donor's Knox stack split.
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ] && \
++            [[ "$MODPATH" == */mods/deknox ]]; then
++        if [ "${ROM_MILESTONE:-}" != M4 ] || [ "${TARGET_CODENAME:-}" != star2lte ] || \
++                [ "${STAR2LTE_BUILD_MODEL:-}" != SM-G965F ] || \
++                [ "${SOURCE_PLATFORM_SDK_VERSION:-}" != 37 ] || \
++                [ "${TARGET_PLATFORM_SDK_VERSION:-}" != 31 ] || \
++                [ "${TARGET_BOARD_API_LEVEL:-}" != 33 ] || \
++                [ "${SOURCE_FIRMWARE_CACHE_SUFFIX:-}" != A376BXXU5BZI6 ] || \
++                [ "${SOURCE_FIRMWARE:-}" != SM-A376B/XXV/LOCAL ]; then
++            LOGE "Unreviewed BZI6 DeKnox module scope"
++            return 1
++        fi
++        LOGW "BZI6 Knox/DAR internals differ; retaining the complete donor Knox stack"
++        return 0
++    fi
+     if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] && \
+             [[ "$MODPATH" == */mods/deknox ]]; then
+         LOGW "AZH4 Knox internals differ across framework classes; retaining the complete donor Knox stack for M2"

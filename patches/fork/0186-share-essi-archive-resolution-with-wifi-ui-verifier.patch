@@ -1,0 +1,55 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] share essi archive resolution with wifi ui verifier
+
+# Reason: m4-package-attempt37-0185.txt confirms the compiled Wi-Fi UI verifier duplicates the same wrong direct system_ext path exposed by the earlier product gate. Use the reviewed product resolver from0185 in both verifiers so all13 Wi-Fi class checks inspect the actual ESSI APK, retaining strict layout rejection.
+# Affected: product_feature/a376b_android17_product.py shared work_archive resolver; wifi/a376b_android17_ui.py consumer
+# Verify: Actual ESSI SystemUI path, shared SYSTEM/system_ext mapping and wrong-layout negative; full compiled product/Wi-Fi gates and source replay.
+# Rollback: Remove0186; no ROM payload or build-system replacement.
+
+--- a/unica/patches/product_feature/a376b_android17_product.py
++++ b/unica/patches/product_feature/a376b_android17_product.py
+@@ -162,6 +162,17 @@
+     # BZI6 Rune no longer contains the compiled SPF string "5". Its three
+     # unchanged, pinned methods query real sensors; TYPE_LIGHT remains 5.
+     # Power's hash includes lights + shipping; LsRune's includes rear FP.
++
++
++def work_archive(work, artifact):
++    """Resolve the fork's actual ESSI image tree, distinct from decode cache."""
++    if artifact.startswith("system_ext/"):
++        if os.environ.get("TARGET_OS_BUILD_SYSTEM_EXT_PARTITION", "false") != "false":
++            raise RuntimeError("Unreviewed BZI6 system_ext partition layout")
++        return work / "system/system" / artifact
++    if artifact.startswith("system/"):
++        return work / "system" / artifact
++    raise RuntimeError("Unreviewed BZI6 compiled artifact: " + artifact)
+ 
+ 
+ def compiled_class(archive, descriptor, tools):
+@@ -207,14 +218,7 @@
+     def read(artifact, descriptor):
+         key = artifact, descriptor
+         if key not in cache:
+-            if artifact.startswith("system_ext/"):
+-                if os.environ.get("TARGET_OS_BUILD_SYSTEM_EXT_PARTITION", "false") != "false":
+-                    raise RuntimeError("Unreviewed BZI6 system_ext partition layout")
+-                archive = work / "system/system" / artifact
+-            elif artifact.startswith("system/"):
+-                archive = work / "system" / artifact
+-            else:
+-                raise RuntimeError("Unreviewed BZI6 compiled artifact: " + artifact)
++            archive = work_archive(work, artifact)
+             cache[key] = compiled_class(archive, descriptor, tools)
+         return cache[key]
+ 
+--- a/unica/patches/product_feature/wifi/a376b_android17_ui.py
++++ b/unica/patches/product_feature/wifi/a376b_android17_ui.py
+@@ -59,7 +59,7 @@
+     scope()
+     for row in rules():
+         artifact = row["artifact"]
+-        path = work / ("system/" + artifact if artifact.startswith("system/") else artifact)
++        path = PRODUCT.work_archive(work, artifact)
+         text = PRODUCT.compiled_class(path, row["descriptor"], tools)
+         if canonical(text) != row["canonical_sha256"]:
+             raise RuntimeError("Retained compiled BZI6 Wi-Fi UI changed: " + row["descriptor"])

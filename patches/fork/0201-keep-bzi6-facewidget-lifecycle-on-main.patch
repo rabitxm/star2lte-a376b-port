@@ -1,0 +1,262 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] serialize BZI6 FaceWidget lifecycle initialization on main
+
+# Reason: exact SystemUI crash calls setPluginFaceWidgetCallback from PluginFaceWidget-BG; the AOD setter constructs FaceWidgetPluginLifeCycle and triggers LifecycleRegistry.setCurrentState main-thread enforcement.
+# Affected: three pinned BZI6 SystemUI Smali classes via a strict M4/G965F helper, finalization integration and compiled/ext4 image gates. Each connect generation and raw plugin identity is checked before dispatch.
+# Verify: source/output class hashes, Apktool build, APK decode roundtrip, helper guard checks; actual boot/thread latency and reconnect/UI behavior remain pending.
+# Rollback: reverse this patch and rebuild original BZI6 SystemUI. No AOD/Infinity feature is removed; no runtime assertion is disabled.
+
+--- a/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/customize.sh
+@@ -7537,6 +7537,22 @@
+ python3 "$MODPATH/adb_defaults.py" apply \
+     --work-dir "$WORK_DIR" --apktool-dir "$APKTOOL_DIR" || return 1
+ 
++# BZI6 constructs its FaceWidget lifecycle inside setPluginFaceWidgetCallback.
++# Keep this exact init path on the existing main-looper handler and reject stale
++# connect work by generation + plugin instance; no lifecycle assertion is muted.
++if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++    IS_A376B_M4_BOOT_TEST && \
++            [ "${EXYNOS9810_M4_RUNTIME_COMPAT:-false}" = "true" ] || {
++        LOGE "BZI6 FaceWidget main-thread bridge is restricted to reviewed M4 G965F profile"
++        return 1
++    }
++    DECODE_APK "system_ext" "priv-app/SystemUI/SystemUI.apk" || return 1
++    python3 "$SRC_DIR/unica/patches/exynos9810_device_stack/exynos9810_finalization/a376b_android17_facewidget_thread.py" \
++        apply-work --systemui-dir "$APKTOOL_DIR/system_ext/priv-app/SystemUI/SystemUI.apk" || return 1
++    python3 "$SRC_DIR/unica/patches/exynos9810_device_stack/exynos9810_finalization/a376b_android17_facewidget_thread.py" \
++        verify-work --systemui-dir "$APKTOOL_DIR/system_ext/priv-app/SystemUI/SystemUI.apk" || return 1
++fi
++
+ # Reapply the measured M4 post-boot diagnostic composition after the final
+ # donor/vendor restores. It is selected only by the explicit G965F diagnostic
+ # profile; normal M4/release profiles keep the donor-native APEX and libmeminfo.
+--- a/scripts/internal/verify_m4_runtime_image.py
++++ b/scripts/internal/verify_m4_runtime_image.py
+@@ -20,6 +20,7 @@
+ HELPER = ROOT / "unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_runtime_compat.py"
+ NFC_LOCK = ROOT / "unica/patches/exynos9810_device_stack/nfc/a376b_android17_nfc.lock.json"
+ POSTBOOT_HELPER = ROOT / "unica/patches/exynos9810_device_stack/exynos9810_boot_restore/a376b_android17_postboot_diagnostic.py"
++FACEWIDGET_HELPER = ROOT / "unica/patches/exynos9810_device_stack/exynos9810_finalization/a376b_android17_facewidget_thread.py"
+ 
+ 
+ def metadata(partition, rel):
+@@ -35,6 +36,7 @@
+             "system/apex/com.google.android.tethering_compressed.apex": (0o644, (0, 0), "system_file"),
+             "system/lib64/libmeminfo.so": (0o644, (0, 0), "system_lib_file"),
+             "system/priv-app/SamsungDeviceHealthManagerService/SamsungDeviceHealthManagerService.apk": (0o644, (0, 0), "system_file"),
++            "system_ext/priv-app/SystemUI/SystemUI.apk": (0o644, (0, 0), "system_file"),
+             "system/apex/com.android.nfcservices.capex": (0o644, (0, 0), "system_file"),
+             "system/priv-app/SecNfc/SecNfc.apk": (0o644, (0, 0), "system_file"),
+             "system/etc/init/aconfigd.rc": (0o644, (0, 0), "system_file"),
+@@ -134,6 +136,14 @@
+             if hashlib.sha256(ssrm).hexdigest() != dvfs_lock["ssrm_output_sha256"]:
+                 raise ValueError("M4 compiled SDHMS SSRM policy hash mismatch")
+             paths.append(sdhms_rel)
++            systemui_rel = "system_ext/priv-app/SystemUI/SystemUI.apk"
++            systemui_apk = work / "system" / systemui_rel
++            apktool = ROOT / "out/tools/bin/apktool"
++            if not systemui_apk.is_file() or systemui_apk.is_symlink() or not apktool.is_file():
++                raise ValueError("M4 compiled SystemUI or bundled Apktool is missing")
++            run(["python3", str(FACEWIDGET_HELPER), "verify-apk", "--apk", str(systemui_apk),
++                 "--apktool", str(apktool), "--temp-root", tempfile.gettempdir()])
++            paths.append(systemui_rel)
+     elif partition == "vendor":
+         paths = ["etc/passwd", "etc/group", "etc/ueventd.rc", "etc/init/hw/init.samsungexynos9810.rc",
+                  "etc/init/init.samsungexynos9810.rc", "etc/aconfig"]
+--- /dev/null
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/a376b_android17_facewidget_thread.py
+@@ -0,0 +1,160 @@
++#!/usr/bin/env python3
++"""Keep the BZI6 FaceWidget lifecycle initialization on SystemUI's main looper.
++
++Reason: a fresh crash shows PluginFaceWidgetManager's BG Handler calls the
++plugin setter, whose Dagger constructor reaches LifecycleRegistry.setCurrentState.
++Files: three exact BZI6 SystemUI Smali classes only.
++Verify: source/output hashes, generation + instance guards, APK decode roundtrip,
++and ext4 image byte check. Runtime race/UI checks remain required.
++Rollback: rebuild from the unmodified BZI6 SystemUI APK; no AOD feature is removed.
++"""
++import argparse
++import hashlib
++import json
++from pathlib import Path
++import shutil
++import subprocess
++import tempfile
++
++HERE = Path(__file__).resolve().parent
++LOCK = HERE / "a376b_android17_facewidget_thread.lock.json"
++BASE = Path("smali_classes2/com/android/systemui/facewidget/plugin")
++FILES = {
++    "manager": BASE / "PluginFaceWidgetManager.smali",
++    "bg": BASE / "PluginFaceWidgetManager$6.smali",
++    "ui": BASE / "PluginFaceWidgetManager$5.smali",
++}
++
++
++def sha(data):
++    return hashlib.sha256(data).hexdigest()
++
++
++def replace_once(text, before, after, label):
++    count = text.count(before)
++    if count != 1:
++        raise ValueError(f"BZI6 FaceWidget {label} anchor count {count}, expected 1")
++    return text.replace(before, after, 1)
++
++
++def load_lock():
++    return json.loads(LOCK.read_text())
++
++
++def source_files(root):
++    return {key: Path(root) / rel for key, rel in FILES.items()}
++
++
++def verify_tree(root, expected):
++    paths = source_files(root)
++    for key, path in paths.items():
++        if not path.is_file() or path.is_symlink() or sha(path.read_bytes()) != expected[key]:
++            raise ValueError("M4 FaceWidget class hash mismatch: " + key)
++    manager, bg, ui = (paths[k].read_text() for k in ("manager", "bg", "ui"))
++    checks = [
++        ("manager generation", "mFaceWidgetConnectionGeneration" in manager),
++        ("main dispatch validates generation", "mFaceWidgetConnectionGeneration" in ui),
++        ("main dispatch validates plugin instance", "mConnectedPlugin" in ui),
++        ("main dispatch invokes init directly", "PluginFaceWidgetManager$6;->handleMessage(Landroid/os/Message;)V" in ui),
++        ("background handler routes init", "Message;->arg2:I" in bg and "mUiHandler" in bg),
++        ("callback remains present", "setPluginFaceWidgetCallback" in bg),
++    ]
++    failed = [name for name, ok in checks if not ok]
++    if failed:
++        raise ValueError("M4 FaceWidget compiled structure missing: " + ", ".join(failed))
++    return {"result": "PASS", "classes": {k: sha(p.read_bytes()) for k, p in paths.items()},
++            "guards": [name for name, _ in checks]}
++
++
++def apply(root):
++    lock = load_lock()
++    paths = source_files(root)
++    texts = {}
++    for key, path in paths.items():
++        if not path.is_file() or path.is_symlink():
++            raise ValueError("BZI6 SystemUI FaceWidget class missing: " + key)
++        raw = path.read_bytes()
++        if sha(raw) != lock["source_classes"][key]:
++            raise ValueError("Unreviewed BZI6 SystemUI FaceWidget preimage: " + key)
++        texts[key] = raw.decode()
++
++    m = texts["manager"]
++    m = replace_once(m,
++        ".field public mFaceWidgetPlugin:Lcom/android/systemui/plugins/keyguardstatusview/PluginKeyguardStatusView;\n",
++        ".field public mFaceWidgetPlugin:Lcom/android/systemui/plugins/keyguardstatusview/PluginKeyguardStatusView;\n.field public mFaceWidgetConnectionGeneration:I\n",
++        "generation field")
++    m = replace_once(m,
++        "    iput-object p1, p0, Lcom/android/systemui/facewidget/plugin/PluginFaceWidgetManager;->mConnectedPlugin:Lcom/android/systemui/plugins/keyguardstatusview/PluginKeyguardStatusView;\n\n    iget-object p0, p0, Lcom/android/systemui/facewidget/plugin/PluginFaceWidgetManager;->mBgHandler:",
++        "    iput-object p1, p0, Lcom/android/systemui/facewidget/plugin/PluginFaceWidgetManager;->mConnectedPlugin:Lcom/android/systemui/plugins/keyguardstatusview/PluginKeyguardStatusView;\n\n    iget v0, p0, Lcom/android/systemui/facewidget/plugin/PluginFaceWidgetManager;->mFaceWidgetConnectionGeneration:I\n\n    add-int/lit8 v0, v0, 0x1\n\n    iput v0, p0, Lcom/android/systemui/facewidget/plugin/PluginFaceWidgetManager;->mFaceWidgetConnectionGeneration:I\n\n    iget-object p0, p0, Lcom/android/systemui/facewidget/plugin/PluginFaceWidgetManager;->mBgHandler:",
++        "connect generation")
++    m = replace_once(m,
++        "    invoke-virtual {p0, p2, p1}, Landroid/os/Handler;->obtainMessage(ILjava/lang/Object;)Landroid/os/Message;\n\n    move-result-object p1\n\n    invoke-virtual {p0, p1}, Landroid/os/Handler;->sendMessage(Landroid/os/Message;)Z",
++        "    invoke-virtual {p0, p2, p1}, Landroid/os/Handler;->obtainMessage(ILjava/lang/Object;)Landroid/os/Message;\n\n    move-result-object p1\n\n    iget-object v0, p0, Lcom/android/systemui/facewidget/plugin/PluginFaceWidgetManager$6;->this$0:Lcom/android/systemui/facewidget/plugin/PluginFaceWidgetManager;\n\n    iget v0, v0, Lcom/android/systemui/facewidget/plugin/PluginFaceWidgetManager;->mFaceWidgetConnectionGeneration:I\n\n    iput v0, p1, Landroid/os/Message;->arg1:I\n\n    invoke-virtual {p0, p1}, Landroid/os/Handler;->sendMessage(Landroid/os/Message;)Z",
++        "connect message generation")
++    m = replace_once(m,
++        "    iput-object v0, p0, Lcom/android/systemui/facewidget/plugin/PluginFaceWidgetManager;->mConnectedPlugin:Lcom/android/systemui/plugins/keyguardstatusview/PluginKeyguardStatusView;\n\n    iget-object v0, p0, Lcom/android/systemui/facewidget/plugin/PluginFaceWidgetManager;->mBgHandler:",
++        "    iput-object v0, p0, Lcom/android/systemui/facewidget/plugin/PluginFaceWidgetManager;->mConnectedPlugin:Lcom/android/systemui/plugins/keyguardstatusview/PluginKeyguardStatusView;\n\n    iget v2, p0, Lcom/android/systemui/facewidget/plugin/PluginFaceWidgetManager;->mFaceWidgetConnectionGeneration:I\n\n    add-int/lit8 v2, v2, 0x1\n\n    iput v2, p0, Lcom/android/systemui/facewidget/plugin/PluginFaceWidgetManager;->mFaceWidgetConnectionGeneration:I\n\n    iget-object v0, p0, Lcom/android/systemui/facewidget/plugin/PluginFaceWidgetManager;->mBgHandler:",
++        "disconnect generation")
++
++    bg = texts["bg"]
++    bg = replace_once(bg,
++        "    iget v0, p1, Landroid/os/Message;->what:I\n\n    const/4 v1, 0x0\n",
++        "    iget v0, p1, Landroid/os/Message;->what:I\n\n    if-eqz v0, :facewidget_check_main_dispatch\n\n    goto :facewidget_dispatch_ready\n\n    :facewidget_check_main_dispatch\n    iget v1, p1, Landroid/os/Message;->arg2:I\n\n    const/4 v2, 0x1\n\n    if-eq v1, v2, :facewidget_dispatch_ready\n\n    iget-object v1, p0, Lcom/android/systemui/facewidget/plugin/PluginFaceWidgetManager$6;->this$0:Lcom/android/systemui/facewidget/plugin/PluginFaceWidgetManager;\n\n    iget-object v1, v1, Lcom/android/systemui/facewidget/plugin/PluginFaceWidgetManager;->mUiHandler:Lcom/android/systemui/facewidget/plugin/PluginFaceWidgetManager$5;\n\n    const/4 v2, 0x5\n\n    iget-object v3, p1, Landroid/os/Message;->obj:Ljava/lang/Object;\n\n    invoke-virtual {v1, v2, v3}, Landroid/os/Handler;->obtainMessage(ILjava/lang/Object;)Landroid/os/Message;\n\n    move-result-object v2\n\n    iget v3, p1, Landroid/os/Message;->arg1:I\n\n    iput v3, v2, Landroid/os/Message;->arg1:I\n\n    invoke-virtual {v1, v2}, Landroid/os/Handler;->sendMessage(Landroid/os/Message;)Z\n\n    return-void\n\n    :facewidget_dispatch_ready\n    const/4 v1, 0x0\n",
++        "BG to UI handoff")
++
++    ui = texts["ui"]
++    ui = replace_once(ui,
++        "    const/4 v5, 0x2\n\n    if-eq v0, v5, :cond_4\n",
++        "    const/4 v5, 0x5\n\n    if-ne v0, v5, :m4_facewidget_existing_dispatch\n\n    move-object/from16 v6, p1\n\n    iget-object v1, v6, Landroid/os/Message;->obj:Ljava/lang/Object;\n\n    iget v2, v6, Landroid/os/Message;->arg1:I\n\n    iget v4, v3, Lcom/android/systemui/facewidget/plugin/PluginFaceWidgetManager;->mFaceWidgetConnectionGeneration:I\n\n    if-ne v2, v4, :m4_facewidget_stale_main_dispatch\n\n    iget-object v4, v3, Lcom/android/systemui/facewidget/plugin/PluginFaceWidgetManager;->mConnectedPlugin:Lcom/android/systemui/plugins/keyguardstatusview/PluginKeyguardStatusView;\n\n    if-ne v1, v4, :m4_facewidget_stale_main_dispatch\n\n    iget-object v4, v3, Lcom/android/systemui/facewidget/plugin/PluginFaceWidgetManager;->mBgHandler:Lcom/android/systemui/facewidget/plugin/PluginFaceWidgetManager$6;\n\n    const/4 v5, 0x0\n\n    invoke-virtual {v4, v5, v1}, Landroid/os/Handler;->obtainMessage(ILjava/lang/Object;)Landroid/os/Message;\n\n    move-result-object v1\n\n    iput v2, v1, Landroid/os/Message;->arg1:I\n\n    const/4 v5, 0x1\n\n    iput v5, v1, Landroid/os/Message;->arg2:I\n\n    invoke-virtual {v4, v1}, Lcom/android/systemui/facewidget/plugin/PluginFaceWidgetManager$6;->handleMessage(Landroid/os/Message;)V\n\n    return-void\n\n    :m4_facewidget_stale_main_dispatch\n    return-void\n\n    :m4_facewidget_existing_dispatch\n    const/4 v5, 0x2\n\n    if-eq v0, v5, :cond_4\n",
++        "main generation and instance gate")
++
++    for key, text in (("manager", m), ("bg", bg), ("ui", ui)):
++        path = paths[key]
++        path.write_text(text)
++    report = verify_tree(root, lock["output_classes"])
++    print(json.dumps(report, sort_keys=True))
++
++
++def verify_apk(apk, apktool, temp_root):
++    lock = load_lock()
++    temp_root = Path(temp_root)
++    temp_root.mkdir(parents=True, exist_ok=True)
++    with tempfile.TemporaryDirectory(prefix="m4-facewidget-roundtrip-", dir=temp_root) as td:
++        decoded = Path(td) / "decoded"
++        subprocess.run([str(apktool), "d", "--no-res", "--no-debug-info", "-o", str(decoded), str(apk)],
++                       check=True, capture_output=True, text=True)
++        report = verify_tree(decoded, lock["roundtrip_classes"])
++    report["apk_sha256"] = sha(Path(apk).read_bytes())
++    print(json.dumps(report, sort_keys=True))
++
++
++def main():
++    parser = argparse.ArgumentParser(description=__doc__)
++    sub = parser.add_subparsers(dest="command", required=True)
++    apply_p = sub.add_parser("apply-work")
++    apply_p.add_argument("--systemui-dir", type=Path, required=True)
++    check = sub.add_parser("verify-work")
++    check.add_argument("--systemui-dir", type=Path, required=True)
++    apk = sub.add_parser("verify-apk")
++    apk.add_argument("--apk", type=Path, required=True)
++    apk.add_argument("--apktool", type=Path, required=True)
++    apk.add_argument("--temp-root", type=Path, required=True)
++    args = parser.parse_args()
++    if args.command != "verify-apk":
++        expected_env = {"ROM_SOURCE_CONFIG": "essi_a376b_android17", "ROM_MILESTONE": "M4",
++                        "TARGET_CODENAME": "star2lte", "STAR2LTE_BUILD_MODEL": "SM-G965F",
++                        "SOURCE_PLATFORM_SDK_VERSION": "37", "EXYNOS9810_M4_RUNTIME_COMPAT": "true"}
++        import os
++        for key, value in expected_env.items():
++            if os.environ.get(key) != value:
++                raise ValueError("M4 FaceWidget scope mismatch: " + key)
++    if args.command == "apply-work":
++        apply(args.systemui_dir)
++    elif args.command == "verify-work":
++        print(json.dumps(verify_tree(args.systemui_dir, load_lock()["output_classes"]), sort_keys=True))
++    else:
++        verify_apk(args.apk, args.apktool, args.temp_root)
++
++
++if __name__ == "__main__":
++    main()
+--- /dev/null
++++ b/unica/patches/exynos9810_device_stack/exynos9810_finalization/a376b_android17_facewidget_thread.lock.json
+@@ -0,0 +1,30 @@
++{
++  "schema": 1,
++  "scope": {
++    "source_config": "essi_a376b_android17",
++    "milestone": "M4",
++    "source_firmware": "SM-A376B/XXV/A376BXXU5BZI6",
++    "target": "star2lte",
++    "target_model": "SM-G965F",
++    "source_platform_sdk": 37
++  },
++  "donor_systemui_apk_sha256": "87f0c37e465257adf0c597faeb1e871f1b0ff62a2129ea49ef73ec4843543868",
++  "source_classes": {
++    "manager": "d0ea41b181705f393b3aab2a784273f6e670c735723db1749d0fe789825d92f1",
++    "bg": "88d7fd005d653d0e681b14ace08d255115a62230d17316b94809928edf5296ec",
++    "ui": "54fff46ccd811e7d2f384293da85366708aeca1b3462bbc4253b53342f16d97c"
++  },
++  "output_classes": {
++    "manager": "ef94719deded084191918bfaae5c8ad742b5fb684ec540ba369b56ff1bebc28f",
++    "bg": "84f8f36fd8cafa9e281352a4e2f1484bdbcb1e1d7b7d3407f34298f277405c0a",
++    "ui": "0662c4ec48284c68576d8afacfeb6e70add31cb12f55facb5ca53f8f397678ab"
++  },
++  "roundtrip_classes": {
++    "manager": "0adc8ca2d5fb3987b9e16bf2d71f271ac144d8501655a69a140ead9c0127dd07",
++    "bg": "d818c2db778f020b86f1c9330a4fd3cc99fd82c211c85b369b1efe61b07f9f8a",
++    "ui": "685c08f7292d0c827b187dc9bdf92c745e5ae6aa26161b556baf581d10ed8d70"
++  },
++  "dispatch": "Initial connection requests are routed by the BG handler to the existing main-looper UI handler. The UI handler requires matching connection generation and raw plugin instance, then synchronously invokes the existing BG handler initialization path on main. Disconnect/connect increments the generation so stale queued work is rejected.",
++  "limitations": "One-time plugin construction/getter sequence now runs on main; startup latency and reconnect/UI behavior require device measurement. No lifecycle assertion is disabled or swallowed.",
++  "rollback": "Rebuild from original BZI6 SystemUI classes and remove this exact M4-only integration."
++}

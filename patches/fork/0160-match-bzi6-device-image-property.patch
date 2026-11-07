@@ -1,0 +1,28 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] Match BZI6 device image property access
+
+# Reason: attempt32 line1195 reports PATTERN_NOT_FOUND because BZI6 DeviceImageManager$1 uses `const-string` and places the SystemProperties call directly after it, while the existing device image mod only matches `const-string/jumbo` with blank-line spacing. Support both equivalent Smali forms so the target SCPM model code remains pinned to G965F.
+# Affected: unica/mods/device_image/customize.sh.
+# Verify: run the production customizer against the decoded BZI6 DeviceImageManager$1; verify the exact retail model literal and no property lookup remain; test jumbo/spacing compatibility and a changed-anchor negative; bash syntax, ordered patch replay, and clean attempt33.
+# Rollback: remove patch0160 from patches/fork/series and sources.lock.json, then restore the previous customizer.
+
+--- a/unica/mods/device_image/customize.sh
++++ b/unica/mods/device_image/customize.sh
+@@ -45,12 +45,11 @@
+ # Replace the "read ril.product_code into v0" sequence with a literal model
+ # code, matching however apktool numbered the local register.
+ old_re = re.compile(
+-    r'const-string/jumbo (v\d+), "ril\.product_code"\s*\n'
+-    r'\s*\n'
+-    r'\s*invoke-static \{\1\}, Landroid/os/SystemProperties;->get\('
+-    r'Ljava/lang/String;\)Ljava/lang/String;\s*\n'
+-    r'\s*\n'
+-    r'\s*move-result-object \1\s*\n'
++    r'(?m)^[ \t]*const-string(?:/jumbo)? ([vp]\d+), "ril\.product_code"\r?\n'
++    r'(?:[ \t]*\r?\n)*[ \t]*invoke-static \{\1\}, '
++    r'Landroid/os/SystemProperties;->get\('
++    r'Ljava/lang/String;\)Ljava/lang/String;\r?\n'
++    r'(?:[ \t]*\r?\n)*[ \t]*move-result-object \1\r?\n'
+ )
+ def repl(m):
+     reg = m.group(1)

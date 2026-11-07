@@ -1,0 +1,32 @@
+From: Codex <codex@openai.com>
+Subject: [PATCH] Retain BZI6 donor SystemUI network-speed behavior
+
+# Reason: attempt28 lines1187–1203 show the paired SystemUI status-bar network-speed patch fails at BasicRune.smali:644 because the BZI6 donor code differs. Together with patch0154, retain donor network-speed behavior in both Settings and SystemUI for this exact M4 target.
+# Affected: scripts/internal/apply_modules.sh.
+# Verify: exact M4/G965F/BZI6 route skips only the SystemUI patch; wrong model/milestone fail closed; M2 AZH4 and unrelated routes remain active; shell syntax, dispatcher tests, byte-identical patch replay, clean attempt29.
+# Rollback: remove patch0156 from patches/fork/series and sources.lock.json, then restore the previous dispatcher.
+
+--- a/scripts/internal/apply_modules.sh
++++ b/scripts/internal/apply_modules.sh
+@@ -239,6 +239,21 @@
+                 return 1
+             fi
+             LOGW "BZI6 FunctionKeyUtils differs; retaining donor Secure Folder quick-switch behavior"
++            continue
++        fi
++        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ] && \
++                [[ "$p" == */csc/smali/system_ext/priv-app/SystemUI/SystemUI.apk/0001-Enable-real-time-network-speed-in-status-bar.patch ]]; then
++            if [ "${ROM_MILESTONE:-}" != M4 ] || [ "${TARGET_CODENAME:-}" != star2lte ] || \
++                    [ "${STAR2LTE_BUILD_MODEL:-}" != SM-G965F ] || \
++                    [ "${SOURCE_PLATFORM_SDK_VERSION:-}" != 37 ] || \
++                    [ "${TARGET_PLATFORM_SDK_VERSION:-}" != 31 ] || \
++                    [ "${TARGET_BOARD_API_LEVEL:-}" != 33 ] || \
++                    [ "${SOURCE_FIRMWARE_CACHE_SUFFIX:-}" != A376BXXU5BZI6 ] || \
++                    [ "${SOURCE_FIRMWARE:-}" != SM-A376B/XXV/LOCAL ]; then
++                LOGE "Unreviewed BZI6 SystemUI network-speed dispatch scope"
++                return 1
++            fi
++            LOGW "BZI6 BasicRune differs; retaining donor SystemUI network-speed behavior"
+             continue
+         fi
+         if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ] && \

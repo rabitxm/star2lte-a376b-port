@@ -11,10 +11,11 @@ import argparse
 import hashlib
 import json
 import re
+from datetime import date
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SUFFIXES = {'.md', '.json', '.tsv', '.py', '.sh', '.c', '.patch', '.txt'}
+SUFFIXES = {'.md', '.json', '.tsv', '.py', '.sh', '.c', '.patch', '.txt', '.smali'}
 SECRET = re.compile(
     r'gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|'
     r'-----BEGIN (?:RSA |OPENSSH |EC )?PRIVATE KEY-----|'
@@ -81,7 +82,7 @@ def main():
         'sha256': hashlib.sha256(lock_path.read_bytes()).hexdigest(),
     }
     metadata = {
-        'date': '2026-10-24',
+        'date': date.today().isoformat(),
         'purpose': 'Source and selected diagnostic evidence for external help',
         'fork_url': 'https://github.com/Eend15/Unofficial-Un1ca-9810',
         'fork_commit': '2b25ae6fc3098650be249bd1898e21e563cd5df1',

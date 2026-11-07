@@ -1,0 +1,1000 @@
+diff --git a/unica/patches/product_feature/customize.sh b/unica/patches/product_feature/customize.sh
+--- a/unica/patches/product_feature/customize.sh
++++ b/unica/patches/product_feature/customize.sh
+@@ -492,249 +492,266 @@
+     fi
+ fi
+ 
+-# SEC_PRODUCT_FEATURE_LCD_CONFIG_CONTROL_AUTO_BRIGHTNESS
+-if [[ "$SOURCE_LCD_CONFIG_CONTROL_AUTO_BRIGHTNESS" != "$TARGET_LCD_CONFIG_CONTROL_AUTO_BRIGHTNESS" ]]; then
+-    SET_FLOATING_FEATURE_CONFIG "SEC_FLOATING_FEATURE_LCD_CONFIG_CONTROL_AUTO_BRIGHTNESS" "$TARGET_LCD_CONFIG_CONTROL_AUTO_BRIGHTNESS"
+-
+-    SMALI_PATCH "system" "system/framework/services.jar" \
+-        "smali_classes2/com/android/server/power/PowerManagerUtil.smali" "replace" \
+-        "<clinit>()V" \
+-        "$SOURCE_LCD_CONFIG_CONTROL_AUTO_BRIGHTNESS" \
+-        "$TARGET_LCD_CONFIG_CONTROL_AUTO_BRIGHTNESS"
+-    SMALI_PATCH "system" "system/framework/ssrm.jar" \
+-        "smali/com/android/server/ssrm/PreMonitor.smali" "replace" \
+-        "getBrightness()Ljava/lang/String;" \
+-        "$SOURCE_LCD_CONFIG_CONTROL_AUTO_BRIGHTNESS" \
+-        "$TARGET_LCD_CONFIG_CONTROL_AUTO_BRIGHTNESS"
+-    SMALI_PATCH "system" "system/priv-app/SecSettings/SecSettings.apk" \
+-        "smali_classes4/com/samsung/android/settings/Rune.smali" "replace" \
+-        "<clinit>()V" \
+-        "$SOURCE_LCD_CONFIG_CONTROL_AUTO_BRIGHTNESS" \
+-        "$TARGET_LCD_CONFIG_CONTROL_AUTO_BRIGHTNESS"
+-fi
+-
+-# SEC_PRODUCT_FEATURE_LCD_CONFIG_SEAMLESS_BRT
+-# SEC_PRODUCT_FEATURE_LCD_CONFIG_SEAMLESS_LUX
+-#
+-# Apply before SEC_PRODUCT_FEATURE_LCD_CONFIG_HFR_* to avoid conflicts
+-REFRESH_RATE_CONFIG_DUMP_METHOD="dump(Ljava/io/PrintWriter;Ljava/lang/String;Z)V"
+-if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
+-    REFRESH_RATE_CONFIG_DUMP_METHOD="dumpProductFeature(Ljava/io/PrintWriter;Ljava/lang/String;Z)V"
+-fi
+-if [[ "$SOURCE_LCD_CONFIG_SEAMLESS_BRT" != "$TARGET_LCD_CONFIG_SEAMLESS_BRT" ]] || \
+-        [[ "$SOURCE_LCD_CONFIG_SEAMLESS_LUX" != "$TARGET_LCD_CONFIG_SEAMLESS_LUX" ]]; then
+-    if [[ "$SOURCE_LCD_CONFIG_SEAMLESS_BRT" != "none" ]] && [[ "$SOURCE_LCD_CONFIG_SEAMLESS_LUX" != "none" ]] && \
+-            [[ "$TARGET_LCD_CONFIG_SEAMLESS_BRT" == "none" ]] && [[ "$TARGET_LCD_CONFIG_SEAMLESS_LUX" == "none" ]]; then
+-        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
+-            for A376B_HFR_THRESHOLD_METHOD in "$REFRESH_RATE_CONFIG_DUMP_METHOD" \
+-                    "getMainInstance()Lcom/samsung/android/hardware/display/RefreshRateConfig;"; do
+-                SMALI_PATCH "system" "system/framework/framework.jar" \
+-                    "smali_classes6/com/samsung/android/hardware/display/RefreshRateConfig.smali" "replace" \
+-                    "$A376B_HFR_THRESHOLD_METHOD" "$SOURCE_LCD_CONFIG_SEAMLESS_BRT" ""
+-                SMALI_PATCH "system" "system/framework/framework.jar" \
+-                    "smali_classes6/com/samsung/android/hardware/display/RefreshRateConfig.smali" "replace" \
+-                    "$A376B_HFR_THRESHOLD_METHOD" "$SOURCE_LCD_CONFIG_SEAMLESS_LUX" ""
+-            done
+-            unset A376B_HFR_THRESHOLD_METHOD
+-        else
+-            APPLY_PATCH "system" "system/framework/framework.jar" \
+-                "$MODPATH/hfr/framework.jar/0001-Remove-brightness-threshold-values.patch"
+-        fi
+-    elif [[ "$SOURCE_LCD_CONFIG_SEAMLESS_BRT" != "none" ]] && [[ "$SOURCE_LCD_CONFIG_SEAMLESS_LUX" != "none" ]] && \
+-            [[ "$TARGET_LCD_CONFIG_SEAMLESS_BRT" != "none" ]] && [[ "$TARGET_LCD_CONFIG_SEAMLESS_LUX" != "none" ]]; then
++# BZI6 relocated Settings classes and removed Rune's compiled brightness SPF.
++# Keep its runtime sensor queries and adapt only reviewed display constants.
++if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android17" ]; then
++    for BZI6_JAR in framework services ssrm gamemanager secinputdev-service; do
++        DECODE_APK "system" "system/framework/$BZI6_JAR.jar" || return 1
++    done
++    unset BZI6_JAR
++    DECODE_APK "system" "system/priv-app/SecSettings/SecSettings.apk" || return 1
++    DECODE_APK "system" "system/priv-app/SettingsProvider/SettingsProvider.apk" || return 1
++    DECODE_APK "system_ext" "priv-app/SystemUI/SystemUI.apk" || return 1
++    EVAL "python3 \"$MODPATH/a376b_android17_product.py\" display \"$APKTOOL_DIR\"" || return 1
++    SET_FLOATING_FEATURE_CONFIG "SEC_FLOATING_FEATURE_LCD_CONFIG_CONTROL_AUTO_BRIGHTNESS" "3"
++    SET_FLOATING_FEATURE_CONFIG "SEC_FLOATING_FEATURE_LCD_CONFIG_HFR_DEFAULT_REFRESH_RATE" "60"
++    SET_FLOATING_FEATURE_CONFIG "SEC_FLOATING_FEATURE_LCD_CONFIG_HFR_MODE" "0"
++    SET_FLOATING_FEATURE_CONFIG "SEC_FLOATING_FEATURE_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE" --delete
++else
++    # SEC_PRODUCT_FEATURE_LCD_CONFIG_CONTROL_AUTO_BRIGHTNESS
++    if [[ "$SOURCE_LCD_CONFIG_CONTROL_AUTO_BRIGHTNESS" != "$TARGET_LCD_CONFIG_CONTROL_AUTO_BRIGHTNESS" ]]; then
++        SET_FLOATING_FEATURE_CONFIG "SEC_FLOATING_FEATURE_LCD_CONFIG_CONTROL_AUTO_BRIGHTNESS" "$TARGET_LCD_CONFIG_CONTROL_AUTO_BRIGHTNESS"
++
++        SMALI_PATCH "system" "system/framework/services.jar" \
++            "smali_classes2/com/android/server/power/PowerManagerUtil.smali" "replace" \
++            "<clinit>()V" \
++            "$SOURCE_LCD_CONFIG_CONTROL_AUTO_BRIGHTNESS" \
++            "$TARGET_LCD_CONFIG_CONTROL_AUTO_BRIGHTNESS"
++        SMALI_PATCH "system" "system/framework/ssrm.jar" \
++            "smali/com/android/server/ssrm/PreMonitor.smali" "replace" \
++            "getBrightness()Ljava/lang/String;" \
++            "$SOURCE_LCD_CONFIG_CONTROL_AUTO_BRIGHTNESS" \
++            "$TARGET_LCD_CONFIG_CONTROL_AUTO_BRIGHTNESS"
++        SMALI_PATCH "system" "system/priv-app/SecSettings/SecSettings.apk" \
++            "smali_classes4/com/samsung/android/settings/Rune.smali" "replace" \
++            "<clinit>()V" \
++            "$SOURCE_LCD_CONFIG_CONTROL_AUTO_BRIGHTNESS" \
++            "$TARGET_LCD_CONFIG_CONTROL_AUTO_BRIGHTNESS"
++    fi
++
++    # SEC_PRODUCT_FEATURE_LCD_CONFIG_SEAMLESS_BRT
++    # SEC_PRODUCT_FEATURE_LCD_CONFIG_SEAMLESS_LUX
++    #
++    # Apply before SEC_PRODUCT_FEATURE_LCD_CONFIG_HFR_* to avoid conflicts
++    REFRESH_RATE_CONFIG_DUMP_METHOD="dump(Ljava/io/PrintWriter;Ljava/lang/String;Z)V"
++    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++        REFRESH_RATE_CONFIG_DUMP_METHOD="dumpProductFeature(Ljava/io/PrintWriter;Ljava/lang/String;Z)V"
++    fi
++    if [[ "$SOURCE_LCD_CONFIG_SEAMLESS_BRT" != "$TARGET_LCD_CONFIG_SEAMLESS_BRT" ]] || \
++            [[ "$SOURCE_LCD_CONFIG_SEAMLESS_LUX" != "$TARGET_LCD_CONFIG_SEAMLESS_LUX" ]]; then
++        if [[ "$SOURCE_LCD_CONFIG_SEAMLESS_BRT" != "none" ]] && [[ "$SOURCE_LCD_CONFIG_SEAMLESS_LUX" != "none" ]] && \
++                [[ "$TARGET_LCD_CONFIG_SEAMLESS_BRT" == "none" ]] && [[ "$TARGET_LCD_CONFIG_SEAMLESS_LUX" == "none" ]]; then
++            if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++                for A376B_HFR_THRESHOLD_METHOD in "$REFRESH_RATE_CONFIG_DUMP_METHOD" \
++                        "getMainInstance()Lcom/samsung/android/hardware/display/RefreshRateConfig;"; do
++                    SMALI_PATCH "system" "system/framework/framework.jar" \
++                        "smali_classes6/com/samsung/android/hardware/display/RefreshRateConfig.smali" "replace" \
++                        "$A376B_HFR_THRESHOLD_METHOD" "$SOURCE_LCD_CONFIG_SEAMLESS_BRT" ""
++                    SMALI_PATCH "system" "system/framework/framework.jar" \
++                        "smali_classes6/com/samsung/android/hardware/display/RefreshRateConfig.smali" "replace" \
++                        "$A376B_HFR_THRESHOLD_METHOD" "$SOURCE_LCD_CONFIG_SEAMLESS_LUX" ""
++                done
++                unset A376B_HFR_THRESHOLD_METHOD
++            else
++                APPLY_PATCH "system" "system/framework/framework.jar" \
++                    "$MODPATH/hfr/framework.jar/0001-Remove-brightness-threshold-values.patch"
++            fi
++        elif [[ "$SOURCE_LCD_CONFIG_SEAMLESS_BRT" != "none" ]] && [[ "$SOURCE_LCD_CONFIG_SEAMLESS_LUX" != "none" ]] && \
++                [[ "$TARGET_LCD_CONFIG_SEAMLESS_BRT" != "none" ]] && [[ "$TARGET_LCD_CONFIG_SEAMLESS_LUX" != "none" ]]; then
++            SMALI_PATCH "system" "system/framework/framework.jar" \
++                "smali_classes6/com/samsung/android/hardware/display/RefreshRateConfig.smali" "replace" \
++                "dump(Ljava/io/PrintWriter;Ljava/lang/String;Z)V" \
++                "SEAMLESS_BRT: $SOURCE_LCD_CONFIG_SEAMLESS_BRT" \
++                "SEAMLESS_BRT: $TARGET_LCD_CONFIG_SEAMLESS_BRT"
++            SMALI_PATCH "system" "system/framework/framework.jar" \
++                "smali_classes6/com/samsung/android/hardware/display/RefreshRateConfig.smali" "replace" \
++                "dump(Ljava/io/PrintWriter;Ljava/lang/String;Z)V" \
++                "SEAMLESS_LUX: $SOURCE_LCD_CONFIG_SEAMLESS_LUX" \
++                "SEAMLESS_LUX: $TARGET_LCD_CONFIG_SEAMLESS_LUX"
++            SMALI_PATCH "system" "system/framework/framework.jar" \
++                "smali_classes6/com/samsung/android/hardware/display/RefreshRateConfig.smali" "replace" \
++                "getMainInstance()Lcom/samsung/android/hardware/display/RefreshRateConfig;" \
++                "$SOURCE_LCD_CONFIG_SEAMLESS_BRT" \
++                "$TARGET_LCD_CONFIG_SEAMLESS_BRT"
++            SMALI_PATCH "system" "system/framework/framework.jar" \
++                "smali_classes6/com/samsung/android/hardware/display/RefreshRateConfig.smali" "replace" \
++                "getMainInstance()Lcom/samsung/android/hardware/display/RefreshRateConfig;" \
++                "$SOURCE_LCD_CONFIG_SEAMLESS_LUX" \
++                "$TARGET_LCD_CONFIG_SEAMLESS_LUX"
++        else
++            # TODO handle these conditions
++            LOG_MISSING_PATCHES "SOURCE_LCD_CONFIG_SEAMLESS_BRT" "TARGET_LCD_CONFIG_SEAMLESS_BRT" || true
++            LOG_MISSING_PATCHES "SOURCE_LCD_CONFIG_SEAMLESS_LUX" "TARGET_LCD_CONFIG_SEAMLESS_LUX"
++        fi
++    fi
++
++    # SEC_PRODUCT_FEATURE_LCD_CONFIG_HFR_DEFAULT_REFRESH_RATE
++    if [[ "$SOURCE_LCD_CONFIG_HFR_DEFAULT_REFRESH_RATE" != "$TARGET_LCD_CONFIG_HFR_DEFAULT_REFRESH_RATE" ]]; then
++        SET_FLOATING_FEATURE_CONFIG "SEC_FLOATING_FEATURE_LCD_CONFIG_HFR_DEFAULT_REFRESH_RATE" "$TARGET_LCD_CONFIG_HFR_DEFAULT_REFRESH_RATE"
++
+         SMALI_PATCH "system" "system/framework/framework.jar" \
+             "smali_classes6/com/samsung/android/hardware/display/RefreshRateConfig.smali" "replace" \
+-            "dump(Ljava/io/PrintWriter;Ljava/lang/String;Z)V" \
+-            "SEAMLESS_BRT: $SOURCE_LCD_CONFIG_SEAMLESS_BRT" \
+-            "SEAMLESS_BRT: $TARGET_LCD_CONFIG_SEAMLESS_BRT"
++            "$REFRESH_RATE_CONFIG_DUMP_METHOD" \
++            "HFR_DEFAULT_REFRESH_RATE: $SOURCE_LCD_CONFIG_HFR_DEFAULT_REFRESH_RATE" \
++            "HFR_DEFAULT_REFRESH_RATE: $TARGET_LCD_CONFIG_HFR_DEFAULT_REFRESH_RATE"
++        SMALI_PATCH "system" "system/priv-app/SecSettings/SecSettings.apk" \
++            "smali_classes4/com/samsung/android/settings/display/SecDisplayUtils.smali" "replace" \
++            "getHighRefreshRateDefaultValue(Landroid/content/Context;I)I" \
++            "$SOURCE_LCD_CONFIG_HFR_DEFAULT_REFRESH_RATE" \
++            "$TARGET_LCD_CONFIG_HFR_DEFAULT_REFRESH_RATE"
++        SMALI_PATCH "system" "system/priv-app/SettingsProvider/SettingsProvider.apk" \
++            "smali/com/android/providers/settings/DatabaseHelper.smali" "replace" \
++            "loadRefreshRateMode(Landroid/database/sqlite/SQLiteStatement;Ljava/lang/String;)V" \
++            "$SOURCE_LCD_CONFIG_HFR_DEFAULT_REFRESH_RATE" \
++            "$TARGET_LCD_CONFIG_HFR_DEFAULT_REFRESH_RATE"
++    fi
++
++    # SEC_PRODUCT_FEATURE_LCD_CONFIG_HFR_MODE
++    if [[ "$SOURCE_LCD_CONFIG_HFR_MODE" != "$TARGET_LCD_CONFIG_HFR_MODE" ]]; then
++        SET_FLOATING_FEATURE_CONFIG "SEC_FLOATING_FEATURE_LCD_CONFIG_HFR_MODE" "$TARGET_LCD_CONFIG_HFR_MODE"
++
+         SMALI_PATCH "system" "system/framework/framework.jar" \
+-            "smali_classes6/com/samsung/android/hardware/display/RefreshRateConfig.smali" "replace" \
+-            "dump(Ljava/io/PrintWriter;Ljava/lang/String;Z)V" \
+-            "SEAMLESS_LUX: $SOURCE_LCD_CONFIG_SEAMLESS_LUX" \
+-            "SEAMLESS_LUX: $TARGET_LCD_CONFIG_SEAMLESS_LUX"
++            "smali_classes2/android/inputmethodservice/SemImsRune.smali" "replace" \
++            "<clinit>()V" \
++            "$SOURCE_LCD_CONFIG_HFR_MODE" \
++            "$TARGET_LCD_CONFIG_HFR_MODE"
++        if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++            SMALI_PATCH "system" "system/framework/framework.jar" \
++                "smali_classes6/com/samsung/android/hardware/display/RefreshRateConfig.smali" "replace" \
++                "$REFRESH_RATE_CONFIG_DUMP_METHOD" "$SOURCE_LCD_CONFIG_HFR_MODE" "$TARGET_LCD_CONFIG_HFR_MODE"
++        else
++            SMALI_PATCH "system" "system/framework/framework.jar" \
++                "smali_classes6/com/samsung/android/hardware/display/RefreshRateConfig.smali" "replace" \
++                "$REFRESH_RATE_CONFIG_DUMP_METHOD" \
++                "HFR_MODE: $SOURCE_LCD_CONFIG_HFR_MODE" \
++                "HFR_MODE: $TARGET_LCD_CONFIG_HFR_MODE"
++        fi
+         SMALI_PATCH "system" "system/framework/framework.jar" \
+             "smali_classes6/com/samsung/android/hardware/display/RefreshRateConfig.smali" "replace" \
+             "getMainInstance()Lcom/samsung/android/hardware/display/RefreshRateConfig;" \
+-            "$SOURCE_LCD_CONFIG_SEAMLESS_BRT" \
+-            "$TARGET_LCD_CONFIG_SEAMLESS_BRT"
++            "$SOURCE_LCD_CONFIG_HFR_MODE" \
++            "$TARGET_LCD_CONFIG_HFR_MODE"
+         SMALI_PATCH "system" "system/framework/framework.jar" \
+-            "smali_classes6/com/samsung/android/hardware/display/RefreshRateConfig.smali" "replace" \
+-            "getMainInstance()Lcom/samsung/android/hardware/display/RefreshRateConfig;" \
+-            "$SOURCE_LCD_CONFIG_SEAMLESS_LUX" \
+-            "$TARGET_LCD_CONFIG_SEAMLESS_LUX"
+-    else
+-        # TODO handle these conditions
+-        LOG_MISSING_PATCHES "SOURCE_LCD_CONFIG_SEAMLESS_BRT" "TARGET_LCD_CONFIG_SEAMLESS_BRT" || true
+-        LOG_MISSING_PATCHES "SOURCE_LCD_CONFIG_SEAMLESS_LUX" "TARGET_LCD_CONFIG_SEAMLESS_LUX"
+-    fi
+-fi
+-
+-# SEC_PRODUCT_FEATURE_LCD_CONFIG_HFR_DEFAULT_REFRESH_RATE
+-if [[ "$SOURCE_LCD_CONFIG_HFR_DEFAULT_REFRESH_RATE" != "$TARGET_LCD_CONFIG_HFR_DEFAULT_REFRESH_RATE" ]]; then
+-    SET_FLOATING_FEATURE_CONFIG "SEC_FLOATING_FEATURE_LCD_CONFIG_HFR_DEFAULT_REFRESH_RATE" "$TARGET_LCD_CONFIG_HFR_DEFAULT_REFRESH_RATE"
+-
+-    SMALI_PATCH "system" "system/framework/framework.jar" \
+-        "smali_classes6/com/samsung/android/hardware/display/RefreshRateConfig.smali" "replace" \
+-        "$REFRESH_RATE_CONFIG_DUMP_METHOD" \
+-        "HFR_DEFAULT_REFRESH_RATE: $SOURCE_LCD_CONFIG_HFR_DEFAULT_REFRESH_RATE" \
+-        "HFR_DEFAULT_REFRESH_RATE: $TARGET_LCD_CONFIG_HFR_DEFAULT_REFRESH_RATE"
+-    SMALI_PATCH "system" "system/priv-app/SecSettings/SecSettings.apk" \
+-        "smali_classes4/com/samsung/android/settings/display/SecDisplayUtils.smali" "replace" \
+-        "getHighRefreshRateDefaultValue(Landroid/content/Context;I)I" \
+-        "$SOURCE_LCD_CONFIG_HFR_DEFAULT_REFRESH_RATE" \
+-        "$TARGET_LCD_CONFIG_HFR_DEFAULT_REFRESH_RATE"
+-    SMALI_PATCH "system" "system/priv-app/SettingsProvider/SettingsProvider.apk" \
+-        "smali/com/android/providers/settings/DatabaseHelper.smali" "replace" \
+-        "loadRefreshRateMode(Landroid/database/sqlite/SQLiteStatement;Ljava/lang/String;)V" \
+-        "$SOURCE_LCD_CONFIG_HFR_DEFAULT_REFRESH_RATE" \
+-        "$TARGET_LCD_CONFIG_HFR_DEFAULT_REFRESH_RATE"
+-fi
+-
+-# SEC_PRODUCT_FEATURE_LCD_CONFIG_HFR_MODE
+-if [[ "$SOURCE_LCD_CONFIG_HFR_MODE" != "$TARGET_LCD_CONFIG_HFR_MODE" ]]; then
+-    SET_FLOATING_FEATURE_CONFIG "SEC_FLOATING_FEATURE_LCD_CONFIG_HFR_MODE" "$TARGET_LCD_CONFIG_HFR_MODE"
+-
+-    SMALI_PATCH "system" "system/framework/framework.jar" \
+-        "smali_classes2/android/inputmethodservice/SemImsRune.smali" "replace" \
+-        "<clinit>()V" \
+-        "$SOURCE_LCD_CONFIG_HFR_MODE" \
+-        "$TARGET_LCD_CONFIG_HFR_MODE"
+-    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
+-        SMALI_PATCH "system" "system/framework/framework.jar" \
+-            "smali_classes6/com/samsung/android/hardware/display/RefreshRateConfig.smali" "replace" \
+-            "$REFRESH_RATE_CONFIG_DUMP_METHOD" "$SOURCE_LCD_CONFIG_HFR_MODE" "$TARGET_LCD_CONFIG_HFR_MODE"
+-    else
+-        SMALI_PATCH "system" "system/framework/framework.jar" \
+-            "smali_classes6/com/samsung/android/hardware/display/RefreshRateConfig.smali" "replace" \
+-            "$REFRESH_RATE_CONFIG_DUMP_METHOD" \
+-            "HFR_MODE: $SOURCE_LCD_CONFIG_HFR_MODE" \
+-            "HFR_MODE: $TARGET_LCD_CONFIG_HFR_MODE"
+-    fi
+-    SMALI_PATCH "system" "system/framework/framework.jar" \
+-        "smali_classes6/com/samsung/android/hardware/display/RefreshRateConfig.smali" "replace" \
+-        "getMainInstance()Lcom/samsung/android/hardware/display/RefreshRateConfig;" \
+-        "$SOURCE_LCD_CONFIG_HFR_MODE" \
+-        "$TARGET_LCD_CONFIG_HFR_MODE"
+-    SMALI_PATCH "system" "system/framework/framework.jar" \
+-        "smali_classes6/com/samsung/android/rune/CoreRune.smali" "replace" \
+-        "<clinit>()V" \
+-        "$SOURCE_LCD_CONFIG_HFR_MODE" \
+-        "$TARGET_LCD_CONFIG_HFR_MODE"
+-    HFR_GAME_MANAGER_CLASS="smali/com/samsung/android/game/GameManagerService.smali"
+-    HFR_GAME_MANAGER_METHOD="isVariableRefreshRateSupported()Ljava/lang/String;"
+-    if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
+-        HFR_GAME_MANAGER_CLASS="smali/com/samsung/android/game/VrrManager.smali"
+-        HFR_GAME_MANAGER_METHOD="<init>(Landroid/hardware/display/DisplayManager;Lcom/samsung/android/game/ActionLogger;Ljava/util/Map;Ljava/util/List;)V"
+-    fi
+-    SMALI_PATCH "system" "system/framework/gamemanager.jar" \
+-        "$HFR_GAME_MANAGER_CLASS" "replace" \
+-        "$HFR_GAME_MANAGER_METHOD" \
+-        "$SOURCE_LCD_CONFIG_HFR_MODE" \
+-        "$TARGET_LCD_CONFIG_HFR_MODE"
+-    SMALI_PATCH "system" "system/framework/secinputdev-service.jar" \
+-        "smali/com/samsung/android/hardware/secinputdev/utils/SemInputFeatures.smali" "replaceall" \
+-        "\\\"$SOURCE_LCD_CONFIG_HFR_MODE\\\"" \
+-        "\\\"$TARGET_LCD_CONFIG_HFR_MODE\\\""
+-    SMALI_PATCH "system" "system/framework/secinputdev-service.jar" \
+-        "smali/com/samsung/android/hardware/secinputdev/utils/SemInputFeaturesExtra.smali" "replaceall" \
+-        "\\\"$SOURCE_LCD_CONFIG_HFR_MODE\\\"" \
+-        "\\\"$TARGET_LCD_CONFIG_HFR_MODE\\\""
+-    SMALI_PATCH "system" "system/framework/services.jar" \
+-        "smali_classes2/com/android/server/power/PowerManagerUtil.smali" "replace" \
+-        "<clinit>()V" \
+-        "$SOURCE_LCD_CONFIG_HFR_MODE" \
+-        "$TARGET_LCD_CONFIG_HFR_MODE"
+-    SMALI_PATCH "system" "system/priv-app/SecSettings/SecSettings.apk" \
+-        "smali_classes4/com/samsung/android/settings/display/SecDisplayUtils.smali" "replace" \
+-        "getHighRefreshRateSeamlessType(I)I" \
+-        "$SOURCE_LCD_CONFIG_HFR_MODE" \
+-        "$TARGET_LCD_CONFIG_HFR_MODE"
+-    SMALI_PATCH "system" "system/priv-app/SecSettings/SecSettings.apk" \
+-        "smali_classes4/com/samsung/android/settings/display/SecDisplayUtils.smali" "replace" \
+-        "isSupportMaxHS60RefreshRate(I)Z" \
+-        "$SOURCE_LCD_CONFIG_HFR_MODE" \
+-        "$TARGET_LCD_CONFIG_HFR_MODE"
+-    SMALI_PATCH "system" "system/priv-app/SettingsProvider/SettingsProvider.apk" \
+-        "smali/com/android/providers/settings/DatabaseHelper.smali" "replace" \
+-        "loadRefreshRateMode(Landroid/database/sqlite/SQLiteStatement;Ljava/lang/String;)V" \
+-        "$SOURCE_LCD_CONFIG_HFR_MODE" \
+-        "$TARGET_LCD_CONFIG_HFR_MODE"
+-    SMALI_PATCH "system_ext" "priv-app/SystemUI/SystemUI.apk" \
+-        "smali/com/android/systemui/BasicRune.smali" "replace" \
+-        "<clinit>()V" \
+-        "$SOURCE_LCD_CONFIG_HFR_MODE" \
+-        "$TARGET_LCD_CONFIG_HFR_MODE"
+-    SMALI_PATCH "system_ext" "priv-app/SystemUI/SystemUI.apk" \
+-        "smali/com/android/systemui/LsRune.smali" "replace" \
+-        "<clinit>()V" \
+-        "$SOURCE_LCD_CONFIG_HFR_MODE" \
+-        "$TARGET_LCD_CONFIG_HFR_MODE"
+-fi
+-
+-# SEC_PRODUCT_FEATURE_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE
+-if [[ "$SOURCE_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE" != "$TARGET_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE" ]]; then
+-    if [[ "$TARGET_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE" != "none" ]]; then
+-        SET_FLOATING_FEATURE_CONFIG "SEC_FLOATING_FEATURE_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE" "$TARGET_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE"
+-    else
+-        SET_FLOATING_FEATURE_CONFIG "SEC_FLOATING_FEATURE_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE" "0"
+-    fi
+-
+-    if [[ "$SOURCE_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE" != "none" ]]; then
++            "smali_classes6/com/samsung/android/rune/CoreRune.smali" "replace" \
++            "<clinit>()V" \
++            "$SOURCE_LCD_CONFIG_HFR_MODE" \
++            "$TARGET_LCD_CONFIG_HFR_MODE"
++        HFR_GAME_MANAGER_CLASS="smali/com/samsung/android/game/GameManagerService.smali"
++        HFR_GAME_MANAGER_METHOD="isVariableRefreshRateSupported()Ljava/lang/String;"
+         if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++            HFR_GAME_MANAGER_CLASS="smali/com/samsung/android/game/VrrManager.smali"
++            HFR_GAME_MANAGER_METHOD="<init>(Landroid/hardware/display/DisplayManager;Lcom/samsung/android/game/ActionLogger;Ljava/util/Map;Ljava/util/List;)V"
++        fi
++        SMALI_PATCH "system" "system/framework/gamemanager.jar" \
++            "$HFR_GAME_MANAGER_CLASS" "replace" \
++            "$HFR_GAME_MANAGER_METHOD" \
++            "$SOURCE_LCD_CONFIG_HFR_MODE" \
++            "$TARGET_LCD_CONFIG_HFR_MODE"
++        SMALI_PATCH "system" "system/framework/secinputdev-service.jar" \
++            "smali/com/samsung/android/hardware/secinputdev/utils/SemInputFeatures.smali" "replaceall" \
++            "\\\"$SOURCE_LCD_CONFIG_HFR_MODE\\\"" \
++            "\\\"$TARGET_LCD_CONFIG_HFR_MODE\\\""
++        SMALI_PATCH "system" "system/framework/secinputdev-service.jar" \
++            "smali/com/samsung/android/hardware/secinputdev/utils/SemInputFeaturesExtra.smali" "replaceall" \
++            "\\\"$SOURCE_LCD_CONFIG_HFR_MODE\\\"" \
++            "\\\"$TARGET_LCD_CONFIG_HFR_MODE\\\""
++        SMALI_PATCH "system" "system/framework/services.jar" \
++            "smali_classes2/com/android/server/power/PowerManagerUtil.smali" "replace" \
++            "<clinit>()V" \
++            "$SOURCE_LCD_CONFIG_HFR_MODE" \
++            "$TARGET_LCD_CONFIG_HFR_MODE"
++        SMALI_PATCH "system" "system/priv-app/SecSettings/SecSettings.apk" \
++            "smali_classes4/com/samsung/android/settings/display/SecDisplayUtils.smali" "replace" \
++            "getHighRefreshRateSeamlessType(I)I" \
++            "$SOURCE_LCD_CONFIG_HFR_MODE" \
++            "$TARGET_LCD_CONFIG_HFR_MODE"
++        SMALI_PATCH "system" "system/priv-app/SecSettings/SecSettings.apk" \
++            "smali_classes4/com/samsung/android/settings/display/SecDisplayUtils.smali" "replace" \
++            "isSupportMaxHS60RefreshRate(I)Z" \
++            "$SOURCE_LCD_CONFIG_HFR_MODE" \
++            "$TARGET_LCD_CONFIG_HFR_MODE"
++        SMALI_PATCH "system" "system/priv-app/SettingsProvider/SettingsProvider.apk" \
++            "smali/com/android/providers/settings/DatabaseHelper.smali" "replace" \
++            "loadRefreshRateMode(Landroid/database/sqlite/SQLiteStatement;Ljava/lang/String;)V" \
++            "$SOURCE_LCD_CONFIG_HFR_MODE" \
++            "$TARGET_LCD_CONFIG_HFR_MODE"
++        SMALI_PATCH "system_ext" "priv-app/SystemUI/SystemUI.apk" \
++            "smali/com/android/systemui/BasicRune.smali" "replace" \
++            "<clinit>()V" \
++            "$SOURCE_LCD_CONFIG_HFR_MODE" \
++            "$TARGET_LCD_CONFIG_HFR_MODE"
++        SMALI_PATCH "system_ext" "priv-app/SystemUI/SystemUI.apk" \
++            "smali/com/android/systemui/LsRune.smali" "replace" \
++            "<clinit>()V" \
++            "$SOURCE_LCD_CONFIG_HFR_MODE" \
++            "$TARGET_LCD_CONFIG_HFR_MODE"
++    fi
++
++    # SEC_PRODUCT_FEATURE_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE
++    if [[ "$SOURCE_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE" != "$TARGET_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE" ]]; then
++        if [[ "$TARGET_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE" != "none" ]]; then
++            SET_FLOATING_FEATURE_CONFIG "SEC_FLOATING_FEATURE_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE" "$TARGET_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE"
++        else
++            SET_FLOATING_FEATURE_CONFIG "SEC_FLOATING_FEATURE_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE" "0"
++        fi
++
++        if [[ "$SOURCE_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE" != "none" ]]; then
++            if [ "${ROM_SOURCE_CONFIG:-}" = "essi_a376b_android16" ]; then
++                SMALI_PATCH "system" "system/framework/framework.jar" \
++                    "smali_classes6/com/samsung/android/hardware/display/RefreshRateConfig.smali" "replace" \
++                    "$REFRESH_RATE_CONFIG_DUMP_METHOD" "$SOURCE_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE" \
++                    "${TARGET_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE//none/}"
++            else
++                SMALI_PATCH "system" "system/framework/framework.jar" \
++                    "smali_classes6/com/samsung/android/hardware/display/RefreshRateConfig.smali" "replace" \
++                    "$REFRESH_RATE_CONFIG_DUMP_METHOD" \
++                    "HFR_SUPPORTED_REFRESH_RATE: $SOURCE_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE" \
++                    "HFR_SUPPORTED_REFRESH_RATE: ${TARGET_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE//none/}"
++            fi
+             SMALI_PATCH "system" "system/framework/framework.jar" \
+                 "smali_classes6/com/samsung/android/hardware/display/RefreshRateConfig.smali" "replace" \
+-                "$REFRESH_RATE_CONFIG_DUMP_METHOD" "$SOURCE_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE" \
++                "getMainInstance()Lcom/samsung/android/hardware/display/RefreshRateConfig;" \
++                "$SOURCE_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE" \
+                 "${TARGET_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE//none/}"
+-        else
++            SMALI_PATCH "system" "system/priv-app/SecSettings/SecSettings.apk" \
++                "smali_classes4/com/samsung/android/settings/display/SecDisplayUtils.smali" "replace" \
++                "getHighRefreshRateSupportedValues(I)[Ljava/lang/String;" \
++                "$SOURCE_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE" \
++                "${TARGET_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE//none/}"
++            SMALI_PATCH "system_ext" "priv-app/SystemUI/SystemUI.apk" \
++                "smali_classes2/com/android/systemui/keyguard/KeyguardViewMediatorHelperImpl\$\$ExternalSyntheticLambda0.smali" "replace" \
++                "invoke()Ljava/lang/Object;" \
++                "$SOURCE_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE" \
++                "${TARGET_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE//none/}"
++        else
++            # TODO handle this condition
++            LOG_MISSING_PATCHES "SOURCE_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE" "TARGET_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE"
++        fi
++    fi
++
++    # SEC_PRODUCT_FEATURE_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE_NS
++    if [[ "$SOURCE_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE_NS" != "$TARGET_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE_NS" ]]; then
++        if [[ "$SOURCE_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE_NS" != "none" ]]; then
++            if [[ "$TARGET_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE_NS" != "none" ]]; then
++                SET_FLOATING_FEATURE_CONFIG "SEC_FLOATING_FEATURE_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE_NS" "$TARGET_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE_NS"
++            else
++                SET_FLOATING_FEATURE_CONFIG "SEC_FLOATING_FEATURE_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE_NS" --delete
++            fi
++
+             SMALI_PATCH "system" "system/framework/framework.jar" \
+                 "smali_classes6/com/samsung/android/hardware/display/RefreshRateConfig.smali" "replace" \
+-                "$REFRESH_RATE_CONFIG_DUMP_METHOD" \
+-                "HFR_SUPPORTED_REFRESH_RATE: $SOURCE_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE" \
+-                "HFR_SUPPORTED_REFRESH_RATE: ${TARGET_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE//none/}"
+-        fi
+-        SMALI_PATCH "system" "system/framework/framework.jar" \
+-            "smali_classes6/com/samsung/android/hardware/display/RefreshRateConfig.smali" "replace" \
+-            "getMainInstance()Lcom/samsung/android/hardware/display/RefreshRateConfig;" \
+-            "$SOURCE_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE" \
+-            "${TARGET_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE//none/}"
+-        SMALI_PATCH "system" "system/priv-app/SecSettings/SecSettings.apk" \
+-            "smali_classes4/com/samsung/android/settings/display/SecDisplayUtils.smali" "replace" \
+-            "getHighRefreshRateSupportedValues(I)[Ljava/lang/String;" \
+-            "$SOURCE_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE" \
+-            "${TARGET_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE//none/}"
+-        SMALI_PATCH "system_ext" "priv-app/SystemUI/SystemUI.apk" \
+-            "smali_classes2/com/android/systemui/keyguard/KeyguardViewMediatorHelperImpl\$\$ExternalSyntheticLambda0.smali" "replace" \
+-            "invoke()Ljava/lang/Object;" \
+-            "$SOURCE_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE" \
+-            "${TARGET_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE//none/}"
+-    else
+-        # TODO handle this condition
+-        LOG_MISSING_PATCHES "SOURCE_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE" "TARGET_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE"
+-    fi
+-fi
+-
+-# SEC_PRODUCT_FEATURE_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE_NS
+-if [[ "$SOURCE_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE_NS" != "$TARGET_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE_NS" ]]; then
+-    if [[ "$SOURCE_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE_NS" != "none" ]]; then
+-        if [[ "$TARGET_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE_NS" != "none" ]]; then
+-            SET_FLOATING_FEATURE_CONFIG "SEC_FLOATING_FEATURE_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE_NS" "$TARGET_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE_NS"
+-        else
+-            SET_FLOATING_FEATURE_CONFIG "SEC_FLOATING_FEATURE_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE_NS" --delete
+-        fi
+-
+-        SMALI_PATCH "system" "system/framework/framework.jar" \
+-            "smali_classes6/com/samsung/android/hardware/display/RefreshRateConfig.smali" "replace" \
+-            "dump(Ljava/io/PrintWriter;Ljava/lang/String;Z)V" \
+-            "HFR_SUPPORTED_REFRESH_RATE_NS: $SOURCE_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE_NS" \
+-            "HFR_SUPPORTED_REFRESH_RATE_NS: ${TARGET_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE_NS//none/}"
+-        SMALI_PATCH "system" "system/framework/framework.jar" \
+-            "smali_classes6/com/samsung/android/hardware/display/RefreshRateConfig.smali" "replace" \
+-            "getMainInstance()Lcom/samsung/android/hardware/display/RefreshRateConfig;" \
+-            "$SOURCE_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE_NS" \
+-            "${TARGET_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE_NS//none/}"
+-    else
+-        # TODO handle this condition
+-        LOG_MISSING_PATCHES "SOURCE_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE_NS" "TARGET_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE_NS"
++                "dump(Ljava/io/PrintWriter;Ljava/lang/String;Z)V" \
++                "HFR_SUPPORTED_REFRESH_RATE_NS: $SOURCE_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE_NS" \
++                "HFR_SUPPORTED_REFRESH_RATE_NS: ${TARGET_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE_NS//none/}"
++            SMALI_PATCH "system" "system/framework/framework.jar" \
++                "smali_classes6/com/samsung/android/hardware/display/RefreshRateConfig.smali" "replace" \
++                "getMainInstance()Lcom/samsung/android/hardware/display/RefreshRateConfig;" \
++                "$SOURCE_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE_NS" \
++                "${TARGET_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE_NS//none/}"
++        else
++            # TODO handle this condition
++            LOG_MISSING_PATCHES "SOURCE_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE_NS" "TARGET_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE_NS"
++        fi
+     fi
+ fi
+ 
+diff --git a/unica/patches/product_feature/a376b_android17_product.py b/unica/patches/product_feature/a376b_android17_product.py
+--- a/unica/patches/product_feature/a376b_android17_product.py
++++ b/unica/patches/product_feature/a376b_android17_product.py
+@@ -2,9 +2,14 @@
+ """Adapt reviewed BZI6 product constants through the fork's decoded Smali tree."""
+ from hashlib import sha256
+ from pathlib import Path
++import json
+ import os
+ import re
++import subprocess
+ import sys
++import tempfile
++import xml.etree.ElementTree as ET
++import zipfile
+ 
+ 
+ SERVICES = "system/framework/services.jar"
+@@ -117,14 +122,158 @@
+         edits.replace(path, "getAvailabilityStatus()I", "const/4 p0, 0x3", "const/4 p0, 0x0")
+ 
+ 
++def display_scope():
++    for suffix, source, target in (
++        ("CONTROL_AUTO_BRIGHTNESS", "5", "3"),
++        ("HFR_DEFAULT_REFRESH_RATE", "120", "60"), ("HFR_MODE", "2", "0"),
++        ("HFR_SUPPORTED_REFRESH_RATE", "60,120", "none"),
++        ("HFR_SUPPORTED_REFRESH_RATE_NS", "none", "none"),
++        ("SEAMLESS_BRT", "89,91", "none"), ("SEAMLESS_LUX", "260,2500", "none"),
++    ):
++        for prefix, value in (("SOURCE", source), ("TARGET", target)):
++            key = prefix + "_LCD_CONFIG_" + suffix
++            if os.environ.get(key) != value:
++                raise RuntimeError("Unreviewed BZI6 display feature: " + key)
++
++
++def display_rules():
++    return json.loads(Path(__file__).with_name("a376b_android17_display.json").read_text())["rules"]
++
++
++def display(edits):
++    display_scope()
++    for rule in display_rules():
++        path = edits.locate(rule["artifact"], rule["descriptor"])
++        if "field_replace" in rule:
++            if sha256(edits.pending[path].encode()).hexdigest() != rule["class_sha256"]:
++                raise RuntimeError("Unreviewed BZI6 input features: " + path.name)
++            old, new = rule["field_replace"]
++            if edits.pending[path].count(old) != 1:
++                raise RuntimeError("BZI6 input HFR field changed: " + path.name)
++            edits.pending[path] = edits.pending[path].replace(old, new, 1)
++        for entry in rule["methods"]:
++            name = entry["signature"]
++            edits.pin(path, name, entry["sha256"])
++            for old, new in entry["replace"]:
++                edits.replace(path, name, old, new)
++    # BZI6 Rune no longer contains the compiled SPF string "5". Its three
++    # unchanged, pinned methods query real sensors; TYPE_LIGHT remains 5.
++    # Power's hash includes lights + shipping; LsRune's includes rear FP.
++
++
++def compiled_class(archive, descriptor, tools):
++    found = []
++    with tempfile.TemporaryDirectory(prefix="bzi6-product-verify-") as directory:
++        temporary = Path(directory)
++        with zipfile.ZipFile(archive) as z:
++            names = [n for n in z.namelist() if re.fullmatch(r"classes\d*\.dex", n)]
++            for name in names:
++                data = z.read(name)
++                if ("L" + descriptor + ";").encode() not in data:
++                    continue
++                dex = temporary / name
++                dex.write_bytes(data)
++                output = temporary / (name + "-smali")
++                result = subprocess.run(["java", "-cp", str(tools / "bin/apktool.jar"),
++                    "com.android.tools.smali.baksmali.Main", "disassemble", "--api", "29",
++                    "--debug-info", "false", "--accessor-comments", "false", "--use-locals",
++                    "--sequential-labels", "--classes", "L" + descriptor + ";",
++                    "-o", str(output), str(dex)], capture_output=True, text=True)
++                if result.returncode:
++                    raise RuntimeError("BZI6 product DEX decode failed: " + result.stderr + result.stdout)
++                path = output / (descriptor + ".smali")
++                if path.exists():
++                    found.append(path.read_text())
++    if len(found) != 1:
++        raise RuntimeError("Missing/ambiguous compiled BZI6 product class: " + descriptor)
++    return found[0]
++
++
++def has_instruction(body, line):
++    normalize = lambda text: text.strip().replace("const-string/jumbo ", "const-string ")
++    return normalize(line) in [normalize(x) for x in body.splitlines()]
++
++
++def verify_compiled(work, tools):
++    scope()
++    display_scope()
++    cache = {}
++
++    # Work layout stores system artifacts under system/system and system_ext
++    # artifacts directly under system_ext. Resolve both explicitly.
++    def read(artifact, descriptor):
++        key = artifact, descriptor
++        if key not in cache:
++            archive = work / ("system/" + artifact if artifact.startswith("system/") else artifact)
++            cache[key] = compiled_class(archive, descriptor, tools)
++        return cache[key]
++
++    for rule in display_rules():
++        text = read(rule["artifact"], rule["descriptor"])
++        if "field_replace" in rule:
++            old, new = rule["field_replace"]
++            if old in text or new not in text:
++                raise RuntimeError("Stale compiled BZI6 input HFR field")
++        for entry in rule["methods"]:
++            body = method(text, entry["signature"]).group()
++            for old, new in entry["replace"]:
++                if has_instruction(body, old) or not has_instruction(body, new):
++                    raise RuntimeError("Stale compiled BZI6 display constant: " + rule["descriptor"] + " " + entry["signature"])
++
++    rune = read(SETTINGS, "com/samsung/android/settings/Rune")
++    for name, tokens in {
++        "supportAutoBrightness(Landroid/content/Context;)Z": ("->supportLightSensor(", "->supportCameraSensor("),
++        "supportLightSensor(Landroid/content/Context;)Z": ("->getSensorList(", "->getType()I", "const/4 v3, 0x5"),
++        "supportCameraSensor(Landroid/content/Context;)Z": ("->getDefaultSensor(", "const/4 v0, 0x5", "0x10044"),
++    }.items():
++        body = method(rune, name).group()
++        if any(token not in body for token in tokens):
++            raise RuntimeError("Compiled BZI6 runtime brightness sensor path changed: " + name)
++
++    for artifact, descriptor, name, register in (
++        ("system/framework/esecomm.jar", "com/sec/esecomm/EsecommAdapter", CLINIT, "v0"),
++        (SERVICES, "com/android/server/enterprise/hdm/HdmSakManager", "isSupported(Landroid/content/Context;)Z", "v3"),
++        (SERVICES, POWER, CLINIT, "v0"),
++        (SERVICES, "com/android/server/sepunion/EngmodeService$EngmodeTimeThread", CLINIT, "v0"),
++        (SERVICES, "com/android/server/SystemServer", "startOtherServices(Lcom/android/server/utils/TimingsTraceAndSlog;)V", "v0"),
++    ):
++        body = method(read(artifact, descriptor), name).group()
++        if has_instruction(body, f'const-string {register}, "36"') or not has_instruction(body, f'const-string {register}, "26"'):
++            raise RuntimeError("Stale compiled BZI6 shipping API: " + descriptor)
++        if descriptor.endswith("/SystemServer") and ('"MAINLINE_API_LEVEL: 36"' in body or '"MAINLINE_API_LEVEL: 26"' not in body):
++            raise RuntimeError("Stale compiled BZI6 shipping API log")
++    for cls in ("VideoEnhancerPreferenceController", "SecBrightenUpVideoPreferenceController"):
++        body = method(read(SETTINGS, "com/samsung/android/settings/usefulfeature/videoenhancer/" + cls), "getAvailabilityStatus()I").group()
++        if not has_instruction(body, "const/4 p0, 0x0") or has_instruction(body, "const/4 p0, 0x3"):
++            raise RuntimeError("Stale compiled BZI6 HDR availability: " + cls)
++    feature_root = ET.parse(work / "system/system/etc/floating_feature.xml").getroot()
++    for tag, expected in {
++        "SEC_FLOATING_FEATURE_COMMON_SUPPORT_HDR_EFFECT": "TRUE",
++        "SEC_FLOATING_FEATURE_LCD_CONFIG_CONTROL_AUTO_BRIGHTNESS": "3",
++        "SEC_FLOATING_FEATURE_LCD_CONFIG_HFR_DEFAULT_REFRESH_RATE": "60",
++        "SEC_FLOATING_FEATURE_LCD_CONFIG_HFR_MODE": "0",
++    }.items():
++        nodes = feature_root.findall(tag)
++        if len(nodes) != 1 or (nodes[0].text or "").strip() != expected:
++            raise RuntimeError("Stale final BZI6 display feature: " + tag)
++    for tag in ("SEC_FLOATING_FEATURE_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE",
++                "SEC_FLOATING_FEATURE_LCD_CONFIG_HFR_SUPPORTED_REFRESH_RATE_NS"):
++        if any((node.text or "").strip() for node in feature_root.findall(tag)):
++            raise RuntimeError("Unexpected final BZI6 VRR list: " + tag)
++    print("PASS compiled BZI6 product: shipping26, HDR availability, 60Hz/non-VRR, brightness3 and runtime sensor queries")
++
++
+ def adapt(root, phase):
+     scope()
+     edits = Edits(root)
+-    {"shipping": shipping, "hdr": hdr}[phase](edits)
++    {"shipping": shipping, "hdr": hdr, "display": display}[phase](edits)
+     print(f"PASS BZI6 product {phase}: {edits.write()} changed classes; validated before writes")
+ 
+ 
+ if __name__ == "__main__":
+-    if len(sys.argv) != 3 or sys.argv[1] not in ("shipping", "hdr"):
+-        raise SystemExit("usage: a376b_android17_product.py shipping|hdr DECODED")
+-    adapt(Path(sys.argv[2]), sys.argv[1])
++    if len(sys.argv) == 3 and sys.argv[1] in ("shipping", "hdr", "display"):
++        adapt(Path(sys.argv[2]), sys.argv[1])
++    elif len(sys.argv) == 4 and sys.argv[1] == "verify-compiled":
++        verify_compiled(Path(sys.argv[2]), Path(sys.argv[3]))
++    else:
++        raise SystemExit("usage: a376b_android17_product.py shipping|hdr|display DECODED | verify-compiled WORK TOOLS")
+diff --git a/unica/patches/product_feature/a376b_android17_display.json b/unica/patches/product_feature/a376b_android17_display.json
+--- /dev/null
++++ b/unica/patches/product_feature/a376b_android17_display.json
+@@ -0,0 +1,303 @@
++{
++  "donor": "A376BXXU5BZI6",
++  "decode": "apktool --no-debug-info -r",
++  "rules": [
++    {
++      "artifact": "system/framework/framework.jar",
++      "descriptor": "android/inputmethodservice/SemImsRune",
++      "methods": [
++        {
++          "signature": "<clinit>()V",
++          "sha256": "60444e84dc20dd428c4b1ccd6ac51d92bc9decf6fbd60961c17ac609583148a6",
++          "replace": [
++            [
++              "const-string v0, \"2\"",
++              "const-string v0, \"0\""
++            ]
++          ]
++        }
++      ]
++    },
++    {
++      "artifact": "system/framework/framework.jar",
++      "descriptor": "com/samsung/android/hardware/display/RefreshRateConfig",
++      "methods": [
++        {
++          "signature": "dumpProductFeature(Ljava/io/PrintWriter;Ljava/lang/String;Z)V",
++          "sha256": "68dbe9d0f3c2924979a7ccc19ff986fbff352a2fdfbb7bfc817ef39ca60c1862",
++          "replace": [
++            [
++              "const-string v1, \"HFR_DEFAULT_REFRESH_RATE: 120\"",
++              "const-string v1, \"HFR_DEFAULT_REFRESH_RATE: 60\""
++            ],
++            [
++              "const-string v1, \"2\"",
++              "const-string v1, \"0\""
++            ],
++            [
++              "const-string v2, \"60,120\"",
++              "const-string v2, \"\""
++            ],
++            [
++              "const-string v2, \"89,91\"",
++              "const-string v2, \"\""
++            ],
++            [
++              "const-string v1, \"260,2500\"",
++              "const-string v1, \"\""
++            ]
++          ]
++        },
++        {
++          "signature": "getMainInstance()Lcom/samsung/android/hardware/display/RefreshRateConfig;",
++          "sha256": "013c87628087d09e23aa7aec240a2fc0fc1e72b5158ed31995dc6db0ecef4920",
++          "replace": [
++            [
++              "const-string v3, \"89,91\"",
++              "const-string v3, \"\""
++            ],
++            [
++              "const-string v4, \"260,2500\"",
++              "const-string v4, \"\""
++            ],
++            [
++              "const-string v1, \"2\"",
++              "const-string v1, \"0\""
++            ],
++            [
++              "const-string v2, \"60,120\"",
++              "const-string v2, \"\""
++            ]
++          ]
++        }
++      ]
++    },
++    {
++      "artifact": "system/framework/framework.jar",
++      "descriptor": "com/samsung/android/rune/CoreRune",
++      "methods": [
++        {
++          "signature": "<clinit>()V",
++          "sha256": "56d6e8ff4f638415b65c1b6afedd07bf5df1f163d98997d3d1dc889338ca6931",
++          "replace": [
++            [
++              "const-string v0, \"2\"",
++              "const-string v0, \"0\""
++            ]
++          ]
++        }
++      ]
++    },
++    {
++      "artifact": "system/framework/services.jar",
++      "descriptor": "com/android/server/power/PowerManagerUtil",
++      "methods": [
++        {
++          "signature": "<clinit>()V",
++          "sha256": "136862ea3a04e1a3b00a550b71a89e27afce94d5cfacb65f24bad6dcc5c09155",
++          "replace": [
++            [
++              "const-string v7, \"5\"",
++              "const-string v7, \"3\""
++            ],
++            [
++              "const-string v12, \"2\"",
++              "const-string v12, \"0\""
++            ]
++          ]
++        }
++      ]
++    },
++    {
++      "artifact": "system/framework/ssrm.jar",
++      "descriptor": "com/android/server/ssrm/PreMonitor",
++      "methods": [
++        {
++          "signature": "getBrightness()Ljava/lang/String;",
++          "sha256": "048d34adf002618219bdbd64be4d9904fb33bd6028e602c4922a7ab2df736c2d",
++          "replace": [
++            [
++              "const-string v2, \"5\"",
++              "const-string v2, \"3\""
++            ]
++          ]
++        }
++      ]
++    },
++    {
++      "artifact": "system/priv-app/SecSettings/SecSettings.apk",
++      "descriptor": "com/samsung/android/settings/display/SecDisplayUtils",
++      "methods": [
++        {
++          "signature": "getHighRefreshRateDefaultValue(Landroid/content/Context;I)I",
++          "sha256": "8279b29e9fd47c346cf23238dde5c28d9d07e83985bc1e55fb724490f87e5618",
++          "replace": [
++            [
++              "const-string v0, \"120\"",
++              "const-string v0, \"60\""
++            ]
++          ]
++        },
++        {
++          "signature": "getHighRefreshRateSeamlessType(I)I",
++          "sha256": "317665f1d5de3d62e782f7a1769516909ecd3dd058ddb3a0172e8fe5d0215a4a",
++          "replace": [
++            [
++              "const-string p0, \"2\"",
++              "const-string p0, \"0\""
++            ]
++          ]
++        },
++        {
++          "signature": "isSupportMaxHS60RefreshRate(I)Z",
++          "sha256": "abe562fd70e818eef7b8ceac872edb9427e80f8c9ba39198626a0940e3c6ad49",
++          "replace": [
++            [
++              "const-string p0, \"2\"",
++              "const-string p0, \"0\""
++            ],
++            [
++              "const-string p0, \"60,120\"",
++              "const-string p0, \"\""
++            ]
++          ]
++        },
++        {
++          "signature": "getHighRefreshRateSupportedValues(I)[Ljava/lang/String;",
++          "sha256": "6ef7495cff8bc43be1b137b1cb6751816ce92a9682022139422cd664715b43b0",
++          "replace": [
++            [
++              "const-string p0, \"60,120\"",
++              "const-string p0, \"\""
++            ]
++          ]
++        }
++      ]
++    },
++    {
++      "artifact": "system/priv-app/SecSettings/SecSettings.apk",
++      "descriptor": "com/samsung/android/settings/Rune",
++      "methods": [
++        {
++          "signature": "supportAutoBrightness(Landroid/content/Context;)Z",
++          "sha256": "72eaa097d12f0dd486b02a0268340effc61d0bb49609839338b6afa2e883b85c",
++          "replace": []
++        },
++        {
++          "signature": "supportLightSensor(Landroid/content/Context;)Z",
++          "sha256": "45992c29bb9223418aefc7f016155d6a0d3d16305b752d168ddb492bd56cd901",
++          "replace": []
++        },
++        {
++          "signature": "supportCameraSensor(Landroid/content/Context;)Z",
++          "sha256": "f3a23fbb7850c7953adb255a08fed2116e0885c428b708bff2e70eadeeedf293",
++          "replace": []
++        }
++      ]
++    },
++    {
++      "artifact": "system/priv-app/SettingsProvider/SettingsProvider.apk",
++      "descriptor": "com/android/providers/settings/DatabaseHelper",
++      "methods": [
++        {
++          "signature": "loadRefreshRateMode(Landroid/database/sqlite/SQLiteStatement;Ljava/lang/String;)V",
++          "sha256": "297a9b041ebdbc8acfacfac0fd668b0999d3f5729cd887b36c94e13f9fd7ea06",
++          "replace": [
++            [
++              "const-string v0, \"2\"",
++              "const-string v0, \"0\""
++            ],
++            [
++              "const-string v2, \"120\"",
++              "const-string v2, \"60\""
++            ]
++          ]
++        }
++      ]
++    },
++    {
++      "artifact": "system/framework/gamemanager.jar",
++      "descriptor": "com/samsung/android/game/VrrManager",
++      "methods": [
++        {
++          "signature": "<init>(Landroid/hardware/display/DisplayManager;Lcom/samsung/android/game/ActionLogger;Ljava/util/Map;Ljava/util/List;)V",
++          "sha256": "6e80198aa2ce07be8173ae817da48279345f1e65f8fb65d9164c2739ed366c04",
++          "replace": [
++            [
++              "const-string v0, \"2\"",
++              "const-string v0, \"0\""
++            ]
++          ]
++        }
++      ]
++    },
++    {
++      "artifact": "system_ext/priv-app/SystemUI/SystemUI.apk",
++      "descriptor": "com/android/systemui/BasicRune",
++      "methods": [
++        {
++          "signature": "<clinit>()V",
++          "sha256": "c818bfafe58b6dedb297b0c5d35424f536b3c2e60ef378a2be2dde921ee9dfb3",
++          "replace": [
++            [
++              "const-string v0, \"2\"",
++              "const-string v0, \"0\""
++            ]
++          ]
++        }
++      ]
++    },
++    {
++      "artifact": "system_ext/priv-app/SystemUI/SystemUI.apk",
++      "descriptor": "com/android/systemui/LsRune",
++      "methods": [
++        {
++          "signature": "<clinit>()V",
++          "sha256": "4dac8bb22d6d167c616c47db1bdddd241f6773d077acb112ce2a251e3376279f",
++          "replace": [
++            [
++              "const-string v9, \"2\"",
++              "const-string v9, \"0\""
++            ]
++          ]
++        }
++      ]
++    },
++    {
++      "artifact": "system_ext/priv-app/SystemUI/SystemUI.apk",
++      "descriptor": "com/android/systemui/keyguard/KeyguardViewMediatorHelperImpl$$ExternalSyntheticLambda0",
++      "methods": [
++        {
++          "signature": "invoke()Ljava/lang/Object;",
++          "sha256": "1d35f88c130145d9308ed6fdf3163497965e49911d539aa3f1eaf734a07bc094",
++          "replace": [
++            [
++              "const-string p0, \"60,120\"",
++              "const-string p0, \"\""
++            ]
++          ]
++        }
++      ]
++    },
++    {
++      "artifact": "system/framework/secinputdev-service.jar",
++      "descriptor": "com/samsung/android/hardware/secinputdev/utils/SemInputFeatures",
++      "methods": [],
++      "class_sha256": "d0c0fa197e8262303f126637e0d65c274e6d0d97b4d2dcb17dbd7e2b2b9f9189",
++      "field_replace": [
++        ".field public static final LCD_CONFIG_HFR_MODE:Ljava/lang/String; = \"2\"",
++        ".field public static final LCD_CONFIG_HFR_MODE:Ljava/lang/String; = \"0\""
++      ]
++    },
++    {
++      "artifact": "system/framework/secinputdev-service.jar",
++      "descriptor": "com/samsung/android/hardware/secinputdev/utils/SemInputFeaturesExtra",
++      "methods": [],
++      "class_sha256": "43abf61408664baeb2970ed847450a84c61f85a6a7e33dd07a44477674e6763f",
++      "field_replace": [
++        ".field public static final LCD_CONFIG_HFR_MODE:Ljava/lang/String; = \"2\"",
++        ".field public static final LCD_CONFIG_HFR_MODE:Ljava/lang/String; = \"0\""
++      ]
++    }
++  ]
++}
+diff --git a/scripts/internal/verify_exynos9810_release_defaults.py b/scripts/internal/verify_exynos9810_release_defaults.py
+--- a/scripts/internal/verify_exynos9810_release_defaults.py
++++ b/scripts/internal/verify_exynos9810_release_defaults.py
+@@ -41,6 +41,8 @@
+         subprocess.run([sys.executable,str(camera_checker),"verify-work",str(work)],check=True)
+         media_checker=ROOT/"unica/patches/legacy/a376b_android17_media.py"
+         subprocess.run([sys.executable,str(media_checker),"verify-compiled",str(work),str(ROOT/"out/tools")],check=True)
++        product_checker=ROOT/"unica/patches/product_feature/a376b_android17_product.py"
++        subprocess.run([sys.executable,str(product_checker),"verify-compiled",str(work),str(ROOT/"out/tools")],check=True)
+     if os.environ.get("ROM_SOURCE_CONFIG") == "essi_a376b_android16":
+         if (target, os.environ.get("ROM_MILESTONE")) != ("star2lte", "M2"):
+             raise RuntimeError("Unreviewed native32 A376B release profile")
